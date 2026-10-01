@@ -1,0 +1,31 @@
+@keyframes mine-pickaxe-swing {
+  0%, 100% { transform: rotate(-38deg); }
+  50% { transform: rotate(38deg); }
+}
+
+.mine-pickaxe-swing {
+  position: absolute;
+  width: 18px;
+  height: 28px;
+  animation: mine-pickaxe-swing 840ms ease-in-out infinite;
+  transform-origin: 50% 85%;
+  will-change: transform;
+}
+
+.mine-pickaxe-handle {
+  position: absolute;
+  left: 8px;
+  top: 6px;
+  width: 3px;
+  height: 20px;
+  background-color: #c89857;
+}
+
+.mine-pickaxe-head {
+  position: absolute;
+  left: 3px;
+  top: 5px;
+  width: 13px;
+  height: 4px;
+  background-color: #d9c18b;
+}
