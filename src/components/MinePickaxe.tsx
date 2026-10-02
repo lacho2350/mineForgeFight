@@ -38,6 +38,6 @@ export default function MinePickaxe({ x, y, index, scale, offsetX }: MinePickaxe
 
 const styles = StyleSheet.create({
   pickaxe: { position: 'absolute', width: 18, height: 28, alignItems: 'center', transformOrigin: '50% 85%' },
-  handle: { position: 'absolute', left: 8, top: 6, width: 3, height: 20, backgroundColor: '#c89857' },
-  head: { position: 'absolute', left: 3, top: 5, width: 13, height: 4, backgroundColor: '#d9c18b' },
+  handle: { position: 'absolute', left: 8, top: 6, width: 3, height: 20, backgroundColor: '#8a5a32' },
+  head: { position: 'absolute', left: 3, top: 5, width: 13, height: 4, backgroundColor: '#a7adb5' },
 });

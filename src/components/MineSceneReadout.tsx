@@ -1,13 +1,13 @@
 import { StyleSheet, Text, View } from 'react-native';
 import { MINE_SHAFT_X, MINE_TILE_SIZE } from './MineMapLayout';
 
-export type MineSceneProps = {
+type MineSceneReadoutProps = {
   miners: number;
   depth: number;
   coal: number;
 };
 
-export default function MineSceneReadout({ miners, depth, coal }: MineSceneProps) {
+export default function MineSceneReadout({ miners, depth, coal }: MineSceneReadoutProps) {
   return (
     <View style={styles.readouts}>
       <View style={styles.readout}>

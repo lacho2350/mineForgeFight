@@ -1,5 +1,18 @@
 This is an Expo/React Native mobile application. Prioritize mobile-first patterns, performance, and cross-platform compatibility.
 
+## Project context — read first
+
+Mine Forge Fight is a Deep Corp–style mining + stronghold game. **Before changing anything, read
+[`docs/GAME_STATE.md`](docs/GAME_STATE.md)**: it explains the gameplay rules, the code map, the
+simulation ↔ renderer design, how to run and test, known gotchas, and what's left to build.
+Keep that file up to date when you change gameplay or architecture.
+
+Essentials:
+- Node is installed via nvm only: run `source ~/.nvm/nvm.sh` in non-interactive shells.
+- Game logic lives in `src/game/` (pure TS, no React Native/Skia); rendering in `src/components/`.
+- The user's rule: tunnels/shafts never run side by side (one rock tile between them). Don't break it.
+- No save/load yet — a page reload resets the game.
+
 ## Expo has changed — do not trust your training data
 
 Expo ships breaking changes every SDK release. APIs you remember are likely renamed, moved, or removed. Before writing any code that touches an Expo, EAS, or React Native API:

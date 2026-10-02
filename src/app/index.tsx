@@ -1,15 +1,30 @@
+import { useState } from 'react';
 import { router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useWindowDimensions, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { COAL_REQUEST_REWARD, COAL_REQUEST_SIZE, useGameStore } from '../../gameStore';
+import {
+  COAL_REQUEST_REWARD,
+  COAL_REQUEST_SIZE,
+  COSTS,
+  MAX_PICKAXE_LEVEL,
+  canAfford,
+  idleMiners,
+  useGameStore,
+} from '../game/gameStore';
 import GameScene from '../components/GameScene';
+import { SCENE_WIDTH, getSceneLayout, getShaftHotspot } from '../components/GameSceneLayout';
 import { GameButton, LiveSignal, ResourceValue, SectionLabel } from '../components/GameUI';
+import MarketPanel from '../components/MarketPanel';
+import StockpileTable from '../components/StockpileTable';
 
 export default function StrongholdScreen() {
   const { width } = useWindowDimensions();
   const wide = width >= 760;
   const game = useGameStore();
+  const [sceneLayout, setSceneLayout] = useState(() => getSceneLayout(SCENE_WIDTH));
+  const pickaxesMaxed = game.pickaxeLevel >= MAX_PICKAXE_LEVEL;
+  const idle = idleMiners(game);
 
   return (
     <SafeAreaView style={styles.screen}>
@@ -25,7 +40,7 @@ export default function StrongholdScreen() {
           </View>
 
           <View style={styles.resourceBar}>
-            <ResourceValue label="WAREHOUSE COAL" value={`${String(Math.floor(game.warehouseCoal))} / ${String(game.warehouseCapacity)}`} tone="#d6bb79" />
+            <ResourceValue label="WAREHOUSE COAL" value={`${String(Math.floor(game.warehouse.coal))} / ${String(game.warehouseCapacity)}`} tone="#d6bb79" />
             <View style={styles.resourceRule} />
             <ResourceValue label="TREASURY" value={`${String(game.gold)} G`} tone="#e5a565" />
             <View style={styles.resourceRule} />
@@ -38,13 +53,21 @@ export default function StrongholdScreen() {
                 <View><SectionLabel>YOUR STRONGHOLD</SectionLabel><Text style={styles.subheading}>A small start. A deep future.</Text></View>
                 <Text style={styles.worldCoord}>SURFACE · 01</Text>
               </View>
-              <View style={styles.sceneFrame}>
-                <GameScene />
+              <View
+                style={styles.sceneFrame}
+                onLayout={({ nativeEvent }) => {
+                  // A screen hidden under the mine reports width 0; keep the last real layout.
+                  if (nativeEvent.layout.width <= 0) return;
+                  const next = getSceneLayout(nativeEvent.layout.width);
+                  if (next.width !== sceneLayout.width) setSceneLayout(next);
+                }}
+              >
+                <GameScene layout={sceneLayout} />
                 <Pressable
                   accessibilityRole="button"
                   accessibilityLabel="Descend into the coal shaft"
                   onPress={() => router.push('/mine')}
-                  style={({ pressed }) => [styles.mineHotspot, pressed && styles.hotspotPressed]}
+                  style={({ pressed }) => [styles.mineHotspot, getShaftHotspot(sceneLayout), pressed && styles.hotspotPressed]}
                 >
                   <Text style={styles.hotspotArrow}>↓</Text>
                   <Text style={styles.hotspotText}>SHAFT</Text>
@@ -62,21 +85,20 @@ export default function StrongholdScreen() {
 
               <View style={styles.stockpileSection}>
                 <View style={styles.stockpileHeader}>
-                  <SectionLabel>COAL ROUTE</SectionLabel>
-                  <Text style={styles.routeNote}>LIVE · {String(game.lastFlow.toWarehouse).replace(/\.0$/, '')} COAL DELIVERED / TICK</Text>
+                  <SectionLabel>HAUL ROUTE</SectionLabel>
+                  <Text style={styles.routeNote}>LIVE · {String(game.lastFlow.toWarehouse).replace(/\.0$/, '')} DELIVERED / TICK</Text>
                 </View>
-                <View style={styles.stockpileRow}>
-                  <Stockpile label="VEIN PILE" value={game.veinCoal} capacity={game.veinCapacity} />
-                  <Text style={styles.routeArrow}>›</Text>
-                  <Stockpile label="MINE EXIT" value={game.mineExitCoal} capacity={game.mineExitCapacity} />
-                  <Text style={styles.routeArrow}>›</Text>
-                  <Stockpile label="MINE STOCKPILE" value={game.mineCoal} capacity={game.mineCapacity} />
-                  <Text style={styles.routeArrow}>›</Text>
-                  <Stockpile label="WAREHOUSE" value={game.warehouseCoal} capacity={game.warehouseCapacity} />
-                </View>
+                <StockpileTable
+                  stages={[
+                    { label: 'MINERS', stock: game.vein, capacity: game.veinCapacity },
+                    { label: 'MINE EXIT', stock: game.mineExit, capacity: game.mineExitCapacity },
+                    { label: 'MINE', stock: game.mineStock, capacity: game.mineCapacity },
+                    { label: 'WAREHOUSE', stock: game.warehouse, capacity: game.warehouseCapacity },
+                  ]}
+                />
                 <View style={styles.cartRow}>
-                  <Text style={styles.cartNote}>MINE CART · {String(game.mineCartCapacity)} COAL</Text>
-                  <Text style={styles.cartNote}>CART B · {String(game.warehouseCartCapacity)} COAL</Text>
+                  <Text style={styles.cartNote}>MINE CART · {String(game.mineCartCapacity)} PER LOAD</Text>
+                  <Text style={styles.cartNote}>CART B · {String(game.warehouseCartCapacity)} PER TRIP</Text>
                 </View>
               </View>
             </View>
@@ -84,14 +106,14 @@ export default function StrongholdScreen() {
             <View style={styles.operationsColumn}>
               <View style={styles.tradingSection}>
                 <View style={styles.sectionHeader}>
-                  <View><SectionLabel>TRADING POST</SectionLabel><Text style={styles.subheading}>A standing coal request</Text></View>
+                  <View><SectionLabel>TRADING POST</SectionLabel><Text style={styles.subheading}>Coal contracts and an ore market</Text></View>
                   <Text style={styles.openTag}>OPEN</Text>
                 </View>
                 <View style={styles.contractLine}>
                   <View style={styles.contractMark}><Text style={styles.contractMarkText}>C</Text></View>
                   <View style={styles.contractCopy}>
                     <Text style={styles.contractTitle}>Furnace supply</Text>
-                    <Text style={styles.contractDetail}>{String(COAL_REQUEST_SIZE)} coal  ×  1.6 gold</Text>
+                    <Text style={styles.contractDetail}>{String(COAL_REQUEST_SIZE)} coal  ×  {String(COAL_REQUEST_REWARD / COAL_REQUEST_SIZE)} gold</Text>
                   </View>
                   <Text style={styles.reward}>+{String(COAL_REQUEST_REWARD)} G</Text>
                 </View>
@@ -99,8 +121,9 @@ export default function StrongholdScreen() {
                   label="FULFILL REQUEST"
                   detail={`${String(COAL_REQUEST_SIZE)} warehouse coal`}
                   onPress={game.fulfillCoalRequest}
-                  disabled={game.warehouseCoal < COAL_REQUEST_SIZE}
+                  disabled={game.warehouse.coal < COAL_REQUEST_SIZE}
                 />
+                <MarketPanel warehouse={game.warehouse} onSell={game.sellResource} />
               </View>
 
               <View style={styles.developmentSection}>
@@ -110,22 +133,22 @@ export default function StrongholdScreen() {
                 </View>
                 <GameButton
                   label="BUILD MINER HUT"
-                  detail="30 coal · 20 gold · +1 miner"
+                  detail={`${costLabel(COSTS.minerHut)} · +1 miner${idle > 0 ? ` · ${String(idle)} idle` : ''}`}
                   onPress={game.buildMinerHut}
-                  disabled={game.warehouseCoal < 30 || game.gold < 20}
+                  disabled={!canAfford(game, COSTS.minerHut)}
                 />
                 <GameButton
-                  label={game.pickaxeLevel >= 4 ? 'PICKAXES FULLY FORGED' : 'FORGE BETTER PICKS'}
-                  detail={game.pickaxeLevel >= 4 ? `level ${String(game.pickaxeLevel)} · maximum` : '20 coal · 35 gold · +0.25 coal/s each'}
+                  label={pickaxesMaxed ? 'PICKAXES FULLY FORGED' : 'FORGE BETTER PICKS'}
+                  detail={pickaxesMaxed ? `level ${String(game.pickaxeLevel)} · maximum` : `${costLabel(COSTS.pickaxe)} · +0.25 coal/s each`}
                   onPress={game.forgePickaxe}
-                  disabled={game.pickaxeLevel >= 4 || game.warehouseCoal < 20 || game.gold < 35}
+                  disabled={pickaxesMaxed || !canAfford(game, COSTS.pickaxe)}
                   secondary
                 />
                 <GameButton
                   label="EXPAND WAREHOUSE"
-                  detail="40 coal · 30 gold · +50 storage"
+                  detail={`${costLabel(COSTS.warehouse)} · +50 storage`}
                   onPress={game.expandWarehouse}
-                  disabled={game.warehouseCoal < 40 || game.gold < 30}
+                  disabled={!canAfford(game, COSTS.warehouse)}
                   secondary
                 />
               </View>
@@ -139,16 +162,10 @@ export default function StrongholdScreen() {
   );
 }
 
-function Stockpile({ label, value, capacity }: { label: string; value: number; capacity: number }) {
-  const progress = Math.min(100, (value / capacity) * 100);
-  return (
-    <View style={styles.stockpile}>
-          <Text style={styles.stockpileLabel}>{label}</Text>
-      <Text style={styles.stockpileValue}>{String(Math.floor(value))}<Text style={styles.stockpileCapacity}> / {String(capacity)}</Text></Text>
-      <View style={styles.stockpileTrack}><View style={[styles.stockpileFill, { width: `${progress}%` }]} /></View>
-    </View>
-  );
+function costLabel(cost: { coal: number; gold: number }) {
+  return `${String(cost.coal)} coal · ${String(cost.gold)} gold`;
 }
+
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#111410' },
@@ -170,7 +187,7 @@ const styles = StyleSheet.create({
   subheading: { color: '#e7e2d2', fontFamily: 'Georgia', fontSize: 16, marginTop: 4 },
   worldCoord: { color: '#777f70', fontFamily: 'monospace', fontSize: 8 },
   sceneFrame: { position: 'relative', overflow: 'hidden', borderWidth: 1, borderColor: '#657052' },
-  mineHotspot: { position: 'absolute', left: '76%', top: '51%', width: 60, height: 50, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#edc779', backgroundColor: 'rgba(31, 38, 29, 0.88)' },
+  mineHotspot: { position: 'absolute', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#edc779', backgroundColor: 'rgba(31, 38, 29, 0.88)' },
   hotspotPressed: { opacity: 0.7 },
   hotspotArrow: { color: '#e9c475', fontFamily: 'monospace', fontSize: 15, lineHeight: 17 },
   hotspotText: { color: '#f1e7cf', fontFamily: 'monospace', fontSize: 8, fontWeight: '700' },
@@ -183,14 +200,6 @@ const styles = StyleSheet.create({
   stockpileSection: { paddingTop: 18 },
   stockpileHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 12 },
   routeNote: { color: '#858d7c', fontFamily: 'monospace', fontSize: 8, textAlign: 'right' },
-  stockpileRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 6 },
-  stockpile: { flex: 1, minWidth: 0, gap: 4 },
-  stockpileLabel: { color: '#828a78', fontFamily: 'monospace', fontSize: 7 },
-  stockpileValue: { color: '#e6dfcb', fontFamily: 'monospace', fontSize: 12 },
-  stockpileCapacity: { color: '#737c6f', fontSize: 8 },
-  stockpileTrack: { height: 3, backgroundColor: '#343a31' },
-  stockpileFill: { height: 3, backgroundColor: '#cfac68' },
-  routeArrow: { color: '#c48a58', fontSize: 17 },
   cartRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 8, paddingHorizontal: 3 },
   cartNote: { color: '#70786a', fontFamily: 'monospace', fontSize: 7 },
   tradingSection: { paddingBottom: 19, borderBottomWidth: 1, borderColor: '#353b32' },

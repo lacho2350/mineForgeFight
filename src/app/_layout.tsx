@@ -1,20 +1,27 @@
 import { useEffect } from 'react';
 import { Stack } from 'expo-router';
+import { StyleSheet } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { startSimulation } from '../../gameStore';
+import { startSimulation } from '../game/gameStore';
 
 export default function RootLayout() {
   useEffect(() => startSimulation(), []);
 
   return (
-    <SafeAreaProvider>
-    <Stack
-      screenOptions={{
-        headerShown: false,
-        contentStyle: { backgroundColor: '#111410' },
-        animation: 'fade',
-      }}
-    />
-    </SafeAreaProvider>
+    <GestureHandlerRootView style={styles.root}>
+      <SafeAreaProvider>
+        <Stack
+          screenOptions={{
+            headerShown: false,
+            contentStyle: { backgroundColor: '#111410' },
+            animation: 'fade',
+          }}
+        />
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }
+const styles = StyleSheet.create({
+  root: { flex: 1 },
+});

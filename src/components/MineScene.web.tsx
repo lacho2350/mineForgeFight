@@ -1,22 +1,23 @@
 import { WithSkiaWeb } from '@shopify/react-native-skia/lib/module/web';
 import { StyleSheet, View } from 'react-native';
-import MineSceneReadout, { type MineSceneProps } from './MineSceneReadout';
-import { MINE_MAP_HEIGHT, MINE_MAP_WIDTH } from './MineMapLayout';
+import MineViewport, { type MineSceneProps } from './MineViewport';
 
-export default function MineScene({ miners, depth, coal }: MineSceneProps) {
+export default function MineScene(props: MineSceneProps) {
   return (
-    <View style={styles.frame}>
-      <WithSkiaWeb
-        getComponent={() => import('./MineSceneCanvas')}
-        opts={{ locateFile: (file) => `https://cdn.jsdelivr.net/npm/canvaskit-wasm@0.41.0/bin/full/${file}` }}
-        fallback={<View style={styles.fallback} />}
-      />
-      <MineSceneReadout miners={miners} depth={depth} coal={coal} />
-    </View>
+    <MineViewport
+      {...props}
+      renderCanvas={(canvasProps) => (
+        <WithSkiaWeb
+          getComponent={() => import('./MineSceneCanvas')}
+          componentProps={canvasProps}
+          opts={{ locateFile: (file) => `https://cdn.jsdelivr.net/npm/canvaskit-wasm@0.41.0/bin/full/${file}` }}
+          fallback={<View style={styles.fallback} />}
+        />
+      )}
+    />
   );
 }
 
 const styles = StyleSheet.create({
-  frame: { height: MINE_MAP_HEIGHT, width: MINE_MAP_WIDTH, overflow: 'hidden', backgroundColor: '#55432f' },
-  fallback: { flex: 1, backgroundColor: '#55432f' },
+  fallback: { ...StyleSheet.absoluteFill, backgroundColor: '#0d0a08' },
 });

@@ -1,32 +1,30 @@
-import { useState } from 'react';
+import { memo } from 'react';
 import { Canvas, Circle, Group, Rect } from '@shopify/react-native-skia';
 import { StyleSheet, View } from 'react-native';
-import { useGameStore } from '../../gameStore';
+import { useGameStore } from '../game/gameStore';
+import { SCENE_HEIGHT as sceneHeight, SCENE_WIDTH as sceneWidth, type SceneLayout } from './GameSceneLayout';
 
-const sceneWidth = 360;
-const sceneHeight = 244;
+export type GameSceneProps = { layout: SceneLayout };
 
-export default function GameSceneCanvas() {
-  const [width, setWidth] = useState(sceneWidth);
+function GameSceneCanvas({ layout }: GameSceneProps) {
   const depth = useGameStore((state) => state.depth);
   const miners = useGameStore((state) => state.miners);
-  const scale = Math.min(width / sceneWidth, 1);
-  const offsetX = (width - sceneWidth * scale) / 2;
+  const { width, height, scale, offsetX } = layout;
+  // Ground strips extend past the centered scene to fill wide frames.
+  const bleedX = -offsetX / scale;
+  const bleedWidth = width / scale;
 
   return (
-    <View onLayout={({ nativeEvent }) => setWidth(Math.max(sceneWidth, nativeEvent.layout.width))} style={styles.frame}>
-      <Canvas __destroyWebGLContextAfterRender style={styles.canvas}>
-        <Rect x={0} y={0} width={width} height={sceneHeight} color="#9dad85" />
-        <Rect x={0} y={125} width={width} height={119} color="#64754d" />
-        <Rect x={0} y={184} width={width} height={60} color="#4a4535" />
-        <Rect x={0} y={181} width={width} height={5} color="#9a8155" />
+    <View style={[styles.frame, { height }]}>
+      <Canvas style={styles.canvas}>
         <Group transform={[{ translateX: offsetX }, { scale }]}>
+          <Rect x={bleedX} y={0} width={bleedWidth} height={sceneHeight} color="#9dad85" />
           <Circle cx={293} cy={43} r={20} color="#e7c47e" />
           <Rect x={29} y={45} width={32} height={8} color="#d4d0aa" />
           <Rect x={40} y={37} width={20} height={8} color="#d4d0aa" />
           <Rect x={213} y={51} width={49} height={7} color="#d4d0aa" />
           <Rect x={226} y={43} width={27} height={8} color="#d4d0aa" />
-          <Rect x={0} y={125} width={sceneWidth} height={119} color="#64754d" />
+          <Rect x={bleedX} y={125} width={bleedWidth} height={119} color="#64754d" />
           <Rect x={0} y={118} width={82} height={10} color="#73845a" />
           <Rect x={272} y={113} width={88} height={15} color="#718153" />
 
@@ -57,8 +55,8 @@ export default function GameSceneCanvas() {
           <Rect x={54} y={115} width={11} height={12} color="#43513f" />
           <Rect x={74} y={137} width={207} height={5} color="#ceb377" />
 
-          <Rect x={0} y={184} width={sceneWidth} height={60} color="#4a4535" />
-          <Rect x={0} y={181} width={sceneWidth} height={5} color="#9a8155" />
+          <Rect x={bleedX} y={184} width={bleedWidth} height={60} color="#4a4535" />
+          <Rect x={bleedX} y={181} width={bleedWidth} height={5} color="#9a8155" />
           {Array.from({ length: 9 }, (_, index) => (
             <Rect key={index} x={index * 45 + 8} y={199 + (index % 2) * 12} width={18} height={5} color="#605942" />
           ))}
@@ -68,7 +66,7 @@ export default function GameSceneCanvas() {
           <Rect x={252} y={155} width={5} height={5} color="#33372a" />
           <Rect x={259} y={151} width={5} height={9} color="#33372a" />
           <Rect x={266} y={156} width={5} height={5} color="#33372a" />
-          <Rect x={0} y={229} width={sceneWidth} height={15} color="#3b3d30" />
+          <Rect x={bleedX} y={229} width={bleedWidth} height={15} color="#3b3d30" />
           <Rect x={278} y={178} width={60} height={66} color="#222720" />
           <Rect x={276} y={176} width={64} height={8} color="#bd8d55" />
           <Rect x={282} y={184} width={7} height={54} color="#805a3c" />
@@ -81,7 +79,7 @@ export default function GameSceneCanvas() {
           <Rect x={8} y={230} width={92} height={14} color="#c8d18a" opacity={0.12} />
           <Rect x={15} y={234} width={38} height={3} color="#e3d9b6" opacity={0.72} />
           <Rect x={57} y={234} width={24} height={3} color="#c98a59" opacity={0.85} />
-          <Rect x={88} y={234} width={miners * 4} height={3} color="#c8d18a" />
+          <Rect x={88} y={234} width={Math.min(miners * 4, 64)} height={3} color="#c8d18a" />
           <Rect x={307} y={231} width={20} height={12} color="#dcbd78" />
           <Rect x={314} y={222} width={6} height={10} color="#dfc57c" />
           <Rect x={310} y={217} width={14} height={5} color="#e2c780" />
@@ -96,7 +94,9 @@ export default function GameSceneCanvas() {
   );
 }
 
+export default memo(GameSceneCanvas);
+
 const styles = StyleSheet.create({
-  frame: { width: '100%', height: sceneHeight, overflow: 'hidden' },
+  frame: { width: '100%', overflow: 'hidden' },
   canvas: { flex: 1 },
 });
