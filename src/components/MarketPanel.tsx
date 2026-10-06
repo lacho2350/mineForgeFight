@@ -1,15 +1,18 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { RESOURCES, RESOURCE_INFO, RESOURCE_PRICE, type Resource, type Stock } from '../game/resources';
+import { RESOURCES, RESOURCE_INFO, type Resource, type Stock } from '../game/resources';
 
-// The trading post market: every resource in the warehouse can be sold for gold at a fixed price.
+// The trading post market: every resource in the warehouse can be sold for gold (the gate raises prices).
 export default function MarketPanel({
   warehouse,
+  prices,
   onSell,
 }: {
   warehouse: Stock;
+  prices: Record<Resource, number>;
   onSell: (resource: Resource, amount: number | 'all') => void;
 }) {
-  const total = RESOURCES.reduce((sum, resource) => sum + Math.floor(warehouse[resource]) * RESOURCE_PRICE[resource], 0);
+  const worth = (resource: Resource) => Math.floor(Math.floor(warehouse[resource]) * prices[resource]);
+  const total = RESOURCES.reduce((sum, resource) => sum + worth(resource), 0);
 
   return (
     <View style={styles.market}>
@@ -20,7 +23,7 @@ export default function MarketPanel({
       {RESOURCES.map((resource) => {
         const info = RESOURCE_INFO[resource];
         const units = Math.floor(warehouse[resource]);
-        const price = RESOURCE_PRICE[resource];
+        const price = prices[resource];
         return (
           <View key={resource} style={styles.row}>
             <View style={[styles.swatch, { backgroundColor: info.color, borderColor: info.light }]} />
@@ -32,10 +35,10 @@ export default function MarketPanel({
             </View>
             <SellButton label="10" disabled={units < 1} onPress={() => onSell(resource, 10)} accessibilityLabel={`Sell 10 ${info.name}`} />
             <SellButton
-              label={`ALL +${(units * price).toLocaleString()}`}
+              label={`ALL +${worth(resource).toLocaleString()}`}
               disabled={units < 1}
               onPress={() => onSell(resource, 'all')}
-              accessibilityLabel={`Sell all ${info.name} for ${String(units * price)} gold`}
+              accessibilityLabel={`Sell all ${info.name} for ${String(worth(resource))} gold`}
               wide
             />
           </View>

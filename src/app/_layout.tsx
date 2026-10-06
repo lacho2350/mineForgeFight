@@ -14,6 +14,8 @@ export default function RootLayout() {
         <Stack
           screenOptions={{
             headerShown: false,
+            // Screens under the top one stop re-rendering (the simulation keeps running in the store).
+            freezeOnBlur: true,
             contentStyle: { backgroundColor: '#111410' },
             animation: 'fade',
           }}

@@ -1,20 +1,24 @@
 # Mine Forge Fight — current state (handover)
 
-_Last updated 2026-10-02. Read this before changing anything; then read the files it points to._
+_Last updated 2026-10-06. Read this before changing anything; then read the files it points to._
 
 ## What the game is
 
 A mobile (Expo / React Native, also runs on web) mining-and-stronghold game inspired by
 **Deep Corp** (KishMish Games): a side-view Wild West mine under a small surface stronghold.
 Miners cut deposits, haulers push carts to the lift, coal and ores flow up to a warehouse, and the
-stronghold spends coal and gold on upgrades or sells ore at the trading post.
+stronghold spends gold, coal and ores on its buildings (18 kinds, levels 1–20), raises a 9-unit army and
+fights off raiders in Heroes III–style hex battles, or sells ore at the trading post.
 
 Two screens (Expo Router, `src/app/`):
 
 | Route | File | What it shows |
 |---|---|---|
-| `/` | `src/app/index.tsx` | Stronghold: surface scene (Skia), resource bar, haul-route stockpile table, trading post (coal contract + ore market), upgrades (miner hut, pickaxes, warehouse). |
+| `/` | `src/app/index.tsx` | Stronghold: surface scene (Skia, tap a building to select it), construction panel, trading post (coal contract + ore market), haul-route stockpile table. |
 | `/mine` | `src/app/mine.tsx` | The mine map (pan/zoom camera), Dig toggle, deposit info panel, stockpile table, hauling chain, Dig Deeper. |
+| `/battle` | `src/app/battle.tsx` | The battle at the gate: hex board, orders, auto-battle / quick resolve, log, result. |
+
+Both main screens show a `RaidBanner` (next raid countdown → raiders sighted → at the gate → result).
 
 `src/app/_layout.tsx` wraps everything in `GestureHandlerRootView` + `SafeAreaProvider` and starts
 the 1-second simulation (`startSimulation()`).
@@ -46,7 +50,9 @@ the 1-second simulation (`startSimulation()`).
 - **Digging by hand**: Dig mode; drag from any tunnel end across rock. Path follows the finger, backs
   up when retraced, stops red at the first invalid tile. Cost `3 + floor(row/10)` gold/tile, paid on
   release; time `2 + 0.04·row` s/tile, one tile at a time (`digPlan`, `digProgress`).
-- **Hauling**: one cart + red-shirted hauler per level (sites grouped by level), visiting that level's
+- **Hauling**: each level with miners has 1+ carts with red-shirted haulers (`carts[level]`, default 1,
+  max one per miner; bought in the mine screen's Haulage section for coal + gold, ×1.6 per extra cart).
+  A level's miners are shared out between its carts (miner i → cart i mod n); each cart visits its
   miners in turn: load beside the miner → path through dug tiles to the lift (BFS) → up the lift →
   pushed out to that resource's bin at the mine exit → tip → back down to the next miner. Coal only
   moves on load/tip events — the simulation and the renderer share one schedule (`haulage.ts`) driven
@@ -55,7 +61,42 @@ the 1-second simulation (`startSimulation()`).
 - **Stockpiles, per resource**: `vein` (miners' bins) → `mineExit` (surface bins) → `mineStock` →
   `warehouse`. Capacities apply per resource. Surface carts move exit→mine→warehouse each tick
   (per-tick totals shared across resources).
-- **Economy**: costs are paid in warehouse **coal** + gold. Trading post: Furnace contract (20 coal →
+- **Buildings** (`src/game/buildings.ts`): 18 buildings, each level 0 (empty plot) to 20. Economy: Central
+  Keep, Workers' Houses, Warehouses, Foundry, Research Facility. Defence: Armory, Wall, Towers, Gate. One
+  dwelling per unit: Guardhouse, Archery Range, Barracks, Monastery, Balloon Works, Stables, Griffin Eyrie,
+  Paladin Chapel, Celestial Sanctum. Start: keep/houses/warehouse/foundry/guardhouse at 1, the rest 0.
+  Effects come from `buildingStats(levels)`: keep = level cap for everything else, builders `1 + ⌊L/5⌋`,
+  taxes L gold per 5 s; houses = beds `2L + ⌊L²/4⌋` (each new bed hires a miner who auto-assigns);
+  warehouses = capacity `100·1.3^(L−1)` per resource + mine stockpiles; foundry = miner rate and cart load;
+  research = dig speed/cost; stables = surface wagon haul (and cavalry); gate = gate HP + 3%/level trade
+  prices; wall = HP of each wall section; towers = `2 + ⌊L/5⌋` towers, `5 + 3L` damage per shot per round;
+  armory = +⌈L/2⌉ attack / +⌊L/2⌋ defence for every unit. Dwellings of strong units need a keep level
+  before their first level (`requiredKeep`). Costs (`buildingCost`): treasury gold ×1.3 per level plus
+  warehouse resources (coal from L1, granite 3, copper 5, iron 7, gold ore 11, diamonds 15). A cost bigger
+  than warehouse capacity blocks the upgrade. Build time `6 + 2·L^1.6` s; `construction` jobs tick per second.
+- **Army** (`src/game/units.ts`): pikeman, bowman, swordsman, monk, balloon, cavalry, griffin, paladin,
+  angel (tiers 1–9), stats after Heroes III (attack, defence, damage range, HP, speed, shots) plus abilities:
+  pikemen +50% vs riders; bowmen/monks/balloons shoot; monks heal an ally (10 HP each, can bring back
+  fallen members up to the stack's starting size); balloons fly and are immune to melee (never pinned);
+  cavalry +5% damage per hex charged; griffins fly and retaliate twice; paladins give every ally +2/+2;
+  angels fly and resurrect once per battle (100 HP each, even a destroyed stack). Recruits accumulate at
+  each built dwelling (`unitGrowth`, per 2-minute muster, up to 3 musters), need the unit's keep level,
+  and cost gold (+ some ore for higher tiers). Start: 12 pikemen. `army`, `recruits`, `recruit()`.
+- **Raids** (`src/game/raids.ts`): first raiders arrive at 6:00, then 5 min after each raid ends; sighted
+  60 s ahead. Raid n has value `600·1.3^(n−1)` split into 2–7 stacks of goblins, wolf riders, orc archers,
+  harpies, ogres (2× wall damage), cyclopes (shoot walls), behemoths (ignore 40% defence), stronger types
+  joining with n. At arrival a `battle` starts; open the battle screen to command it, otherwise it
+  quick-resolves after 30 s. Win: bounty 30% of raid value in gold. Lose: 30% of gold and of every
+  warehouse resource is plundered. Survivors (and healed/resurrected) rejoin the army; the dead are lost.
+- **Combat** (`src/game/combat.ts`, pure + deterministic): 13×9 hex field (odd rows shifted). Raiders
+  deploy left, the army right (shooters behind). Wall in column 9 with the gate in row 4: walkers must
+  break a section/the gate (the AI aims for the weakest point); the army can pass its own gate; raiders'
+  arrows over a standing wall do half damage. Each round towers shoot the most valuable raiders, then
+  stacks act by speed (ties: defenders first). Damage = rolled base × (1 + 5%/point attack over defence,
+  max +300%; or −2.5%/point under, min 30%), half for long range (>7) and for shooters in melee. One
+  retaliation per round (griffins 2). Defend = +30% defence till next turn. 30 rounds → raiders withdraw.
+  `act(battle, action)` returns a new battle; `chooseAction` is the AI; `resolveBattle` = quick combat.
+- **Economy**: carts and digging cost warehouse **coal** + gold; buildings also cost ores. Trading post: Furnace contract (20 coal →
   32 gold) and a market selling any resource from the warehouse at `RESOURCE_PRICE`
   (coal 1, granite 1, copper 3, iron 4, gold 12, diamond 30).
 
@@ -73,21 +114,37 @@ src/
                            deposit info, auto-dig route finder
     haulage.ts             cart routes (BFS to lift), trip schedule, cart pose (worklet), events
     resources.ts           RESOURCES list, Stock type, names/colours, market prices
+    buildings.ts           stronghold buildings: ids, start levels, stats per level, costs, build time
+    units.ts               army + raider stats/abilities, dwellings, recruit costs and growth
+    combat.ts              hex battle engine: setup, turns, damage, walls/towers, AI, quick resolve
+    raids.ts               raid timing, strength, composition, bounty/plunder constants
   components/
     MineMapLayout.ts       grid constants (tile size, columns, levels, stations, exit bins)
     MineScene(.web).tsx    platform wrapper; web loads Skia (CanvasKit) lazily via WithSkiaWeb
     MineViewport.tsx       camera (pan/pinch/wheel/keys), view culling, dig drag, taps, labels,
                            haul clock, pickaxe layer
     MineSceneCanvas.tsx    the Skia canvas: terrain chunks, carts, miners, bins, dig overlay
-    mineTerrain.ts         terrain renderer: cached chunk pictures (16 columns × 1 row), fog, tiles
+    mineTerrain.ts         terrain renderer: tiles, fog, and cached block images (16 × 4 tiles) with
+                           dirty tracking so a change only redraws nearby blocks
     MineHaulers.tsx        carts + haulers, miner bins, mine-exit bins (Skia pictures)
     MineHaulerSteps.ts     heap step counts (Skia-free so the viewport can import it on web)
     MinePickaxe(.web).tsx  animated pickaxe (Reanimated on native, CSS on web)
     MineSceneReadout.tsx   small readout labels on the map
     DepositPanel.tsx       tapped-tile info + Assign / Release / Dig & Assign
+    HaulagePanel.tsx       carts per level + Add Cart
     StockpileTable.tsx     resources × stages table (both screens)
     MarketPanel.tsx        trading post market
-    GameScene*.tsx, GameSceneLayout.ts   stronghold surface scene (Skia) + its layout maths
+    GameScene*.tsx         stronghold surface scene (Skia): every building drawn in 4 looks by tier
+                           (levels 1–5 timber, 6–10 plaster, 11–15 stone, 16–20 dressed stone + gold),
+                           empty plots, scaffolding + progress bar while building
+    GameSceneLayout.ts     scene size (600×300, three rows), building plots (tap areas), mine hotspot;
+                           narrow phones scroll the scene sideways (min scale 0.8)
+    BattleBoard(.web).tsx, BattleBoardCanvas.tsx   battlefield (Skia): hexes, wall/gate, towers, sprites
+    battleLayout.ts        hex geometry for the board, taps and labels (Skia-free)
+    unitSprites.ts         12×12 pixel sprites for all 16 creatures (also drawn in the town's yard)
+    RaidBanner.tsx         raid status banner on both main screens
+    BuildingsPanel.tsx     construction panel: selected building's effects now → next, cost, Upgrade,
+                           unit card + Recruit for dwellings; grid of all buildings with levels / progress
     GameUI.tsx             shared buttons/labels
 ```
 
@@ -98,8 +155,12 @@ src/
   deposit's drawn step change**, or terrain/cart routes won't refresh. `depositMined` in the cached
   layout can lag; UI that shows live amounts passes live `depositMined` (see `mine.tsx`, `DepositLabels`).
 - **Rendering is virtualised**: the canvas is screen-sized; a camera (`camX`, `camY`, `zoom` shared
-  values) transforms the map; only chunks/sites inside `view` are mounted. Terrain chunk pictures are
-  cached by `layoutVersion:row:chunk`. Per-frame motion (camera, carts, pickaxes) runs on the UI thread.
+  values) transforms the map; only blocks/sites inside `view` are mounted. Terrain is rasterised once
+  into images per 16×4-tile block (one image draw per block per frame, nearest sampling, no AA).
+  `trackChanges` diffs successive layouts (dug tiles, sites/faces, deposit steps) and only re-rasterises
+  blocks within 4 tiles of a change. Replaced images are freed after a delay (the canvas may still be
+  drawing them). Per-frame motion (camera, carts, pickaxes) runs on the UI thread; the haul clock only
+  writes while it is moving; screens under the top one are frozen (`freezeOnBlur`).
 - **Sim ↔ renderer sync**: the store applies cart loads/tips for the haul-time window
   `(haulAppliedTime, haulTime]`; the renderer plays `haulTime−1 → haulTime` (`useHaulClock`).
 - **Web quirks**: Skia's web `<Canvas style>` must be a plain object (not an array). Modules imported
@@ -128,18 +189,17 @@ src/
 
 ## Status
 
-- **Git**: one commit (`firstAtempt`, the original prototype). Everything since is **staged but not
-  committed** on `main`. `.claude/` (launch config) is untracked.
+- **Git**: work is committed on feature branches and merged to `main` (remote `origin`, GitHub
+  `lacho2350/mineForgeFight`). `.claude/` (launch config) is untracked.
 - Verified: typecheck, lint, expo-doctor pass; flows tested in the web preview and via Node sims.
   Pinch zoom and right-drag pan are untested (desktop automation can't do two-finger touch/right-drag).
 
 ## Known gaps / likely next steps
 
 1. **Save/load** (e.g. Zustand `persist` + AsyncStorage) — the most visible gap.
-2. **Uses for ores** beyond selling (buildings/upgrades costing copper, iron, granite…); currently all
-   costs are coal + gold.
-3. Haul capacity upgrades (bigger carts / more haulers per level) — one cart per level is a real
-   bottleneck deeper down.
-4. Stronghold building system is still a single picture + 3 upgrade buttons.
+2. Balance pass: building costs, recruit prices and raid strength vs. mining output are first guesses.
+3. Battle polish: movement animation (stacks jump), Heroes-style "wait", morale/luck, hero commander,
+   two-hex units; going out to attack raider camps.
+4. Wall tap area sits behind the back-row buildings; it is selectable at its ends or from the grid.
 5. No feedback text when a hand-drawn dig is released on an invalid tile (it just doesn't order).
 6. Deep levels: one lift ride can take ~40 s each way; rebalance speeds if it feels slow.

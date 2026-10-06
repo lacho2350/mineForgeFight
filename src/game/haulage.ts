@@ -69,12 +69,26 @@ function legDuration(x0: number, y0: number, x1: number, y1: number, liftX: numb
   return Math.abs(y1 - y0) / (x0 === liftX ? LIFT_SPEED : SHAFT_SPEED);
 }
 
-let cachedVersion = -1;
-let cachedRoutes = new Map<number, CartRoute>();
+/** Carts working each level, keyed by level; levels not listed have one cart. */
+export type LevelCarts = Record<number, number>;
 
-/** One cart per level, visiting that level's miners in turn. Cached per layout version. */
-export function getCartRoutes(layout: MineLayout): Map<number, CartRoute> {
-  if (cachedVersion === layout.version) return cachedRoutes;
+export const cartsOnLevel = (carts: LevelCarts, level: number) => Math.max(1, carts[level] ?? 1);
+
+/** Identifies one cart: its level and its number on that level. */
+export const cartKey = (level: number, index: number) => `${String(level)}:${String(index)}`;
+export const cartLevel = (key: string) => Number(key.split(':')[0]);
+
+let cachedSignature = '';
+let cachedRoutes = new Map<string, CartRoute>();
+
+/**
+ * Every cart's route, keyed by `cartKey`. A level's miners are shared out between its carts
+ * (miner i goes to cart i mod n), each cart visiting its miners in turn, and the carts are spread
+ * evenly through their schedules so they don't bunch up at the lift. Cached per layout and cart counts.
+ */
+export function getCartRoutes(layout: MineLayout, carts: LevelCarts): Map<string, CartRoute> {
+  const signature = `${String(layout.version)}|${JSON.stringify(carts)}`;
+  if (signature === cachedSignature) return cachedRoutes;
   const liftX = cartX(MINE_SHAFT_COLUMN);
   const surfaceY = MINE_GROUND_Y - CART_HEIGHT;
 
@@ -88,42 +102,53 @@ export function getCartRoutes(layout: MineLayout): Map<number, CartRoute> {
     byLevel.set(level, list);
   }
 
-  const routes = new Map<number, CartRoute>();
-  for (const [level, stops] of byLevel) {
-    let start = 0;
-    const resources = stops.map(({ site }) => depositAt(site.faceRow, site.faceColumn) ?? 'coal');
-    const trips = stops.map(({ path }, index) => {
-      // Tip beside this resource's own bin at the mine exit.
-      const exitX = getExitBinX(RESOURCES.indexOf(resources[index])) - CART_WIDTH + 12;
-      const nextPath = stops[(index + 1) % stops.length].path;
-      const xs: number[] = [];
-      const ys: number[] = [];
-      const add = (x: number, y: number) => {
-        xs.push(x);
-        ys.push(y);
-      };
-      add(cartX(path[0][1]), cartY(path[0][0])); // loading
-      for (const [row, column] of path) add(cartX(column), cartY(row));
-      add(liftX, surfaceY);
-      add(exitX, surfaceY);
-      const tipLeg = xs.length - 1;
-      add(exitX, surfaceY); // tipping
-      add(liftX, surfaceY);
-      for (const [row, column] of [...nextPath].reverse()) add(cartX(column), cartY(row));
-      const legs = xs.slice(1).map((x, i) => legDuration(xs[i], ys[i], x, ys[i + 1], liftX));
-      legs[0] = LOAD_TIME;
-      legs[tipLeg] = TIP_TIME;
-      const total = legs.reduce((sum, leg) => sum + leg, 0);
-      const trip: Trip = { xs, ys, legs, tipLeg, start, total };
-      start += total;
-      return trip;
-    });
-    routes.set(level, { trips, cycle: start, offset: (level + 1) * 2.3, liftX, resources });
+  const routes = new Map<string, CartRoute>();
+  for (const [level, levelStops] of byLevel) {
+    const count = Math.min(cartsOnLevel(carts, level), levelStops.length);
+    for (let cart = 0; cart < count; cart += 1) {
+      const stops = levelStops.filter((_, index) => index % count === cart);
+      const route = buildRoute(stops, liftX, surfaceY);
+      // Stagger carts: each level starts at its own offset, and its carts are evenly spaced.
+      route.offset = (level + 1) * 2.3 + (cart * route.cycle) / count;
+      routes.set(cartKey(level, cart), route);
+    }
   }
 
-  cachedVersion = layout.version;
+  cachedSignature = signature;
   cachedRoutes = routes;
   return routes;
+}
+
+function buildRoute(stops: { site: Site; path: [number, number][] }[], liftX: number, surfaceY: number): CartRoute {
+  let start = 0;
+  const resources = stops.map(({ site }) => depositAt(site.faceRow, site.faceColumn) ?? 'coal');
+  const trips = stops.map(({ path }, index) => {
+    // Tip beside this resource's own bin at the mine exit.
+    const exitX = getExitBinX(RESOURCES.indexOf(resources[index])) - CART_WIDTH + 12;
+    const nextPath = stops[(index + 1) % stops.length].path;
+    const xs: number[] = [];
+    const ys: number[] = [];
+    const add = (x: number, y: number) => {
+      xs.push(x);
+      ys.push(y);
+    };
+    add(cartX(path[0][1]), cartY(path[0][0])); // loading
+    for (const [row, column] of path) add(cartX(column), cartY(row));
+    add(liftX, surfaceY);
+    add(exitX, surfaceY);
+    const tipLeg = xs.length - 1;
+    add(exitX, surfaceY); // tipping
+    add(liftX, surfaceY);
+    for (const [row, column] of [...nextPath].reverse()) add(cartX(column), cartY(row));
+    const legs = xs.slice(1).map((x, i) => legDuration(xs[i], ys[i], x, ys[i + 1], liftX));
+    legs[0] = LOAD_TIME;
+    legs[tipLeg] = TIP_TIME;
+    const total = legs.reduce((sum, leg) => sum + leg, 0);
+    const trip: Trip = { xs, ys, legs, tipLeg, start, total };
+    start += total;
+    return trip;
+  });
+  return { trips, cycle: start, offset: 0, liftX, resources };
 }
 
 function legEnd(trip: Trip, leg: number) {

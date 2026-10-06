@@ -1,4 +1,4 @@
-import { ClipOp, Skia, createPicture, type SkCanvas, type SkPaint, type SkPicture } from '@shopify/react-native-skia';
+import { ClipOp, Skia, createPicture, type SkCanvas, type SkImage, type SkPaint, type SkPicture } from '@shopify/react-native-skia';
 import { MINE_COLUMNS, MINE_MAP_WIDTH, MINE_SHAFT_COLUMN, MINE_SURFACE_ROWS, MINE_TILE_SIZE } from './MineMapLayout';
 import {
   depositAt,
@@ -8,6 +8,7 @@ import {
   hash,
   isDug,
   levelOfRow,
+  parseKey,
   tileKey,
   type MineLayout,
   type Site,
@@ -424,29 +425,136 @@ function drawRow(canvas: SkCanvas, row: number, from: number, to: number, layout
   canvas.restore();
 }
 
-/** Rows are cached in chunks this many columns wide, so only what is on screen is drawn. */
-export const TERRAIN_CHUNK_COLUMNS = 16;
-export const TERRAIN_CHUNKS = Math.ceil(MINE_COLUMNS / TERRAIN_CHUNK_COLUMNS);
+// ——— Terrain cache ———
+// The terrain is drawn once into images, in blocks of 16 columns × 4 rows. Each frame then costs
+// one image draw per visible block instead of replaying thousands of small rectangles. When the mine
+// changes, only blocks near the change are redrawn: fog reaches 4 tiles, so a changed tile dirties
+// every block within 4 tiles of it.
 
-const pictureCache = new Map<string, SkPicture>();
+export const TERRAIN_BLOCK_COLUMNS = 16;
+export const TERRAIN_BLOCK_ROWS = 4;
+export const TERRAIN_BLOCK_COUNT_X = Math.ceil(MINE_COLUMNS / TERRAIN_BLOCK_COLUMNS);
+const BLOCK_REACH = FOG_ALPHA.length; // tiles around a change whose drawing may differ
+const MAX_CACHED_BLOCKS = 160;
+
 let surfacePicture: SkPicture | null = null;
 
-/** The surface (sky, mesas, headhouse) across the whole claim, two rows tall. */
-export function getSurfacePicture(): SkPicture {
+function getSurfacePicture(): SkPicture {
   surfacePicture ??= createPicture((canvas) => drawSurface(painter(canvas)), Skia.XYWHRect(0, 0, MINE_MAP_WIDTH, T * MINE_SURFACE_ROWS));
   return surfacePicture;
 }
 
-// Chunks are recorded once into pictures and replayed while panning. A chunk only depends on
-// tiles within a few rows of it, but keying on the layout version keeps invalidation simple.
-export function getChunkPicture(row: number, chunk: number, layout: MineLayout): SkPicture {
-  const key = `${String(layout.version)}:${String(row)}:${String(chunk)}`;
-  const cached = pictureCache.get(key);
-  if (cached) return cached;
-  if (pictureCache.size > 1500) pictureCache.clear();
-  const from = chunk * TERRAIN_CHUNK_COLUMNS;
-  const to = Math.min(MINE_COLUMNS, from + TERRAIN_CHUNK_COLUMNS);
-  const picture = createPicture((canvas) => drawRow(canvas, row, from, to, layout), Skia.XYWHRect(from * T, 0, (to - from) * T, T));
-  pictureCache.set(key, picture);
-  return picture;
+type CachedBlock = { stamp: number; image: SkImage };
+const blockCache = new Map<string, CachedBlock>();
+// Replaced or evicted images may still be in the scene the canvas is drawing until React commits
+// the new one, so they are freed a little later rather than straight away.
+const RETIRE_AFTER_MS = 3000;
+const retired: { image: SkImage; at: number }[] = [];
+
+function retire(image: SkImage) {
+  retired.push({ image, at: Date.now() });
+}
+
+function disposeRetired() {
+  const now = Date.now();
+  while (retired.length > 0 && now - retired[0].at > RETIRE_AFTER_MS) retired.shift()?.image.dispose();
+}
+const blockStamps = new Map<string, number>();
+let trackedLayout: MineLayout | null = null;
+
+const blockKey = (blockRow: number, blockColumn: number) => `${String(blockRow)}:${String(blockColumn)}`;
+
+function markDirty(row: number, column: number) {
+  const firstRow = Math.floor((row - BLOCK_REACH) / TERRAIN_BLOCK_ROWS);
+  const lastRow = Math.floor((row + BLOCK_REACH) / TERRAIN_BLOCK_ROWS);
+  const firstColumn = Math.floor((column - BLOCK_REACH) / TERRAIN_BLOCK_COLUMNS);
+  const lastColumn = Math.floor((column + BLOCK_REACH) / TERRAIN_BLOCK_COLUMNS);
+  for (let blockRow = firstRow; blockRow <= lastRow; blockRow += 1) {
+    for (let blockColumn = firstColumn; blockColumn <= lastColumn; blockColumn += 1) {
+      const key = blockKey(blockRow, blockColumn);
+      blockStamps.set(key, (blockStamps.get(key) ?? 0) + 1);
+    }
+  }
+}
+
+// Work out which tiles look different between the previous layout and this one, and dirty the
+// blocks around them: dug tiles and their kinds, miners and their faces, and deposits that shrank
+// to a new step.
+function trackChanges(layout: MineLayout) {
+  const previous = trackedLayout;
+  if (previous === layout) return;
+  trackedLayout = layout;
+  if (!previous) return;
+
+  const changed = new Set<string>();
+  for (const [key, kind] of layout.kinds) if (previous.kinds.get(key) !== kind) changed.add(key);
+  for (const key of previous.kinds.keys()) if (!layout.kinds.has(key)) changed.add(key);
+
+  const siteTiles = (sites: Site[]) => sites.flatMap((site) => [tileKey(site.row, site.column), tileKey(site.faceRow, site.faceColumn)]);
+  const before = new Set(siteTiles(previous.sites));
+  const after = new Set(siteTiles(layout.sites));
+  for (const key of after) if (!before.has(key)) changed.add(key);
+  for (const key of before) if (!after.has(key)) changed.add(key);
+
+  for (const key of new Set([...Object.keys(layout.depositMined), ...Object.keys(previous.depositMined)])) {
+    if ((layout.depositMined[key] ?? 0) === (previous.depositMined[key] ?? 0)) continue;
+    const { row, column } = parseKey(key);
+    const total = depositTotal(row, column);
+    if (depositStep(total, depositRemaining(layout, row, column)) !== depositStep(total, depositRemaining(previous, row, column))) {
+      changed.add(key);
+    }
+  }
+
+  for (const key of changed) {
+    const { row, column } = parseKey(key);
+    markDirty(row, column);
+  }
+}
+
+function renderBlock(blockRow: number, blockColumn: number, layout: MineLayout): SkImage | null {
+  const from = blockColumn * TERRAIN_BLOCK_COLUMNS;
+  const to = Math.min(MINE_COLUMNS, from + TERRAIN_BLOCK_COLUMNS);
+  const firstRow = blockRow * TERRAIN_BLOCK_ROWS;
+  const width = (to - from) * T;
+  const height = TERRAIN_BLOCK_ROWS * T;
+  const surface = Skia.Surface.Make(width, height);
+  if (!surface) return null;
+  const canvas = surface.getCanvas();
+  canvas.translate(-from * T, -firstRow * T);
+  if (firstRow < MINE_SURFACE_ROWS) canvas.drawPicture(getSurfacePicture());
+  for (let row = Math.max(firstRow, MINE_SURFACE_ROWS); row < firstRow + TERRAIN_BLOCK_ROWS && row < layout.rows; row += 1) {
+    canvas.save();
+    canvas.translate(0, row * T);
+    drawRow(canvas, row, from, to, layout);
+    canvas.restore();
+  }
+  const image = surface.makeImageSnapshot();
+  surface.dispose();
+  return image;
+}
+
+/** The cached image for one terrain block (top-left at block coordinates × block size). */
+export function getBlockImage(blockRow: number, blockColumn: number, layout: MineLayout): SkImage | null {
+  trackChanges(layout);
+  disposeRetired();
+  const key = blockKey(blockRow, blockColumn);
+  const stamp = blockStamps.get(key) ?? 0;
+  const cached = blockCache.get(key);
+  if (cached && cached.stamp === stamp) {
+    // Move to the back of the map so the least recently used blocks are evicted first.
+    blockCache.delete(key);
+    blockCache.set(key, cached);
+    return cached.image;
+  }
+  const image = renderBlock(blockRow, blockColumn, layout);
+  if (!image) return null;
+  if (cached) retire(cached.image);
+  blockCache.delete(key);
+  blockCache.set(key, { stamp, image });
+  while (blockCache.size > MAX_CACHED_BLOCKS) {
+    const [oldestKey, oldest] = blockCache.entries().next().value as [string, CachedBlock];
+    retire(oldest.image);
+    blockCache.delete(oldestKey);
+  }
+  return image;
 }

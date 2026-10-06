@@ -4,14 +4,16 @@ import { StatusBar } from 'expo-status-bar';
 import { Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { ScrollView } from 'react-native-gesture-handler';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { MAX_DEPTH, MINE_STATIONS_PER_GALLERY, VEIN_CAPACITY_PER_DEPTH, getDepthCost, idleMiners, selectMineLayout, useGameStore } from '../game/gameStore';
-import { digCost, findDigRoute, getDepositInfo, routeCost, standingTargets, tileKey } from '../game/mineLayout';
+import { MAX_DEPTH, MINE_STATIONS_PER_GALLERY, VEIN_CAPACITY_PER_DEPTH, getDepthCost, idleMiners, selectMineLayout, tileDigCost, tunnelCost, useGameStore } from '../game/gameStore';
+import { findDigRoute, getDepositInfo, standingTargets, tileKey } from '../game/mineLayout';
 import DepositPanel from '../components/DepositPanel';
+import HaulagePanel from '../components/HaulagePanel';
 import StockpileTable from '../components/StockpileTable';
 import { stockTotal } from '../game/resources';
 import { MINE_TILE_SIZE } from '../components/MineMapLayout';
 import MineScene from '../components/MineScene';
 import { GameButton, LiveSignal, SectionLabel } from '../components/GameUI';
+import RaidBanner from '../components/RaidBanner';
 
 export default function MineScreen() {
   const game = useGameStore();
@@ -24,12 +26,13 @@ export default function MineScreen() {
   const selected = selectedKey ? getDepositInfo({ ...layout, depositMined: game.depositMined }, selectedKey) : null;
   const selectedPending = !!selectedKey && game.pendingSites.some((site) => tileKey(site.faceRow, site.faceColumn) === selectedKey);
   const selectedStatus = selected?.status;
+  const { buildings } = game;
   // The tunnel diggers would cut to reach the selected deposit; only recomputed when the mine changes.
   const selectedRoute = useMemo(() => {
     if (!selectedKey || selectedStatus !== 'unreachable') return null;
     const route = findDigRoute(layout, new Set(game.digPlan), standingTargets(layout, selectedKey));
-    return route ? { tiles: route.length, cost: routeCost(route) } : null;
-  }, [layout, selectedKey, selectedStatus, game.digPlan]);
+    return route ? { tiles: route.length, cost: tunnelCost({ buildings }, route) } : null;
+  }, [layout, selectedKey, selectedStatus, game.digPlan, buildings]);
   const { height: windowHeight } = useWindowDimensions();
   const pageScrollRef = useRef<ScrollView>(null);
   // The map can be thousands of pixels tall; show a fixed window onto it and scroll inside.
@@ -59,6 +62,8 @@ export default function MineScreen() {
             <View style={styles.shiftStatus}><LiveSignal /><Text style={styles.shiftText}>SHIFT ACTIVE</Text></View>
           </View>
 
+          <RaidBanner />
+
           <View style={styles.mineHeader}>
             <View><SectionLabel>SHAFT {String(game.depth).padStart(2, '0')}</SectionLabel><Text style={styles.mineSubheading}>{String(game.depth)} {game.depth === 1 ? 'gallery' : 'galleries'} open. Follow the lift down.</Text></View>
             <View style={styles.minerCount}><Text style={styles.minerCountValue}>{String(game.miners)}</Text><Text style={styles.minerCountLabel}>MINERS{idleMiners(game) > 0 ? ` · ${String(idleMiners(game))} IDLE` : ''}</Text></View>
@@ -76,7 +81,7 @@ export default function MineScreen() {
             </Pressable>
             <Text style={styles.digHint}>
               {digMode
-                ? `Drag from a tunnel across rock · from ${String(digCost(0))} gold per tile · two fingers, right-drag or arrow keys to move`
+                ? `Drag from a tunnel across rock · from ${String(tileDigCost(game, 0))} gold per tile · two fingers, right-drag or arrow keys to move`
                 : game.digPlan.length > 0
                   ? `${String(game.digPlan.length)} tile${game.digPlan.length === 1 ? '' : 's'} left to dig`
                   : 'Drag, arrow keys or WASD to move · pinch, wheel or +/− to zoom · tap a deposit for details · double-tap to assign a miner.'}
@@ -94,6 +99,7 @@ export default function MineScreen() {
                 mineExitCapacity={game.mineExitCapacity}
                 haulTime={game.haulTime}
                 cartLoads={game.cartLoads}
+                carts={game.carts}
                 digPlan={game.digPlan}
                 digProgress={game.digProgress}
                 digMode={digMode}
@@ -140,8 +146,16 @@ export default function MineScreen() {
             <LogisticsStep index="01" title="Miners dig" detail={`${String(game.sites.length)} working miners · ${String(game.minerRate)} / sec each`} live />
             <LogisticsStep index="02" title="Miners → mine exit" detail={`Mine carts carry ${String(game.mineCartCapacity)} per load · ${String(game.lastFlow.toMineExit).replace(/\.0$/, '')} tipped last tick`} />
             <LogisticsStep index="03" title="Mine exit → mine stockpile" detail={`${String(Math.floor(stockTotal(game.mineExit)))} staged at the exit · ${String(game.lastFlow.toMineStockpile).replace(/\.0$/, '')} unloaded last tick`} />
-            <LogisticsStep index="04" title="Mine stockpile → warehouse" detail={`Surface cart carries ${String(game.warehouseCartCapacity)} per trip · ${String(game.lastFlow.toWarehouse).replace(/\.0$/, '')} delivered last tick`} />
+            <LogisticsStep index="04" title="Mine stockpile → warehouse" detail={`Surface wagons carry ${String(game.surfaceHaul)} per trip · ${String(game.lastFlow.toWarehouse).replace(/\.0$/, '')} delivered last tick`} />
           </View>
+
+          <HaulagePanel
+            sites={game.sites}
+            carts={game.carts}
+            coal={game.warehouse.coal}
+            gold={game.gold}
+            onBuyCart={game.buyCart}
+          />
 
           <View style={styles.deeperSection}>
             <View style={styles.deeperCopy}>

@@ -1,7 +1,41 @@
 import { create } from 'zustand';
 import { MINE_GALLERY_COUNT, MINE_STATIONS } from '../components/MineMapLayout';
-import { cartEventsBetween, getCartRoutes } from './haulage';
+import { cartEventsBetween, cartsOnLevel, getCartRoutes, type LevelCarts } from './haulage';
 import { RESOURCES, RESOURCE_INFO, RESOURCE_PRICE, emptyStock, type Resource, type Stock } from './resources';
+import {
+  BUILDING_INFO,
+  MAX_BUILDING_LEVEL,
+  STARTING_BUILDINGS,
+  buildingCost,
+  buildingStats,
+  buildingTime,
+  requiredKeep,
+  type BuildCost,
+  type BuildingId,
+  type BuildingLevels,
+} from './buildings';
+import {
+  ARMY_RECRUITING,
+  ARMY_UNITS,
+  MAX_MUSTERS_WAITING,
+  MUSTER_SECONDS,
+  UNIT_STATS,
+  emptyArmy,
+  unitGrowth,
+  type Army,
+  type ArmyUnit,
+} from './units';
+import { act, battleOutcome, createBattle, resolveBattle, stepAI, type Battle, type BattleAction } from './combat';
+import {
+  FIRST_RAID_AT,
+  PLUNDER_SHARE,
+  RAID_AUTO_AFTER,
+  RAID_INTERVAL,
+  RAID_WARNING,
+  raidBounty,
+  raidParty,
+  type RaidParty,
+} from './raids';
 import {
   buildMineLayout,
   checkDigStep,
@@ -13,7 +47,6 @@ import {
   digTime,
   findDigParent,
   findDigRoute,
-  routeCost,
   standingTargets,
   getDepositInfo,
   nextFreeSite,
@@ -30,15 +63,8 @@ export const FIXED_TICK_MS = 1000;
 export const COAL_REQUEST_SIZE = 20;
 export const COAL_REQUEST_REWARD = 32;
 export const MAX_DEPTH = MINE_GALLERY_COUNT;
-export const MAX_PICKAXE_LEVEL = 4;
 export const VEIN_CAPACITY_PER_DEPTH = 25;
 export const MINE_STATIONS_PER_GALLERY = MINE_STATIONS.length;
-
-export const COSTS = {
-  minerHut: { coal: 30, gold: 20 },
-  pickaxe: { coal: 20, gold: 35 },
-  warehouse: { coal: 40, gold: 30 },
-} as const;
 
 type Cost = { coal: number; gold: number };
 
@@ -47,6 +73,22 @@ type TickFlow = {
   toMineExit: number;
   toMineStockpile: number;
   toWarehouse: number;
+};
+
+/** A building being raised to `level`; done once `progress` reaches `duration` seconds. */
+export type Construction = { building: BuildingId; level: number; progress: number; duration: number };
+
+/** Raiders on their way: sighted at first, then at the gate. */
+export type Raid = { number: number; arrivesAt: number; party: RaidParty };
+
+/** What came of a raid. */
+export type RaidReport = {
+  number: number;
+  outcome: 'won' | 'lost' | 'withdrawn';
+  bounty: number;
+  losses: Partial<Record<ArmyUnit, number>>;
+  slain: number;
+  plundered: { gold: number; resources: Partial<Stock> } | null;
 };
 
 /** What a level's cart is carrying. */
@@ -58,7 +100,10 @@ type GameState = {
   gold: number;
   miners: number;
   minerRate: number;
-  pickaxeLevel: number;
+  /** Level of every stronghold building (0 = not built yet). */
+  buildings: BuildingLevels;
+  /** Buildings the builders are working on, at most one per builder. */
+  construction: Construction[];
   /** Each resource has its own stockpiles: beside the miners, at the mine exit, at the mine, in the warehouse. */
   vein: Stock;
   mineExit: Stock;
@@ -70,16 +115,17 @@ type GameState = {
   mineCapacity: number;
   warehouseCapacity: number;
   mineCartCapacity: number;
-  warehouseCartCapacity: number;
-  huts: number;
-  warehouseUpgrades: number;
+  /** Units the surface wagons move per tick on each leg (mine exit → mine → warehouse). */
+  surfaceHaul: number;
   lastFlow: TickFlow;
   /** Seconds of cart movement; only advances while the mine exit has room for another load. */
   haulTime: number;
   /** Haul time up to which cart loads and tips have already been applied. */
   haulAppliedTime: number;
-  /** What each level's cart carries, keyed by level (-1 is the entrance level). */
-  cartLoads: Record<number, CartLoad>;
+  /** What each cart carries, keyed by `cartKey(level, index)`. */
+  cartLoads: Record<string, CartLoad>;
+  /** Carts working each level (levels not listed have one). */
+  carts: LevelCarts;
   /** Where each working miner works. */
   sites: Site[];
   /** Miners on their way to a deposit whose tunnel is still being dug; they start when it's done. */
@@ -96,12 +142,29 @@ type GameState = {
   digProgress: number;
   /** Bumped whenever the dug tiles or sites change, so derived layouts and cart routes refresh. */
   layoutVersion: number;
+  /** The hold's army: creatures of each unit. */
+  army: Army;
+  /** Recruits waiting at each dwelling (they arrive gradually, so this is fractional). */
+  recruits: Record<ArmyUnit, number>;
+  /** Raids fought so far. */
+  raidsFought: number;
+  /** Game second the next raiders arrive. */
+  nextRaidAt: number;
+  /** Raiders sighted or at the gate. */
+  raid: Raid | null;
+  /** The battle at the gate, while it's fought and until the player leaves the battlefield. */
+  battle: Battle | null;
+  /** The army when the battle began (recruits joining mid-battle are kept out of it). */
+  battleArmy: Army;
+  /** The player took command; otherwise the battle fights itself at `battleDeadline`. */
+  battleCommanded: boolean;
+  battleDeadline: number;
+  raidReport: RaidReport | null;
   notice: string;
   tick: () => void;
   fulfillCoalRequest: () => void;
-  buildMinerHut: () => void;
-  forgePickaxe: () => void;
-  expandWarehouse: () => void;
+  /** Start building the next level of a building (paid now, finished by the builders over time). */
+  upgradeBuilding: (id: BuildingId) => void;
   digDeeper: () => void;
   /** Order a connected run of tiles dug; charged now, dug over time. */
   planDig: (keys: string[]) => void;
@@ -109,8 +172,24 @@ type GameState = {
   assignMiner: (key: string) => void;
   /** Take the miner off the deposit at `key`; they become idle. */
   releaseMiner: (key: string) => void;
+  /** Buy another cart and hauler for a level. */
+  buyCart: (level: number) => void;
   /** Sell whole units of a resource from the warehouse at the trading post market. */
   sellResource: (resource: Resource, amount: number | 'all') => void;
+  /** Hire waiting recruits at a unit's dwelling. */
+  recruit: (unit: ArmyUnit, amount: number | 'max') => void;
+  /** Take command of the battle at the gate (it then waits for the player's orders). */
+  commandBattle: () => void;
+  /** Order the stack whose turn it is. */
+  battleAct: (action: BattleAction) => void;
+  /** Let the raiders (or auto-battle) make their next move. */
+  battleStep: () => void;
+  setBattleAuto: (auto: boolean) => void;
+  /** Fight the rest of the battle at once. */
+  quickResolveBattle: () => void;
+  /** Leave a finished battlefield. */
+  closeBattle: () => void;
+  dismissRaidReport: () => void;
 };
 
 const roundCoal = (amount: number) => Math.round(amount * 10) / 10;
@@ -122,6 +201,153 @@ export function getDepthCost(depth: number) {
 
 export function canAfford(state: Pick<GameState, 'warehouse' | 'gold'>, cost: Cost) {
   return state.warehouse.coal >= cost.coal && state.gold >= cost.gold;
+}
+
+/** Can the treasury and warehouse pay a building cost? */
+export function canAffordBuild(state: Pick<GameState, 'warehouse' | 'gold'>, cost: BuildCost) {
+  return state.gold >= cost.gold && RESOURCES.every((resource) => state.warehouse[resource] >= (cost.resources[resource] ?? 0));
+}
+
+/** Why the next level of a building can't be started right now, or null if it can. */
+export function upgradeBlocker(
+  state: Pick<GameState, 'buildings' | 'construction' | 'warehouse' | 'gold' | 'warehouseCapacity'>,
+  id: BuildingId,
+): string | null {
+  const level = state.buildings[id];
+  const stats = buildingStats(state.buildings);
+  if (level >= MAX_BUILDING_LEVEL) return 'Fully built.';
+  if (state.construction.some((job) => job.building === id)) return 'Already under construction.';
+  if (id !== 'keep' && level >= stats.maxLevel) return `Raise the Central Keep to level ${String(level + 1)} first.`;
+  if (level === 0 && state.buildings.keep < requiredKeep(id)) return `Needs the Central Keep at level ${String(requiredKeep(id))}.`;
+  if (state.construction.length >= stats.builders) {
+    return `All ${String(stats.builders)} builder${stats.builders === 1 ? ' is' : 's are'} busy.`;
+  }
+  const cost = buildingCost(id, level + 1);
+  const tooBig = RESOURCES.find((resource) => (cost.resources[resource] ?? 0) > state.warehouseCapacity);
+  if (tooBig) {
+    return `Needs ${(cost.resources[tooBig] ?? 0).toLocaleString()} ${RESOURCE_INFO[tooBig].name.toLowerCase()}, but the warehouses hold only ${state.warehouseCapacity.toLocaleString()} each.`;
+  }
+  if (!canAffordBuild(state, cost)) return 'Not enough resources yet.';
+  return null;
+}
+
+/** Gold to dig a tile on `row`, after the research facility's discount. */
+export function tileDigCost(state: Pick<GameState, 'buildings'>, row: number) {
+  return Math.max(1, Math.round(digCost(row) * buildingStats(state.buildings).digCostFactor));
+}
+
+/** Gold to dig a whole route, after the research facility's discount. */
+export function tunnelCost(state: Pick<GameState, 'buildings'>, route: string[]) {
+  return route.reduce((sum, key) => sum + tileDigCost(state, parseKey(key).row), 0);
+}
+
+/** What the trading post pays per unit, with the gate's caravan bonus. */
+export function sellPrice(state: Pick<GameState, 'buildings'>, resource: Resource) {
+  return Math.round(RESOURCE_PRICE[resource] * (1 + buildingStats(state.buildings).tradeBonus) * 100) / 100;
+}
+
+export function coalRequestReward(state: Pick<GameState, 'buildings'>) {
+  return Math.round(COAL_REQUEST_REWARD * (1 + buildingStats(state.buildings).tradeBonus));
+}
+
+/** Can this unit be recruited (its dwelling is built and the keep is high enough)? */
+export function unitAvailable(state: Pick<GameState, 'buildings'>, unit: ArmyUnit) {
+  const { dwelling, requiresKeep } = ARMY_RECRUITING[unit];
+  return state.buildings[dwelling] >= 1 && state.buildings.keep >= requiresKeep;
+}
+
+/** How many of a unit the treasury and warehouse can pay for. */
+export function affordableRecruits(state: Pick<GameState, 'gold' | 'warehouse'>, unit: ArmyUnit) {
+  const { gold, resources } = ARMY_RECRUITING[unit];
+  let count = Math.floor(state.gold / gold);
+  for (const resource of RESOURCES) {
+    const each = resources[resource] ?? 0;
+    if (each > 0) count = Math.min(count, Math.floor(state.warehouse[resource] / each));
+  }
+  return count;
+}
+
+export function describeParty(party: RaidParty) {
+  return party.map(({ unit, count }) => `${String(count)} ${(count === 1 ? UNIT_STATS[unit].name : UNIT_STATS[unit].plural).toLowerCase()}`).join(', ');
+}
+
+type SettleState = Pick<GameState, 'gold' | 'warehouse' | 'army' | 'battleArmy' | 'elapsedSeconds' | 'raid' | 'raidsFought'>;
+
+// A battle just ended: survivors rejoin the army, and the bounty is paid or the plunder taken.
+function settleBattle(state: SettleState, battle: Battle) {
+  const { survivors, losses, slain } = battleOutcome(battle, state.battleArmy);
+  const army = { ...state.army };
+  for (const unit of ARMY_UNITS) army[unit] = Math.max(0, army[unit] - state.battleArmy[unit] + survivors[unit]);
+  const number = state.raid?.number ?? battle.raid;
+  const report: RaidReport = { number, outcome: battle.status === 'won' ? 'won' : battle.status === 'lost' ? 'lost' : 'withdrawn', bounty: 0, losses, slain, plundered: null };
+  let { gold, warehouse } = state;
+  let notice: string;
+  if (report.outcome === 'won') {
+    report.bounty = raidBounty(number);
+    gold += report.bounty;
+    notice = `Raid ${String(number)} beaten! The raiders' bounty: ${String(report.bounty)} gold.`;
+  } else if (report.outcome === 'lost') {
+    const taken: Partial<Stock> = {};
+    warehouse = { ...warehouse };
+    for (const resource of RESOURCES) {
+      const amount = Math.floor(warehouse[resource] * PLUNDER_SHARE);
+      if (amount > 0) taken[resource] = amount;
+      warehouse[resource] = roundCoal(warehouse[resource] - amount);
+    }
+    const goldTaken = Math.floor(gold * PLUNDER_SHARE);
+    gold -= goldTaken;
+    report.plundered = { gold: goldTaken, resources: taken };
+    notice = `Raid ${String(number)}: the hold fell. The raiders carried off ${String(goldTaken)} gold and a share of every stockpile.`;
+  } else {
+    notice = `Raid ${String(number)}: the raiders gave up and withdrew.`;
+  }
+  return {
+    army,
+    gold,
+    warehouse,
+    raidReport: report,
+    raid: null,
+    raidsFought: Math.max(state.raidsFought, number),
+    nextRaidAt: state.elapsedSeconds + RAID_INTERVAL,
+    notice,
+  };
+}
+
+// Apply a new battle state, settling the raid if it just ended.
+function withBattle(state: GameState, next: Battle): Partial<GameState> {
+  if (next === state.battle) return {};
+  if (state.battle?.status === 'active' && next.status !== 'active') return { battle: next, ...settleBattle(state, next) };
+  return { battle: next };
+}
+
+// The state fields that follow from building levels.
+function buildingFields(buildings: BuildingLevels) {
+  const stats = buildingStats(buildings);
+  return {
+    buildings,
+    minerRate: stats.minerRate,
+    mineCartCapacity: stats.mineCartCapacity,
+    warehouseCapacity: stats.warehouseCapacity,
+    mineCapacity: stats.mineCapacity,
+    mineExitCapacity: stats.mineCapacity,
+    surfaceHaul: stats.surfaceHaul,
+  };
+}
+
+type HireState = Pick<GameState, 'miners' | 'sites' | 'openedStations' | 'layoutVersion' | 'depth' | 'playerDug' | 'depositMined'>;
+
+// New miners move into the houses and go straight to an open face if there is one.
+function hireMiners(state: HireState, count: number) {
+  let next = { miners: state.miners, sites: state.sites, openedStations: state.openedStations, layoutVersion: state.layoutVersion };
+  let placed = 0;
+  for (let i = 0; i < count; i++) {
+    next.miners += 1;
+    const site = nextFreeSite(selectMineLayout({ ...state, ...next }));
+    if (!site) continue;
+    next = { ...next, ...withSite(next, site) };
+    placed += 1;
+  }
+  return { fields: next, placed };
 }
 
 type LayoutState = Pick<GameState, 'layoutVersion' | 'depth' | 'sites' | 'playerDug' | 'depositMined' | 'openedStations'>;
@@ -148,6 +374,19 @@ function withSite(state: Pick<GameState, 'sites' | 'openedStations' | 'layoutVer
   };
 }
 
+/** Price of the next cart for a level that already has `current` carts. */
+export function cartCost(current: number): Cost {
+  const scale = 1.6 ** Math.max(0, current - 1);
+  return { coal: Math.round(25 * scale), gold: Math.round(40 * scale) };
+}
+
+/** Working miners on each level (a level can use at most one cart per miner). */
+export function minersByLevel(sites: Site[]) {
+  const counts = new Map<number, number>();
+  for (const site of sites) counts.set(siteLevel(site), (counts.get(siteLevel(site)) ?? 0) + 1);
+  return counts;
+}
+
 export function idleMiners(state: Pick<GameState, 'miners' | 'sites' | 'pendingSites'>) {
   return Math.max(0, state.miners - state.sites.length - state.pendingSites.length);
 }
@@ -158,6 +397,7 @@ export function siteResource(site: Site): Resource {
 }
 
 const startingSites = [stationSite(-1, 0), stationSite(-1, 1)];
+const startingStats = buildingStats(STARTING_BUILDINGS);
 
 const withArticle = (noun: string) => `${/^[aeiou]/.test(noun) ? 'an' : 'a'} ${noun}`;
 
@@ -181,25 +421,25 @@ export const useGameStore = create<GameState>((set) => ({
   elapsedSeconds: 0,
   depth: 1,
   gold: 120,
-  miners: 2,
-  minerRate: 0.5,
-  pickaxeLevel: 1,
+  miners: startingStats.beds,
+  minerRate: startingStats.minerRate,
+  buildings: STARTING_BUILDINGS,
+  construction: [],
   vein: emptyStock(),
   mineExit: emptyStock(),
   mineStock: emptyStock(),
   warehouse: { ...emptyStock(), coal: 16 },
   veinCapacity: 50,
-  mineExitCapacity: 50,
-  mineCapacity: 50,
-  warehouseCapacity: 100,
-  mineCartCapacity: 12,
-  warehouseCartCapacity: 10,
-  huts: 1,
-  warehouseUpgrades: 0,
+  mineExitCapacity: startingStats.mineCapacity,
+  mineCapacity: startingStats.mineCapacity,
+  warehouseCapacity: startingStats.warehouseCapacity,
+  mineCartCapacity: startingStats.mineCartCapacity,
+  surfaceHaul: startingStats.surfaceHaul,
   lastFlow: { mined: 0, toMineExit: 0, toMineStockpile: 0, toWarehouse: 0 },
   haulTime: 0,
   haulAppliedTime: 0,
   cartLoads: {},
+  carts: {},
   sites: startingSites,
   pendingSites: [],
   depositMined: {},
@@ -208,6 +448,16 @@ export const useGameStore = create<GameState>((set) => ({
   digPlan: [],
   digProgress: 0,
   layoutVersion: 0,
+  army: { ...emptyArmy(), pikeman: 12 },
+  raidsFought: 0,
+  recruits: { ...emptyArmy(), pikeman: 7 },
+  nextRaidAt: FIRST_RAID_AT,
+  raid: null,
+  battle: null,
+  battleArmy: emptyArmy(),
+  battleCommanded: false,
+  battleDeadline: 0,
+  raidReport: null,
   notice: 'Two miners are already working the first seam.',
 
   tick: () => set((state) => {
@@ -253,25 +503,25 @@ export const useGameStore = create<GameState>((set) => ({
     const mineExitIn = { ...state.mineExit };
     let cartLoads = state.cartLoads;
     let toMineExit = 0;
-    const routes = getCartRoutes(selectMineLayout(state));
-    for (const [level, route] of routes) {
+    const routes = getCartRoutes(selectMineLayout(state), state.carts);
+    for (const [cart, route] of routes) {
       const tips = cartEventsBetween(route, from, to, 'tip');
       const loads = cartEventsBetween(route, from, to, 'load');
       if (tips.length === 0 && loads.length === 0) continue;
       cartLoads = cartLoads === state.cartLoads ? { ...cartLoads } : cartLoads;
       if (tips.length > 0) {
-        const carried = cartLoads[level] as CartLoad | undefined;
+        const carried = cartLoads[cart] as CartLoad | undefined;
         if (carried && carried.amount > 0) {
           mineExitIn[carried.resource] = roundCoal(mineExitIn[carried.resource] + carried.amount);
           toMineExit = roundCoal(toMineExit + carried.amount);
         }
-        delete cartLoads[level];
+        delete cartLoads[cart];
       }
       for (const trip of loads) {
         const resource = route.resources[trip];
         const take = Math.min(vein[resource], state.mineCartCapacity);
         vein[resource] = roundCoal(vein[resource] - take);
-        cartLoads[level] = { resource, amount: take };
+        cartLoads[cart] = { resource, amount: take };
       }
     }
 
@@ -285,14 +535,14 @@ export const useGameStore = create<GameState>((set) => ({
     );
 
     // Surface hauling: mine exit → mine stockpile → warehouse, in the same tick as a delivery.
-    const toMine = transfer(mineExitIn, state.mineStock, state.mineCartCapacity, state.mineCapacity);
-    const toStore = transfer(toMine.to, state.warehouse, state.warehouseCartCapacity, state.warehouseCapacity);
+    const toMine = transfer(mineExitIn, state.mineStock, state.surfaceHaul, state.mineCapacity);
+    const toStore = transfer(toMine.to, state.warehouse, state.surfaceHaul, state.warehouseCapacity);
 
     // Diggers work through the plan one tile at a time.
     let { digPlan, digProgress, playerDug, pendingSites } = state;
     let layoutVersion = state.layoutVersion + (layoutChanged ? 1 : 0);
     if (digPlan.length > 0) {
-      digProgress += 1;
+      digProgress = roundCoal(digProgress + buildingStats(state.buildings).digSpeed);
       if (digProgress >= digTime(parseKey(digPlan[0]).row)) {
         playerDug = [...playerDug, digPlan[0]];
         digPlan = digPlan.slice(1);
@@ -312,8 +562,82 @@ export const useGameStore = create<GameState>((set) => ({
       if (starting.length > 0) notice = `The tunnel is through: a miner started on the ${RESOURCE_INFO[siteResource(starting[0])].deposit.toLowerCase()}.`;
     }
 
+    // Builders: each job advances a second; finished levels take effect at once.
+    let { buildings, construction } = state;
+    let built: Partial<GameState> = {};
+    let gold = state.gold;
+    if (construction.length > 0) {
+      construction = construction.map((job) => ({ ...job, progress: job.progress + 1 }));
+      const finished = construction.filter((job) => job.progress >= job.duration);
+      if (finished.length > 0) {
+        construction = construction.filter((job) => job.progress < job.duration);
+        buildings = { ...buildings };
+        for (const job of finished) buildings[job.building] = job.level;
+        built = buildingFields(buildings);
+        const job = finished[0];
+        notice = `${BUILDING_INFO[job.building].name} reached level ${String(job.level)}.`;
+        const newBeds = buildingStats(buildings).beds - state.miners;
+        if (newBeds > 0) {
+          const hired = hireMiners({ ...state, sites, layoutVersion }, newBeds);
+          sites = hired.fields.sites;
+          layoutVersion = hired.fields.layoutVersion;
+          built = { ...built, miners: hired.fields.miners, openedStations: hired.fields.openedStations };
+          const waiting = newBeds - hired.placed;
+          notice += ` ${String(newBeds)} new miner${newBeds === 1 ? '' : 's'} moved in${waiting > 0 ? `; ${String(waiting)} wait for work, so tap a deposit in the mine to assign them` : ' and started work'}.`;
+        }
+      }
+    }
+    // The keep collects taxes every five seconds.
+    const elapsedSeconds = state.elapsedSeconds + 1;
+    if (elapsedSeconds % 5 === 0) gold += buildingStats(buildings).taxPerFiveSeconds;
+
+    // Dwellings: new recruits trickle in over each muster, and wait (up to a few musters' worth).
+    const recruits = { ...state.recruits };
+    for (const unit of ARMY_UNITS) {
+      if (!unitAvailable({ buildings }, unit)) continue;
+      const growth = unitGrowth(unit, buildings[ARMY_RECRUITING[unit].dwelling]);
+      recruits[unit] = Math.min(growth * MAX_MUSTERS_WAITING, Math.round((recruits[unit] + growth / MUSTER_SECONDS) * 1000) / 1000);
+    }
+
+    // Raids: sighted a minute out, then a battle at the gate. Nobody in command? It fights itself.
+    let raidFields: Partial<GameState> = {};
+    const { raid, battle } = state;
+    const battleRunning = battle?.status === 'active';
+    if (!raid && !battleRunning && elapsedSeconds + RAID_WARNING >= state.nextRaidAt) {
+      const number = state.raidsFought + 1;
+      const party = raidParty(number);
+      raidFields = { raid: { number, arrivesAt: state.nextRaidAt, party } };
+      notice = `Raiders sighted: ${describeParty(party)}. They reach the gate in ${String(state.nextRaidAt - elapsedSeconds)} s.`;
+    } else if (raid && !battleRunning && elapsedSeconds >= raid.arrivesAt) {
+      const stats = buildingStats(buildings);
+      raidFields = {
+        battle: createBattle({
+          raid: raid.number,
+          army: state.army,
+          enemies: raid.party,
+          wallHp: stats.wallHp,
+          gateHp: stats.gateHp,
+          towers: stats.towers,
+          towerDamage: stats.towerDamage,
+          attackBonus: stats.attackBonus,
+          defenceBonus: stats.defenceBonus,
+        }),
+        battleArmy: state.army,
+        battleCommanded: false,
+        battleDeadline: elapsedSeconds + RAID_AUTO_AFTER,
+      };
+      notice = `Raiders at the gate! Take command, or the defence fights on its own in ${String(RAID_AUTO_AFTER)} s.`;
+    } else if (battle && battleRunning && !state.battleCommanded && elapsedSeconds >= state.battleDeadline) {
+      const settled = settleBattle({ ...state, gold, warehouse: toStore.to, elapsedSeconds }, resolveBattle(battle));
+      raidFields = { ...settled, battle: null };
+      notice = settled.notice;
+    }
+
     return {
-      elapsedSeconds: state.elapsedSeconds + 1,
+      ...built,
+      construction,
+      gold,
+      elapsedSeconds,
       digPlan,
       digProgress,
       playerDug,
@@ -321,7 +645,6 @@ export const useGameStore = create<GameState>((set) => ({
       layoutVersion,
       sites,
       depositMined,
-      notice,
       vein,
       mineExit: toMine.from,
       mineStock: toStore.from,
@@ -330,6 +653,9 @@ export const useGameStore = create<GameState>((set) => ({
       haulTime: canHaul ? state.haulTime + 1 : state.haulTime,
       haulAppliedTime: to,
       cartLoads,
+      recruits,
+      ...raidFields,
+      notice,
     };
   }),
 
@@ -339,33 +665,8 @@ export const useGameStore = create<GameState>((set) => ({
     }
     return {
       warehouse: { ...state.warehouse, coal: roundCoal(state.warehouse.coal - COAL_REQUEST_SIZE) },
-      gold: state.gold + COAL_REQUEST_REWARD,
-      notice: `Delivered ${String(COAL_REQUEST_SIZE)} coal. The trading post paid ${String(COAL_REQUEST_REWARD)} gold.`,
-    };
-  }),
-
-  buildMinerHut: () => set((state) => {
-    const cost = COSTS.minerHut;
-    if (!canAfford(state, cost)) {
-      return { notice: `A miner hut costs ${String(cost.coal)} coal and ${String(cost.gold)} gold.` };
-    }
-    // New miners go straight to an open coal face if there is one; otherwise they wait to be assigned.
-    const site = nextFreeSite(selectMineLayout(state));
-    const paid = {
-      warehouse: { ...state.warehouse, coal: roundCoal(state.warehouse.coal - cost.coal) },
-      gold: state.gold - cost.gold,
-      miners: state.miners + 1,
-      huts: state.huts + 1,
-    };
-    if (!site) {
-      return { ...paid, notice: 'A new miner is waiting for work. Dig to a deposit and tap it to assign them.' };
-    }
-    return {
-      ...paid,
-      ...withSite(state, site),
-      notice: site.kind === 'deposit'
-        ? `A new miner set to work on the ${RESOURCE_INFO[siteResource(site)].deposit.toLowerCase()} you uncovered.`
-        : 'A new miner joined the shift at a gallery station.',
+      gold: state.gold + coalRequestReward(state),
+      notice: `Delivered ${String(COAL_REQUEST_SIZE)} coal. The trading post paid ${String(coalRequestReward(state))} gold.`,
     };
   }),
 
@@ -382,7 +683,7 @@ export const useGameStore = create<GameState>((set) => ({
       const layout = selectMineLayout(state);
       const route = findDigRoute(layout, new Set(state.digPlan), standingTargets(layout, key));
       if (!route) return { notice: 'There’s no way to tunnel to that deposit from here.' };
-      const cost = routeCost(route);
+      const cost = tunnelCost(state, route);
       if (state.gold < cost) return { notice: `Tunnelling to that deposit costs ${String(cost)} gold (${String(route.length)} tiles).` };
       const stand = parseKey(route[route.length - 1]);
       return {
@@ -413,12 +714,30 @@ export const useGameStore = create<GameState>((set) => ({
     return { sites, layoutVersion: state.layoutVersion + 1, notice: 'The miner left the deposit and is idle.' };
   }),
 
+  buyCart: (level) => set((state) => {
+    const current = cartsOnLevel(state.carts, level);
+    const miners = minersByLevel(state.sites).get(level) ?? 0;
+    if (current >= miners) {
+      return { notice: 'That level already has a cart for every miner. Add miners first.' };
+    }
+    const cost = cartCost(current);
+    if (!canAfford(state, cost)) {
+      return { notice: `Another cart costs ${String(cost.coal)} coal and ${String(cost.gold)} gold.` };
+    }
+    return {
+      warehouse: { ...state.warehouse, coal: roundCoal(state.warehouse.coal - cost.coal) },
+      gold: state.gold - cost.gold,
+      carts: { ...state.carts, [level]: current + 1 },
+      notice: `A new cart and hauler joined ${level < 0 ? 'the entrance level' : `gallery ${String(level + 1)}`} (${String(current + 1)} carts).`,
+    };
+  }),
+
   sellResource: (resource, amount) => set((state) => {
     const available = Math.floor(state.warehouse[resource]);
     const units = amount === 'all' ? available : Math.min(available, Math.floor(amount));
     const { name } = RESOURCE_INFO[resource];
     if (units <= 0) return { notice: `There is no ${name.toLowerCase()} in the warehouse to sell.` };
-    const earned = units * RESOURCE_PRICE[resource];
+    const earned = Math.floor(units * sellPrice(state, resource));
     return {
       warehouse: { ...state.warehouse, [resource]: roundCoal(state.warehouse[resource] - units) },
       gold: state.gold + earned,
@@ -426,33 +745,54 @@ export const useGameStore = create<GameState>((set) => ({
     };
   }),
 
-  forgePickaxe: () => set((state) => {
-    const cost = COSTS.pickaxe;
-    if (state.pickaxeLevel >= MAX_PICKAXE_LEVEL) return { notice: 'Your pickaxes are fully forged.' };
-    if (!canAfford(state, cost)) {
-      return { notice: `Forging better picks costs ${String(cost.coal)} coal and ${String(cost.gold)} gold.` };
+  recruit: (unit, amount) => set((state) => {
+    const stats = UNIT_STATS[unit];
+    if (!unitAvailable(state, unit)) return { notice: `${stats.plural} can't be recruited yet.` };
+    const waiting = Math.floor(state.recruits[unit]);
+    const count = Math.min(waiting, affordableRecruits(state, unit), amount === 'max' ? Infinity : amount);
+    if (count <= 0) {
+      return { notice: waiting <= 0 ? `No ${stats.plural.toLowerCase()} are waiting to be recruited.` : `You can't afford any ${stats.plural.toLowerCase()}.` };
     }
+    const { gold, resources } = ARMY_RECRUITING[unit];
+    const warehouse = { ...state.warehouse };
+    for (const resource of RESOURCES) warehouse[resource] = roundCoal(warehouse[resource] - (resources[resource] ?? 0) * count);
     return {
-      warehouse: { ...state.warehouse, coal: roundCoal(state.warehouse.coal - cost.coal) },
-      gold: state.gold - cost.gold,
-      pickaxeLevel: state.pickaxeLevel + 1,
-      minerRate: roundCoal(state.minerRate + 0.25),
-      notice: 'The new pickaxes let every miner dig 0.25 more per second.',
+      gold: state.gold - gold * count,
+      warehouse,
+      army: { ...state.army, [unit]: state.army[unit] + count },
+      recruits: { ...state.recruits, [unit]: state.recruits[unit] - count },
+      notice: `Recruited ${String(count)} ${(count === 1 ? stats.name : stats.plural).toLowerCase()}.`,
     };
   }),
 
-  expandWarehouse: () => set((state) => {
-    const cost = COSTS.warehouse;
-    if (!canAfford(state, cost)) {
-      return { notice: `Warehouse expansion costs ${String(cost.coal)} coal and ${String(cost.gold)} gold.` };
-    }
+  commandBattle: () => set((state) => (state.battle?.status === 'active' ? { battleCommanded: true } : {})),
+
+  battleAct: (action) => set((state) => (state.battle ? withBattle(state, act(state.battle, action)) : {})),
+
+  battleStep: () => set((state) => (state.battle ? withBattle(state, stepAI(state.battle)) : {})),
+
+  setBattleAuto: (auto) => set((state) => (state.battle ? { battle: { ...state.battle, auto } } : {})),
+
+  quickResolveBattle: () => set((state) => (state.battle ? withBattle(state, resolveBattle(state.battle)) : {})),
+
+  closeBattle: () => set((state) => (state.battle && state.battle.status !== 'active' ? { battle: null } : {})),
+
+  dismissRaidReport: () => set({ raidReport: null }),
+
+  upgradeBuilding: (id) => set((state) => {
+    const blocker = upgradeBlocker(state, id);
+    const { name } = BUILDING_INFO[id];
+    if (blocker) return { notice: `${name}: ${blocker}` };
+    const level = state.buildings[id] + 1;
+    const cost = buildingCost(id, level);
+    const warehouse = { ...state.warehouse };
+    for (const resource of RESOURCES) warehouse[resource] = roundCoal(warehouse[resource] - (cost.resources[resource] ?? 0));
+    const duration = buildingTime(level);
     return {
-      warehouse: { ...state.warehouse, coal: roundCoal(state.warehouse.coal - cost.coal) },
       gold: state.gold - cost.gold,
-      warehouseCapacity: state.warehouseCapacity + 50,
-      warehouseCartCapacity: state.warehouseCartCapacity + 5,
-      warehouseUpgrades: state.warehouseUpgrades + 1,
-      notice: 'Every warehouse stockpile holds 50 more, and the surface cart hauls 5 more per trip.',
+      warehouse,
+      construction: [...state.construction, { building: id, level, progress: 0, duration }],
+      notice: `Builders started on the ${name} (level ${String(level)}, ${String(duration)} s).`,
     };
   }),
 
@@ -487,7 +827,7 @@ export const useGameStore = create<GameState>((set) => ({
         reason = check.reason;
         break;
       }
-      const cost = digCost(parseKey(key).row);
+      const cost = tileDigCost(state, parseKey(key).row);
       if (gold < cost) {
         reason = 'Not enough gold for the rest of the tunnel.';
         break;

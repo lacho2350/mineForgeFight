@@ -2,7 +2,10 @@ import { memo, useMemo } from 'react';
 import {
   Canvas,
   DashPathEffect,
+  FilterMode,
   Group,
+  Image,
+  MipmapMode,
   PaintStyle,
   Picture,
   Rect,
@@ -12,10 +15,10 @@ import {
 } from '@shopify/react-native-skia';
 import { StyleSheet } from 'react-native';
 import { useDerivedValue, type SharedValue } from 'react-native-reanimated';
-import { getCartRoutes } from '../game/haulage';
+import { getCartRoutes, type LevelCarts } from '../game/haulage';
 import { digTime, isDug, parseKey, type MineLayout, type Site } from '../game/mineLayout';
 import { MINE_SURFACE_ROWS, MINE_TILE_SIZE } from './MineMapLayout';
-import { TERRAIN_CHUNKS, TERRAIN_CHUNK_COLUMNS, getChunkPicture, getSurfacePicture } from './mineTerrain';
+import { TERRAIN_BLOCK_COLUMNS, TERRAIN_BLOCK_COUNT_X, TERRAIN_BLOCK_ROWS, getBlockImage } from './mineTerrain';
 import { ExitStockpiles, LevelCart, MinerStockpiles } from './MineHaulers';
 import type { CartLoad } from '../game/gameStore';
 import type { Resource } from '../game/resources';
@@ -79,29 +82,39 @@ function SiteMiners({ sites, picture }: { sites: Site[]; picture: SkPicture }) {
 /** The part of the map (in map pixels, with some margin) the camera can currently see. */
 export type MineView = { left: number; top: number; right: number; bottom: number };
 
-// Terrain is cached in row chunks (see mineTerrain); only chunks inside the view are drawn,
-// so the cost stays the same however big the claim is.
-function TerrainChunks({ view, layout }: { view: MineView; layout: MineLayout }) {
-  const firstRow = Math.max(MINE_SURFACE_ROWS, Math.floor(view.top / tileSize));
-  const lastRow = Math.min(layout.rows - 1, Math.ceil(view.bottom / tileSize));
-  const chunkWidth = TERRAIN_CHUNK_COLUMNS * tileSize;
-  const firstChunk = Math.max(0, Math.floor(view.left / chunkWidth));
-  const lastChunk = Math.min(TERRAIN_CHUNKS - 1, Math.floor(view.right / chunkWidth));
-  const chunks: [number, number][] = [];
+// Terrain is cached as images in blocks of 16 × 4 tiles (see mineTerrain); only blocks inside the
+// view are drawn, one image each, so the cost stays small however big the claim is. Nearest-neighbour
+// sampling keeps the pixel art crisp when zoomed in.
+const pixelSampling = { filter: FilterMode.Nearest, mipmap: MipmapMode.None };
+
+function TerrainBlocks({ view, layout }: { view: MineView; layout: MineLayout }) {
+  const blockWidth = TERRAIN_BLOCK_COLUMNS * tileSize;
+  const blockHeight = TERRAIN_BLOCK_ROWS * tileSize;
+  const firstRow = Math.max(0, Math.floor(view.top / blockHeight));
+  const lastRow = Math.min(Math.ceil(layout.rows / TERRAIN_BLOCK_ROWS) - 1, Math.floor(view.bottom / blockHeight));
+  const firstColumn = Math.max(0, Math.floor(view.left / blockWidth));
+  const lastColumn = Math.min(TERRAIN_BLOCK_COUNT_X - 1, Math.floor(view.right / blockWidth));
+  const blocks: [number, number][] = [];
   for (let row = firstRow; row <= lastRow; row += 1) {
-    for (let chunk = firstChunk; chunk <= lastChunk; chunk += 1) chunks.push([row, chunk]);
+    for (let column = firstColumn; column <= lastColumn; column += 1) blocks.push([row, column]);
   }
 
-  return (
-    <Group>
-      {view.top < MINE_SURFACE_ROWS * tileSize && <Picture picture={getSurfacePicture()} />}
-      {chunks.map(([row, chunk]) => (
-        <Group key={`chunk-${String(row)}-${String(chunk)}`} transform={[{ translateY: row * tileSize }]}>
-          <Picture picture={getChunkPicture(row, chunk, layout)} />
-        </Group>
-      ))}
-    </Group>
-  );
+  return blocks.map(([row, column]) => {
+    const image = getBlockImage(row, column, layout);
+    if (!image) return null;
+    return (
+      <Image
+        key={`block-${String(row)}-${String(column)}`}
+        image={image}
+        x={column * blockWidth}
+        y={row * blockHeight}
+        width={image.width()}
+        height={image.height()}
+        sampling={pixelSampling}
+        antiAlias={false}
+      />
+    );
+  });
 }
 
 export type DigOverlayState = {
@@ -195,8 +208,10 @@ export type MineSceneCanvasProps = {
   exitPileSteps: Record<Resource, number>;
   /** Smoothed haul time that drives the carts (see MineViewport's useHaulClock). */
   time: SharedValue<number>;
-  /** What each level's cart carries, keyed by level. */
-  cartLoads: Record<number, CartLoad>;
+  /** What each cart carries, keyed by cart. */
+  cartLoads: Record<string, CartLoad>;
+  /** Carts working each level. */
+  carts: LevelCarts;
   dig: DigOverlayState;
   /** Tile the player tapped, outlined. */
   selectedKey: string | null;
@@ -216,6 +231,7 @@ function MineSceneCanvas({
   exitPileSteps,
   time,
   cartLoads,
+  carts,
   dig,
   selectedKey,
 }: MineSceneCanvasProps) {
@@ -231,17 +247,17 @@ function MineSceneCanvas({
     return x + tileSize >= view.left && x <= view.right && y + tileSize >= view.top && y <= view.bottom;
   });
   // Carts ride the main lift to the surface, so every cart is drawn, not just on-screen ones.
-  const routes = [...getCartRoutes(layout)];
+  const routes = [...getCartRoutes(layout, carts)];
 
   return (
     // Skia's web Canvas hands `style` straight to the DOM, so it must be a plain object, not an array.
     <Canvas style={{ ...styles.canvas, width, height }}>
       <Rect x={0} y={0} width={width} height={height} color="#0d0a08" />
       <Group transform={transform}>
-        <TerrainChunks view={view} layout={layout} />
+        <TerrainBlocks view={view} layout={layout} />
         {view.top < MINE_SURFACE_ROWS * tileSize && <ExitStockpiles steps={exitPileSteps} />}
-        {routes.map(([level, route]) => (
-          <LevelCart key={`cart-${String(level)}`} route={route} time={time} load={cartLoads[level] as CartLoad | undefined} />
+        {routes.map(([cart, route]) => (
+          <LevelCart key={`cart-${cart}`} route={route} time={time} load={cartLoads[cart] as CartLoad | undefined} />
         ))}
         <SiteMiners sites={visibleSites} picture={minerPicture} />
         <MinerStockpiles sites={visibleSites} steps={minerPileSteps} />

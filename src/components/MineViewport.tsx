@@ -10,6 +10,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { scheduleOnRN } from 'react-native-worklets';
 import { FIXED_TICK_MS, type CartLoad } from '../game/gameStore';
+import type { LevelCarts } from '../game/haulage';
 import { RESOURCES, type Resource, type Stock } from '../game/resources';
 import { checkDigStep, depositRemaining, findDigParent, parseKey, tileKey, type MineLayout } from '../game/mineLayout';
 import MinePickaxe from './MinePickaxe';
@@ -38,8 +39,10 @@ export type MineSceneProps = {
   mineExitCapacity: number;
   /** The simulation's haul time; carts are drawn where the shared schedule puts them. */
   haulTime: number;
-  /** What each level's cart carries, keyed by level. */
-  cartLoads: Record<number, CartLoad>;
+  /** What each cart carries, keyed by cart. */
+  cartLoads: Record<string, CartLoad>;
+  /** Carts working each level. */
+  carts: LevelCarts;
   digPlan: string[];
   digProgress: number;
   /** While on, one finger plans tunnels; two fingers still pan and zoom. */
@@ -81,6 +84,7 @@ export default function MineViewport({
   mineExitCapacity,
   haulTime,
   cartLoads,
+  carts,
   digPlan,
   digProgress,
   digMode,
@@ -350,6 +354,7 @@ export default function MineViewport({
             exitPileSteps,
             time,
             cartLoads,
+            carts,
             dig,
             selectedKey,
           })}
@@ -487,7 +492,10 @@ function useHaulClock(haulTime: number) {
   }, [haulTime, anchor, elapsed]);
 
   useFrameCallback((frame) => {
-    elapsed.set(Math.min(1, elapsed.get() + (frame.timeSincePreviousFrame ?? 16) / FIXED_TICK_MS));
+    // Only write while the clock is moving: an unchanged value would still make the canvas redraw.
+    const before = elapsed.get();
+    if (before >= 1 && time.get() === anchor.get()) return;
+    elapsed.set(Math.min(1, before + (frame.timeSincePreviousFrame ?? 16) / FIXED_TICK_MS));
     time.set(anchor.get() - 1 + elapsed.get());
   });
 
