@@ -15,6 +15,25 @@ export const RAID_WARNING = 60;
 export const RAID_AUTO_AFTER = 30;
 /** Share of the treasury and of each warehouse resource the raiders carry off if they win. */
 export const PLUNDER_SHARE = 0.3;
+/** Beaten in the field, the hold loses half as much (the raiders only reach the outskirts)… */
+export const FIELD_PLUNDER_SHARE = PLUNDER_SHARE / 2;
+/** …and winning in the field pays this much more bounty. */
+export const FIELD_BOUNTY = 1.5;
+
+/**
+ * Raid `n` comes as a raiding party pillaging the fields (met by the army in the open) or a siege army
+ * storming the walls. The first two are raiding parties; after that about half of each, by the raid's number.
+ */
+export type RaidKind = 'field' | 'siege';
+export function raidKind(n: number): RaidKind {
+  if (n <= 2) return 'field';
+  let h = Math.imul(n ^ 0x2c1b3c6d, 0x297a2d39);
+  h ^= h >>> 15;
+  return ((h >>> 0) % 100) < 50 ? 'siege' : 'field';
+}
+
+// Raiders that only come with a siege army: they're for breaking walls.
+const SIEGE_ONLY: EnemyUnit[] = ['ogre', 'cyclops'];
 
 export type RaidParty = { unit: EnemyUnit; count: number }[];
 
@@ -85,8 +104,8 @@ export function raidSide(n: number): MapSide {
 // Raid number from which each raider joins in.
 const JOINS_AT: Record<EnemyUnit, number> = { goblin: 1, wolfRider: 2, orcArcher: 2, harpy: 4, ogre: 5, cyclops: 8, behemoth: 11 };
 
-/** Who comes on raid `n` of this strength: a few stacks sharing it, stronger raiders as raids go on. */
-export function raidParty(n: number, strength: number): RaidParty {
+/** Who comes on raid `n` of this strength: a few stacks sharing it, stronger raiders as raids go on (wall-breakers only with a siege). */
+export function raidParty(n: number, strength: number, kind: RaidKind = 'siege'): RaidParty {
   let seed = Math.imul(n, 2654435761) | 0;
   const random = () => {
     seed = (seed + 0x6d2b79f5) | 0;
@@ -94,7 +113,7 @@ export function raidParty(n: number, strength: number): RaidParty {
     t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
-  const allowed = (Object.keys(JOINS_AT) as EnemyUnit[]).filter((unit) => n >= JOINS_AT[unit]);
+  const allowed = (Object.keys(JOINS_AT) as EnemyUnit[]).filter((unit) => n >= JOINS_AT[unit] && (kind === 'siege' || !SIEGE_ONLY.includes(unit)));
   const stacks = Math.min(7, 2 + Math.floor((n - 1) / 2));
   const share = strength / stacks;
   const party = new Map<EnemyUnit, number>();

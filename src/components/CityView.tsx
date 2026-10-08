@@ -303,7 +303,7 @@ function CityView({
           {size.width > 0 && (
             <GameScene key={canvasKey} width={size.width} height={size.height} camX={camX} camY={camY} zoom={zoom} selected={selected} ghost={ghost} active={active} />
           )}
-          <Animated.View pointerEvents="none" style={[styles.badges, follow]}>
+          <Animated.View style={[styles.badges, { pointerEvents: 'none' }, follow]}>
             <Badges buildings={buildings} placements={placements} />
           </Animated.View>
         </View>

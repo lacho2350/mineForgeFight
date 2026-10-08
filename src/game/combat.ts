@@ -1,9 +1,10 @@
 // Turn-based hex battles in the spirit of Heroes of Might and Magic III: stacks of creatures take
-// turns by speed, move and strike, shooters shoot, defenders retaliate. Raiders come from the left,
-// after crossing the traps on their side of the belt; the hold's army stands on the right behind the
-// wall, with the gate in the middle and towers shooting every round. A flooded moat runs in front of
-// the wall: raiders on foot who wade in stop there and are hurt every round they stay. Pure TS (no React/Skia),
-// deterministic from the battle's seed.
+// turns by speed, move and strike, shooters shoot, defenders retaliate. Two kinds of battle: a **siege**,
+// where the raiders come from the left after crossing the traps on their side of the belt and the hold's
+// army stands on the right behind the wall, with the gate in the middle, towers shooting every round,
+// boiling oil and a flooded moat in front of the wall (raiders on foot who wade in stop there and are hurt
+// every round they stay); and a **field battle** out in the open, troops against troops with none of that.
+// Pure TS (no React/Skia), deterministic from the battle's seed.
 import type { UnitBonus } from './techs';
 import { TRAP_DAMAGE, type TrapCounts } from './traps';
 import { ARMY_UNITS, UNIT_STATS, type Army, type ArmyUnit, type UnitId } from './units';
@@ -54,9 +55,13 @@ export type BattleEvent = {
 };
 
 export type BattleStatus = 'active' | 'won' | 'lost' | 'withdrawn';
+/** A siege of the hold (walls, gate, towers, oil, moat and traps fight too) or a battle in the open field (troops only). */
+export type BattleKind = 'siege' | 'field';
 
 export type Battle = {
   raid: number;
+  /** Missing in battles saved before field battles: a siege. */
+  kind?: BattleKind;
   rng: number;
   round: number;
   stacks: Stack[];
@@ -176,6 +181,7 @@ function spreadRows(count: number) {
 }
 
 export function createBattle({
+  kind = 'siege',
   raid,
   army,
   enemies,
@@ -193,6 +199,8 @@ export function createBattle({
   moatAtGate = false,
   unitBonus = {},
 }: {
+  /** In the field none of the hold's defences take part: no wall, gate, towers, oil, moat or traps. */
+  kind?: BattleKind;
   raid: number;
   army: Army;
   enemies: { unit: UnitId; count: number }[];
@@ -242,8 +250,9 @@ export function createBattle({
   deploy(ARMY_UNITS.filter((unit) => army[unit] > 0).map((unit) => ({ unit, count: army[unit] })), 'defender', BATTLE_COLS - 2, BATTLE_COLS - 1);
   deploy(enemies.filter((enemy) => enemy.count > 0), 'attacker', 1, 0);
 
+  const siege = kind === 'siege';
   const walls: WallPiece[] = [];
-  if (wallHp > 0) {
+  if (siege && wallHp > 0) {
     for (let row = 0; row < BATTLE_ROWS; row++) {
       if (row !== GATE_ROW) walls.push({ col: WALL_COL, row, hp: wallHp, maxHp: wallHp, gate: false });
       else if (gateHp > 0) walls.push({ col: WALL_COL, row, hp: gateHp, maxHp: gateHp, gate: true });
@@ -252,16 +261,17 @@ export function createBattle({
 
   const battle: Battle = {
     raid,
+    kind,
     rng: (raid * 7919 + 17) | 0,
     round: 0,
     stacks,
     walls,
-    towers,
+    towers: siege ? towers : 0,
     towerDamage,
     towerShots,
-    wallOil,
-    moat: moatDamage,
-    moatAtGate,
+    wallOil: siege ? wallOil : 0,
+    moat: siege ? moatDamage : 0,
+    moatAtGate: siege && moatAtGate,
     bonus: { attack: attackBonus, defence: defenceBonus },
     unitBonus,
     queue: [],
@@ -270,7 +280,7 @@ export function createBattle({
     log: [],
     last: [],
   };
-  if (traps) springTraps(battle, traps, trapPower);
+  if (traps && siege) springTraps(battle, traps, trapPower);
   // With no army to defend it, the hold has only its towers: they get a few volleys as the raiders come.
   if (living(battle, 'defender').length === 0) {
     for (let volley = 0; volley < 3 && battle.towers > 0 && living(battle, 'attacker').length > 0; volley++) towerVolley(battle);

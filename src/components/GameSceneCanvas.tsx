@@ -1,6 +1,7 @@
 import { memo, useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from 'react';
 import {
   Atlas,
+  BlurMask,
   Canvas,
   Circle,
   Group,
@@ -54,6 +55,7 @@ import {
   type Plot,
 } from './GameSceneLayout';
 import { spritePixels } from './unitSprites';
+import { collectPaths, parseSvg, svgPath, useSvgPaths } from './skiaPaths';
 
 /** A tile in a stroke being painted (roads or traps), and whether it can take what's painted. */
 export type PaintTile = { x: number; y: number; ok: boolean };
@@ -83,12 +85,16 @@ const STILL_SCALE = Math.min(1.6, PixelRatio.get() * 1.25);
 
 // ——— Materials: every building changes look every five levels ———
 
-type Mat = { left: string; right: string; top: string; roof: string; roofDark: string };
+// Stronghold-style: plank huts under thatch, then half-timbered plaster under red tiles, then stone and
+// dressed stone under slate. `kind` dresses walls (planks, beams, stone courses) and roofs (thatch, tile,
+// slate rows); materials without it (piles, odd parts) stay plain.
+type MatKind = 'timber' | 'plaster' | 'stone' | 'dressed';
+type Mat = { left: string; right: string; top: string; roof: string; roofDark: string; kind?: MatKind };
 const MATS: Mat[] = [
-  { left: '#a5774c', right: '#7c5435', top: '#b98a5a', roof: '#8a5532', roofDark: '#6a3e22' }, // timber
-  { left: '#d8bd8c', right: '#b39669', top: '#e3cc9e', roof: '#9a5038', roofDark: '#78382a' }, // plaster
-  { left: '#a9a698', right: '#86847a', top: '#bdbaab', roof: '#5f6f80', roofDark: '#475563' }, // stone
-  { left: '#d6d1c0', right: '#b3ad9b', top: '#e4e0d0', roof: '#41607c', roofDark: '#30475e' }, // dressed stone
+  { left: '#a5774c', right: '#7c5435', top: '#b98a5a', roof: '#b38c4f', roofDark: '#8c6a37', kind: 'timber' }, // planks, thatch
+  { left: '#e2d2ab', right: '#bea883', top: '#ebdcb8', roof: '#9a5038', roofDark: '#78382a', kind: 'plaster' }, // half-timbered, tiles
+  { left: '#a9a698', right: '#86847a', top: '#bdbaab', roof: '#5f6f80', roofDark: '#475563', kind: 'stone' }, // stone, slate
+  { left: '#d6d1c0', right: '#b3ad9b', top: '#e4e0d0', roof: '#41607c', roofDark: '#30475e', kind: 'dressed' }, // dressed stone, slate
 ];
 const STONE: Mat = MATS[2];
 const MARBLE: Mat = { left: '#ece7da', right: '#cfc9b9', top: '#f6f2e8', roof: '#e2b84f', roofDark: '#b8902f' };
@@ -98,6 +104,8 @@ const DARK = '#2a2620';
 const GLOW = '#f0b45a';
 const tierOf = (level: number) => (level <= 0 ? 0 : Math.min(4, Math.ceil(level / 5)));
 const matOf = (tier: number) => MATS[Math.max(0, tier - 1)];
+/** Fortifications (the keep, walls, towers, gate) go straight from timber to stone, dressed stone last. */
+const fortMat = (tier: number) => (tier <= 1 ? MATS[0] : tier === 4 ? MATS[3] : MATS[2]);
 
 type P = { x: number; y: number };
 const poly = (points: P[]) => `M ${points.map((p) => `${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' L ')} Z`;
@@ -226,15 +234,21 @@ function useStillImage(key: string, pixelScale: number, active: boolean, render:
     // The image starts below the sky (nothing still is drawn up there), so it stays the same size.
     const size = { width: Math.ceil(sceneWidth * pixelScale), height: Math.ceil(STILL_HEIGHT * pixelScale) };
     const scene = <Group transform={[{ scale: pixelScale }, { translateY: -STILL_TOP }]}>{render()}</Group>;
-    void drawAsPicture(scene, Skia.XYWHRect(0, 0, size.width, size.height)).then((picture) => {
-      const next = cancelled ? null : pictureToImage(picture, size);
-      picture.dispose();
-      if (!next) return;
-      if (pending.current && pending.current !== shown.current) pending.current.dispose();
-      pending.current = next;
-      built.current = key;
-      setImage(next);
-    });
+    // The paths the scene's components parse (`svgPath`) are freed once the image is made.
+    void collectPaths(
+      // Drawings wait their turn; one already outdated by then isn't made at all.
+      () => (cancelled ? Promise.resolve(null) : drawAsPicture(scene, Skia.XYWHRect(0, 0, size.width, size.height))),
+      (picture) => {
+        if (!picture) return;
+        const next = cancelled ? null : pictureToImage(picture, size);
+        picture.dispose();
+        if (!next) return;
+        if (pending.current && pending.current !== shown.current) pending.current.dispose();
+        pending.current = next;
+        built.current = key;
+        setImage(next);
+      },
+    );
     return () => {
       cancelled = true;
     };
@@ -306,11 +320,21 @@ function StaticScene({ buildings, placements, roads, clearedRocks, traps, parade
     for (let x = plot.x; x < plot.x + plot.w; x++) for (let y = plot.y; y < plot.y + plot.d; y++) covered.add(`${String(x)},${String(y)}`);
   }
 
+  // Soft shadows on the ground, cast to the lower right (the light comes from the upper left).
+  const shadows: string[] = [];
+  const castShadow = (x: number, y: number, w: number, d: number, tall: number) => {
+    const reach = Math.min(3, Math.max(0.35, tall / 22));
+    shadows.push(poly([iso(x + w, y + 0.05), iso(x + w + reach, y + 0.05 + reach * 0.3), iso(x + w + reach, y + d + reach * 0.3), iso(x + w, y + d)]));
+  };
+  for (const { plot } of plots) castShadow(plot.x, plot.y, plot.w, plot.d, plot.tall * 0.7);
+  castShadow(MINE_PLOT.x, MINE_PLOT.y, MINE_PLOT.w, MINE_PLOT.d, 40);
+
   const rocks = rocksLeft(clearedRocks);
   const rocky = new Set(rocks.map((rock) => rock.key));
   for (const [x, y, size] of TREES) {
     const tile = `${String(Math.floor(x))},${String(Math.floor(y))}`;
     if (covered.has(tile) || roads[tile] || rocky.has(tile)) continue;
+    shadows.push(groundBlob(x + 0.3, y + 0.05, 0.28 * size));
     add(x + y + 1, <Tree key={`tree-${String(x)}-${String(y)}`} x={x} y={y} size={size} />);
   }
 
@@ -326,11 +350,15 @@ function StaticScene({ buildings, placements, roads, clearedRocks, traps, parade
     if (y === CASTLE.y1 && GATE_TILES.includes(x)) continue;
     // The docks' tiles at the back of the harbour: the quay stands there instead.
     if (y === DOCKS_ROW && DOCK_TILES.includes(x)) continue;
-    if (wallTier > 0) add(x + y + 2, <WallSegment key={`wall-${String(x)}-${String(y)}`} x={x} y={y} tier={wallTier} />);
+    if (wallTier > 0) {
+      castShadow(x, y, 1, 1, 14 + 6 * wallTier);
+      add(x + y + 2, <WallSegment key={`wall-${String(x)}-${String(y)}`} x={x} y={y} tier={wallTier} />);
+    }
   }
-  TOWER_SPOTS.slice(0, towersBuilt).forEach(([x, y], index) =>
-    add(x + y + 2, <Tower key={`tower-${String(index)}`} x={x} y={y} tier={towerTier} />),
-  );
+  TOWER_SPOTS.slice(0, towersBuilt).forEach(([x, y], index) => {
+    castShadow(x - 0.15, y - 0.15, 1.3, 1.3, 40 + 9 * towerTier);
+    add(x + y + 2, <Tower key={`tower-${String(index)}`} x={x} y={y} tier={towerTier} />);
+  });
   const gate = plotOf('gate', placements) as Plot;
   const towers = plotOf('towers', placements) as Plot;
   if (gateTier > 0) add(front(gate), <Gatehouse key="gate" tier={gateTier} plot={gate} />);
@@ -357,6 +385,9 @@ function StaticScene({ buildings, placements, roads, clearedRocks, traps, parade
       <Rocks cleared={clearedRocks} rocks={rocks} />
       <Traps traps={traps} />
       {wallTier === 0 && <PlannedWall />}
+      <Path path={svgPath(shadows.join(' '))} color="rgba(22, 30, 12, 0.32)">
+        <BlurMask blur={2.5} style="normal" />
+      </Path>
       {items.map((item) => item.node)}
       {building.map((id) => {
         const plot = plotOf(id, placements);
@@ -380,17 +411,91 @@ function useCityClock(active: boolean) {
 
 // ——— Geometry helpers ———
 
-/** A box standing on the map: two visible walls and a top. */
-function Box({ x, y, w, d, h, z = 0, m, top }: { x: number; y: number; w: number; d: number; h: number; z?: number; m: Mat; top?: string }) {
+const seg = (a: P, b: P) => `M ${a.x.toFixed(1)} ${a.y.toFixed(1)} L ${b.x.toFixed(1)} ${b.y.toFixed(1)}`;
+const OUTLINE = 'rgba(28, 20, 12, 0.5)';
+
+/** A wall face's dressing as line segments: `at(u, v)` is the point `u` tiles along it and `v` pixels up. */
+function faceDressing(kind: MatKind, at: (u: number, v: number) => P, span: number, h: number) {
+  const lines: string[] = [];
+  if (kind === 'timber') {
+    // Planks, and a sill at the foot.
+    for (let u = 0.2; u < span - 0.05; u += 0.2) lines.push(seg(at(u, 0), at(u, h)));
+    lines.push(seg(at(0, 1.2), at(span, 1.2)));
+  } else if (kind === 'plaster') {
+    // A timber frame: sill, rail and plate, posts, and a brace in every other bay.
+    for (const v of [0.8, h / 2, h - 0.8]) lines.push(seg(at(0, v), at(span, v)));
+    const bays = Math.max(1, Math.round(span / 0.55));
+    for (let i = 0; i <= bays; i++) lines.push(seg(at((span * i) / bays, 0), at((span * i) / bays, h)));
+    for (let i = 0; i < bays; i += 2) lines.push(seg(at((span * i) / bays, 0.8), at((span * (i + 1)) / bays, h / 2)));
+  } else {
+    // Stone courses with staggered joints (finer for dressed stone).
+    const course = kind === 'dressed' ? 5 : 4;
+    const block = kind === 'dressed' ? 0.45 : 0.34;
+    for (let v = course, row = 0; v < h; v += course, row++) {
+      lines.push(seg(at(0, v), at(span, v)));
+      for (let u = (row % 2) * (block / 2) + block / 2; u < span; u += block) lines.push(seg(at(u, v - course), at(u, v)));
+    }
+  }
+  return lines.join(' ');
+}
+const DRESSING_COLOR: Record<MatKind, string> = {
+  timber: 'rgba(55, 32, 14, 0.45)',
+  plaster: '#5b3d25',
+  stone: 'rgba(40, 38, 32, 0.35)',
+  dressed: 'rgba(90, 84, 70, 0.4)',
+};
+
+/** A box standing on the map: two visible walls and a top, dressed by its material and outlined. */
+function Box({ x, y, w, d, h, z = 0, m, top, outline = true }: { x: number; y: number; w: number; d: number; h: number; z?: number; m: Mat; top?: string; outline?: boolean }) {
   const A = iso(x, y, z + h);
   const B = iso(x + w, y, z + h);
   const C = iso(x + w, y + d, z + h);
   const D = iso(x, y + d, z + h);
+  const big = outline && w >= 0.4 && d >= 0.4 && h >= 4;
+  const dressed = m.kind && h >= 7;
+  const left = dressed && w >= 0.5 ? faceDressing(m.kind as MatKind, (u, v) => iso(x + u, y + d, z + v), w, h) : '';
+  const right = dressed && d >= 0.5 ? faceDressing(m.kind as MatKind, (u, v) => iso(x + w, y + u, z + v), d, h) : '';
+  const lines = `${left} ${right}`.trim();
   return (
     <Group>
-      <Path path={poly([iso(x, y + d, z), iso(x + w, y + d, z), C, D])} color={m.left} />
-      <Path path={poly([iso(x + w, y, z), iso(x + w, y + d, z), C, B])} color={m.right} />
-      <Path path={poly([A, B, C, D])} color={top ?? m.top} />
+      <Path path={svgPath(poly([iso(x, y + d, z), iso(x + w, y + d, z), C, D]))} color={m.left} />
+      <Path path={svgPath(poly([iso(x + w, y, z), iso(x + w, y + d, z), C, B]))} color={m.right} />
+      <Path path={svgPath(poly([A, B, C, D]))} color={top ?? m.top} />
+      {lines.length > 0 && <Path path={svgPath(lines)} style="stroke" strokeWidth={m.kind === 'plaster' ? 1.1 : 0.6} color={DRESSING_COLOR[m.kind as MatKind]} />}
+      {big && (
+        <Path
+          path={svgPath(`${poly([iso(x, y + d, z), iso(x + w, y + d, z), iso(x + w, y, z), B, A, D])} ${seg(iso(x + w, y + d, z), C)}`)}
+          style="stroke"
+          strokeWidth={0.7}
+          color={OUTLINE}
+        />
+      )}
+    </Group>
+  );
+}
+
+// Rows across a roof slope, parallel to its eave (`e0`–`e1`) up to its ridge (`r0`–`r1`): thatch, tiles or slates.
+function roofRows(kind: MatKind | undefined, e0: P, e1: P, r0: P, r1: P) {
+  if (!kind) return '';
+  const lerp = (a: P, b: P, t: number) => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+  const length = Math.hypot((r0.x + r1.x) / 2 - (e0.x + e1.x) / 2, (r0.y + r1.y) / 2 - (e0.y + e1.y) / 2);
+  const gap = kind === 'timber' ? 2.2 : 3;
+  const rows: string[] = [];
+  for (let t = gap / Math.max(1, length); t < 0.97; t += gap / Math.max(1, length)) rows.push(seg(lerp(e0, r0, t), lerp(e1, r1, t)));
+  return rows.join(' ');
+}
+const ROOF_ROW_COLOR: Record<MatKind, string> = {
+  timber: 'rgba(84, 58, 24, 0.5)',
+  plaster: 'rgba(60, 18, 10, 0.4)',
+  stone: 'rgba(20, 26, 36, 0.35)',
+  dressed: 'rgba(16, 24, 36, 0.35)',
+};
+function RoofDressing({ m, rows, outline }: { m: Mat; rows: string; outline: string }) {
+  if (!m.kind) return null;
+  return (
+    <Group>
+      {rows.length > 0 && <Path path={svgPath(rows)} style="stroke" strokeWidth={m.kind === 'timber' ? 0.8 : 0.7} color={ROOF_ROW_COLOR[m.kind]} />}
+      <Path path={svgPath(outline)} style="stroke" strokeWidth={0.7} color={OUTLINE} />
     </Group>
   );
 }
@@ -406,9 +511,10 @@ function Gable({ x, y, w, d, z, rise, m, along = 'x' }: { x: number; y: number; 
     const r2 = iso(x + w, y + d / 2, z + rise);
     return (
       <Group>
-        <Path path={poly([A, B, r2, r1])} color={m.roofDark} />
-        <Path path={poly([B, C, r2])} color={m.right} />
-        <Path path={poly([D, C, r2, r1])} color={m.roof} />
+        <Path path={svgPath(poly([A, B, r2, r1]))} color={m.roofDark} />
+        <Path path={svgPath(poly([B, C, r2]))} color={m.right} />
+        <Path path={svgPath(poly([D, C, r2, r1]))} color={m.roof} />
+        <RoofDressing m={m} rows={`${roofRows(m.kind, D, C, r1, r2)} ${roofRows(m.kind, A, B, r1, r2)}`.trim()} outline={`${poly([D, C, B, r2, r1])} ${seg(C, r2)}`} />
       </Group>
     );
   }
@@ -416,9 +522,10 @@ function Gable({ x, y, w, d, z, rise, m, along = 'x' }: { x: number; y: number; 
   const r2 = iso(x + w / 2, y + d, z + rise);
   return (
     <Group>
-      <Path path={poly([A, D, r2, r1])} color={m.roof} />
-      <Path path={poly([D, C, r2])} color={m.left} />
-      <Path path={poly([B, C, r2, r1])} color={m.roofDark} />
+      <Path path={svgPath(poly([A, D, r2, r1]))} color={m.roof} />
+      <Path path={svgPath(poly([D, C, r2]))} color={m.left} />
+      <Path path={svgPath(poly([B, C, r2, r1]))} color={m.roofDark} />
+      <RoofDressing m={m} rows={`${roofRows(m.kind, A, D, r1, r2)} ${roofRows(m.kind, B, C, r1, r2)}`.trim()} outline={`${poly([A, D, C, B, r1])} ${seg(D, r2)} ${seg(r2, C)}`} />
     </Group>
   );
 }
@@ -432,10 +539,15 @@ function Hip({ x, y, w, d, z, rise, m }: { x: number; y: number; w: number; d: n
   const D = iso(x, y + d, z);
   return (
     <Group>
-      <Path path={poly([A, B, apex])} color={m.roofDark} />
-      <Path path={poly([A, D, apex])} color={m.roof} />
-      <Path path={poly([D, C, apex])} color={m.roof} />
-      <Path path={poly([B, C, apex])} color={m.roofDark} />
+      <Path path={svgPath(poly([A, B, apex]))} color={m.roofDark} />
+      <Path path={svgPath(poly([A, D, apex]))} color={m.roof} />
+      <Path path={svgPath(poly([D, C, apex]))} color={m.roof} />
+      <Path path={svgPath(poly([B, C, apex]))} color={m.roofDark} />
+      <RoofDressing
+        m={m}
+        rows={`${roofRows(m.kind, D, C, apex, apex)} ${roofRows(m.kind, B, C, apex, apex)} ${roofRows(m.kind, A, D, apex, apex)}`.trim()}
+        outline={`${poly([A, D, C, B, apex])} ${seg(D, apex)} ${seg(C, apex)}`}
+      />
     </Group>
   );
 }
@@ -449,14 +561,50 @@ function Crenels({ x, y, w, d, z, m }: { x: number; y: number; w: number; d: num
   return <Group>{merlons}</Group>;
 }
 
+// A round tower's body: a cylinder `r` tiles across standing at (cx, cy), lit from the left, with stone
+// courses round its front and a ring of merlons on top (a walkway inside them).
+function Cylinder({ cx, cy, r, h, z = 0, m, merlons = true }: { cx: number; cy: number; r: number; h: number; z?: number; m: Mat; merlons?: boolean }) {
+  const base = iso(cx, cy, z);
+  const rx = r * TILE_HW * Math.SQRT2;
+  const ry = r * TILE_HH * Math.SQRT2;
+  const top = base.y - h;
+  const f = (n: number) => n.toFixed(1);
+  const arc = (y: number) => `M ${f(base.x - rx)} ${f(y)} A ${f(rx)} ${f(ry)} 0 0 0 ${f(base.x + rx)} ${f(y)}`;
+  const body = `M ${f(base.x - rx)} ${f(top)} L ${f(base.x - rx)} ${f(base.y)} A ${f(rx)} ${f(ry)} 0 0 0 ${f(base.x + rx)} ${f(base.y)} L ${f(base.x + rx)} ${f(top)} Z`;
+  const disc = `M ${f(base.x - rx)} ${f(top)} A ${f(rx)} ${f(ry)} 0 1 0 ${f(base.x + rx)} ${f(top)} A ${f(rx)} ${f(ry)} 0 1 0 ${f(base.x - rx)} ${f(top)} Z`;
+  const courses: string[] = [];
+  for (let v = 4; v < h; v += 4) courses.push(arc(base.y - v));
+  const ring = merlons
+    ? Array.from({ length: 12 }, (_, i) => (i / 12) * Math.PI * 2)
+        .map((a) => ({ x: base.x + Math.cos(a) * rx * 0.88, y: top + Math.sin(a) * ry * 0.88, front: Math.sin(a) }))
+        .sort((a, b) => a.y - b.y)
+    : [];
+  return (
+    <Group>
+      <Path path={svgPath(body)}>
+        <LinearGradient start={vec(base.x - rx, 0)} end={vec(base.x + rx, 0)} colors={[m.top, m.left, m.right, m.right]} />
+      </Path>
+      {courses.length > 0 && <Path path={svgPath(courses.join(' '))} style="stroke" strokeWidth={0.6} color={DRESSING_COLOR[m.kind ?? 'stone']} />}
+      <Path path={svgPath(disc)} color={m.top} />
+      <Path path={svgPath(`${body} ${disc}`)} style="stroke" strokeWidth={0.7} color={OUTLINE} />
+      {ring.map((p, i) => (
+        <Group key={i}>
+          <Rect x={p.x - 1.6} y={p.y - 4} width={3.2} height={4} color={p.x < base.x ? m.left : m.right} />
+          <Rect x={p.x - 1.6} y={p.y - 4.8} width={3.2} height={1} color={m.top} />
+        </Group>
+      ))}
+    </Group>
+  );
+}
+
 /** A quad on a box's front-left wall (the face along y = yFront), from u0..u1 along x and v0..v1 up. */
 function LeftFace({ x, yFront, z = 0, u0, u1, v0, v1, color }: { x: number; yFront: number; z?: number; u0: number; u1: number; v0: number; v1: number; color: string }) {
-  return <Path path={poly([iso(x + u0, yFront, z + v0), iso(x + u1, yFront, z + v0), iso(x + u1, yFront, z + v1), iso(x + u0, yFront, z + v1)])} color={color} />;
+  return <Path path={svgPath(poly([iso(x + u0, yFront, z + v0), iso(x + u1, yFront, z + v0), iso(x + u1, yFront, z + v1), iso(x + u0, yFront, z + v1)]))} color={color} />;
 }
 
 /** A quad on a box's front-right wall (the face along x = xFront). */
 function RightFace({ xFront, y, z = 0, u0, u1, v0, v1, color }: { xFront: number; y: number; z?: number; u0: number; u1: number; v0: number; v1: number; color: string }) {
-  return <Path path={poly([iso(xFront, y + u0, z + v0), iso(xFront, y + u1, z + v0), iso(xFront, y + u1, z + v1), iso(xFront, y + u0, z + v1)])} color={color} />;
+  return <Path path={svgPath(poly([iso(xFront, y + u0, z + v0), iso(xFront, y + u1, z + v0), iso(xFront, y + u1, z + v1), iso(xFront, y + u0, z + v1)]))} color={color} />;
 }
 
 function Flag({ x, y, z, color = BANNER }: { x: number; y: number; z: number; color?: string }) {
@@ -536,7 +684,6 @@ const RIVER_REACH = 12;
 // a board: the wild land all round (and the raiders' ground on the map), the town's lawn, the woods.
 const LAND = '#506738';
 const LAWN = '#5f7942';
-const LAWN_PATCH = '#5a733f';
 const TRUNK = '#5e4630';
 const CROWNS = ['#3f5f30', '#4b6d36', '#557a3c'];
 
@@ -656,15 +803,34 @@ const BACKDROP = (() => {
 // Drawn live, a handful of paths, so cheap to draw every frame: the back part (sky, river, road, the
 // far ranges and the woods behind the map) under the castle image; the front part (the woods and ranges
 // in front of the near sides, which may hide the map's edge) over it.
+// The backdrop's geometry never changes: parsed once, on first use, and kept.
+let backdropPaths: ReturnType<typeof buildBackdropPaths> | null = null;
+function buildBackdropPaths() {
+  const woods = (w: (typeof WOODS)['back']) => ({
+    trunks: parsed(w.trunks),
+    crowns: w.crowns.map(parsed),
+    stone: { light: parsed(w.stone.light), dark: parsed(w.stone.dark), shadow: parsed(w.stone.shadow) },
+  });
+  return {
+    ranges: BACKDROP.ranges.map((r) => ({ ...r, light: parsed(r.light), dark: parsed(r.dark), snow: r.snow ? parsed(r.snow) : null })),
+    sky: parsed(BACKDROP.sky),
+    river: parsed(BACKDROP.river),
+    ripples: parsed(BACKDROP.ripples),
+    road: parsed(BACKDROP.road),
+    woods: { back: woods(WOODS.back), front: woods(WOODS.front) },
+  };
+}
+
 const Backdrop = memo(function Backdrop({ part }: { part: 'back' | 'front' }) {
-  const range = (r: (typeof BACKDROP.ranges)[number]) => (
+  const paths = (backdropPaths ??= buildBackdropPaths());
+  const range = (r: (typeof paths.ranges)[number]) => (
     <Group key={r.key}>
       <Path path={r.light} color={r.lightColor} />
       <Path path={r.dark} color={r.darkColor} />
-      {r.snow.length > 0 && <Path path={r.snow} color="#eef2f3" />}
+      {r.snow && <Path path={r.snow} color="#eef2f3" />}
     </Group>
   );
-  const woods = WOODS[part];
+  const woods = paths.woods[part];
   const trees = (
     <Group>
       <Path path={woods.stone.shadow} color="rgba(40, 46, 30, 0.35)" />
@@ -678,19 +844,19 @@ const Backdrop = memo(function Backdrop({ part }: { part: 'back' | 'front' }) {
     return (
       <Group>
         {trees}
-        {BACKDROP.ranges.filter((r) => r.front).map(range)}
+        {paths.ranges.filter((r) => r.front).map(range)}
       </Group>
     );
   }
   return (
     <Group>
-      <Path path={BACKDROP.sky}>
+      <Path path={paths.sky}>
         <LinearGradient start={vec(0, BACKDROP.skyTop)} end={vec(0, BACKDROP.skyLow)} colors={[SKY_TOP, SKY_LOW]} />
       </Path>
-      <Path path={BACKDROP.river} color={WATER} />
-      <Path path={BACKDROP.ripples} style="stroke" strokeWidth={1} color="rgba(170, 210, 228, 0.45)" />
-      <Path path={BACKDROP.road} color={ROAD_COLORS.dirt.fill} />
-      {BACKDROP.ranges.filter((r) => !r.front).map(range)}
+      <Path path={paths.river} color={WATER} />
+      <Path path={paths.ripples} style="stroke" strokeWidth={1} color="rgba(170, 210, 228, 0.45)" />
+      <Path path={paths.road} color={ROAD_COLORS.dirt.fill} />
+      {paths.ranges.filter((r) => !r.front).map(range)}
       {trees}
     </Group>
   );
@@ -736,7 +902,7 @@ function landRing(inset: number) {
   return `M ${p.x.toFixed(1)} ${p.y.toFixed(1)} L ${q.x.toFixed(1)} ${q.y.toFixed(1)} L ${r.x.toFixed(1)} ${r.y.toFixed(1)} L ${t.x.toFixed(1)} ${t.y.toFixed(1)}`;
 }
 
-/** Every tile's outline, so the ground reads as building spaces. */
+/** Every tile's outline: shown only while placing a building or painting tiles. */
 const GRID = (() => {
   const parts: string[] = [];
   for (let i = 0; i <= MAP_SIZE; i++) {
@@ -746,9 +912,12 @@ const GRID = (() => {
   return parts.join(' ');
 })();
 
+// The tile grid, parsed once (the placement ghost draws it while placing or painting).
+let gridPath: ReturnType<typeof parsed> | null = null;
+
 // SVG path strings parsed into Skia paths once and kept: the castle image is redrawn from scratch every
 // time it changes, and re-parsing the same big paths each time was most of the work.
-const parsed = (svg: string) => Skia.Path.MakeFromSVGString(svg) ?? svg;
+const parsed = parseSvg;
 
 // Free every Skia object in a (nested) set of paths.
 function disposePaths(value: unknown) {
@@ -773,13 +942,103 @@ function latest<K, T>(slot: Slot<K, T>, key: K, build: () => T): T {
   return slot.value;
 }
 
+// ——— Ground texture ———
+// Stronghold-style ground: no grid, but lush grass in broad lighter and darker patches with tufts and the
+// odd flower, bare earth in the trap belt, and a dirt yard round the keep with a ragged edge. All of it is
+// derived from the tile position, so it's the same every time.
+
+const hash01 = (x: number, y: number, salt: number) => {
+  let h = Math.imul(Math.floor(x) * 374761393 + Math.floor(y) * 668265263 + salt * 1013904223, 1274126177);
+  h ^= h >>> 13;
+  h = Math.imul(h, 1103515245);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+};
+// Smooth value noise, `scale` tiles across.
+function smoothNoise(x: number, y: number, scale: number, salt: number) {
+  const fx = x / scale;
+  const fy = y / scale;
+  const ix = Math.floor(fx);
+  const iy = Math.floor(fy);
+  const tx = fx - ix;
+  const ty = fy - iy;
+  const u = tx * tx * (3 - 2 * tx);
+  const v = ty * ty * (3 - 2 * ty);
+  const a = hash01(ix, iy, salt);
+  const b = hash01(ix + 1, iy, salt);
+  const c = hash01(ix, iy + 1, salt);
+  const d = hash01(ix + 1, iy + 1, salt);
+  return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
+}
+// A circle on the ground (tile units) as an ellipse on screen.
+function groundBlob(cx: number, cy: number, r: number) {
+  const c = iso(cx, cy);
+  const rx = r * TILE_HW * Math.SQRT2;
+  const ry = r * TILE_HH * Math.SQRT2;
+  return `M ${(c.x - rx).toFixed(1)} ${c.y.toFixed(1)} a ${rx.toFixed(1)} ${ry.toFixed(1)} 0 1 0 ${(2 * rx).toFixed(1)} 0 a ${rx.toFixed(1)} ${ry.toFixed(1)} 0 1 0 ${(-2 * rx).toFixed(1)} 0 Z`;
+}
+const GRASS_LIGHT = '#6c8748';
+const GRASS_DARK = '#526a39';
+const TUFT = '#435c2e';
+const TUFT_LIGHT = '#82a057';
+
+function buildGrass() {
+  const light: string[] = [];
+  const dark: string[] = [];
+  const tufts: string[] = [];
+  const tuftsLight: string[] = [];
+  const flowers: string[] = [];
+  const clods: string[] = [];
+  for (let x = 0; x < MAP_SIZE; x++) {
+    for (let y = 0; y < MAP_SIZE; y++) {
+      const zone = zoneAt(x, y);
+      if (zone === 'traps') {
+        // Bare earth: dark clods and a few stones.
+        for (let i = 0; i < 3; i++) clods.push(groundBlob(x + hash01(x, y, 40 + i), y + hash01(y, x, 41 + i), 0.06 + 0.06 * hash01(x, y, 42 + i)));
+        continue;
+      }
+      if (zone !== 'town' && zone !== 'enemy') continue;
+      // Broad patches: the low-frequency noise decides lighter or darker grass here.
+      const n = smoothNoise(x, y, 7, 1) * 0.7 + smoothNoise(x, y, 3, 2) * 0.3;
+      const jx = x + 0.2 + hash01(x, y, 3) * 0.6;
+      const jy = y + 0.2 + hash01(x, y, 4) * 0.6;
+      const r = 0.55 + hash01(x, y, 5) * 0.55;
+      if (n > 0.56) light.push(groundBlob(jx, jy, r));
+      else if (n < 0.44) dark.push(groundBlob(jx, jy, r));
+      // Tufts of grass, and now and then a flower.
+      for (let i = 0; i < 3; i++) {
+        const p = iso(x + hash01(x, y, 10 + i), y + hash01(y, x, 20 + i));
+        const tuft = `M ${(p.x - 1.6).toFixed(1)} ${p.y.toFixed(1)} L ${(p.x - 0.3).toFixed(1)} ${(p.y - 3).toFixed(1)} L ${p.x.toFixed(1)} ${p.y.toFixed(1)} L ${(p.x + 0.4).toFixed(1)} ${(p.y - 2.6).toFixed(1)} L ${(p.x + 1.6).toFixed(1)} ${p.y.toFixed(1)}`;
+        (hash01(x, y, 30 + i) < 0.3 ? tuftsLight : tufts).push(tuft);
+      }
+      if (zone === 'town' && hash01(x, y, 50) < 0.08) {
+        const p = iso(x + hash01(x, y, 51), y + hash01(x, y, 52));
+        flowers.push(`M ${(p.x - 0.9).toFixed(1)} ${(p.y - 1).toFixed(1)} h 1.8 v 1.8 h -1.8 Z`);
+      }
+    }
+  }
+  // The keep's yard: packed dirt with a ragged edge, and pebbles.
+  const edge: P[] = [];
+  const step = 0.25;
+  const wobble = (u: number, v: number) => (hash01(Math.round(u * 8), Math.round(v * 8), 60) - 0.5) * 0.5;
+  const { x0, y0 } = PLAZA;
+  const x1 = PLAZA.x1 + 1;
+  const y1 = PLAZA.y1 + 1;
+  for (let u = x0; u < x1; u += step) edge.push(iso(u, y0 + wobble(u, y0)));
+  for (let v = y0; v < y1; v += step) edge.push(iso(x1 + wobble(x1, v), v));
+  for (let u = x1; u > x0; u -= step) edge.push(iso(u, y1 + wobble(u, y1)));
+  for (let v = y1; v > y0; v -= step) edge.push(iso(x0 + wobble(x0, v), v));
+  const pebbles: string[] = [];
+  for (let x = x0; x < x1; x++) for (let y = y0; y < y1; y++) for (let i = 0; i < 2; i++) pebbles.push(groundBlob(x + hash01(x, y, 70 + i), y + hash01(y, x, 72 + i), 0.04 + 0.04 * hash01(x, y, 74 + i)));
+  return { light: light.join(' '), dark: dark.join(' '), tufts: tufts.join(' '), tuftsLight: tuftsLight.join(' '), flowers: flowers.join(' '), clods: clods.join(' '), yard: poly(edge), pebbles: pebbles.join(' ') };
+}
+
 // The ground, rings and river (built once, on first use, after Skia has loaded).
 let groundPaths: ReturnType<typeof buildGround> | null = null;
 function buildGround() {
   const { x: rx, w: rw } = GATE_ROAD;
   const svg = {
+    ...buildGrass(),
     outline: ringPath(0),
-    patches: tilesPath((x, y) => zoneAt(x, y) === 'town' && (x * 7 + y * 13) % 5 === 0),
     wild: tilesPath((x, y) => zoneAt(x, y) === 'enemy'),
     traps: tilesPath((x, y) => zoneAt(x, y) === 'traps'),
     moat: tilesPath((x, y) => zoneAt(x, y) === 'moat'),
@@ -800,13 +1059,11 @@ function buildGround() {
         return `M ${a.x.toFixed(1)} ${a.y.toFixed(1)} L ${b.x.toFixed(1)} ${b.y.toFixed(1)}`;
       })
       .join(' '),
-    plaza: poly([iso(PLAZA.x0, PLAZA.y0), iso(PLAZA.x1 + 1, PLAZA.y0), iso(PLAZA.x1 + 1, PLAZA.y1 + 1), iso(PLAZA.x0, PLAZA.y1 + 1)]),
     gateRoad: poly([iso(GATE_ROAD.x, GATE_ROAD.y), iso(GATE_ROAD.x + GATE_ROAD.w, GATE_ROAD.y), iso(GATE_ROAD.x + GATE_ROAD.w, GATE_ROAD.y + GATE_ROAD.d), iso(GATE_ROAD.x, GATE_ROAD.y + GATE_ROAD.d)]),
     enemyEdge: landRing(3),
     moatRims: `${landRing(5)} ${landRing(6)}`,
     // The bridge: the gate road where it crosses the moat (5 tiles in from the edge).
     bridge: poly([iso(rx - 0.2, MAP_SIZE - 6), iso(rx + rw + 0.2, MAP_SIZE - 6), iso(rx + rw + 0.2, MAP_SIZE - 5), iso(rx - 0.2, MAP_SIZE - 5)]),
-    grid: GRID,
   };
   return Object.fromEntries(Object.entries(svg).map(([name, path]) => [name, parsed(path)])) as Record<keyof typeof svg, ReturnType<typeof parsed>>;
 }
@@ -817,22 +1074,29 @@ function Ground({ flooded }: { flooded: boolean }) {
   return (
     <Group>
       <Path path={ground.outline} color={LAWN} />
-      <Path path={ground.patches} color={LAWN_PATCH} />
       {/* Raiders' ground: the wild land that runs on past the map */}
       <Path path={ground.wild} color={LAND} />
-      <Path path={ground.enemyEdge} style="stroke" strokeWidth={1.5} color="rgba(200, 70, 50, 0.55)" />
+      {/* Grass in broad patches, with tufts and the odd flower */}
+      <Path path={ground.light} color={GRASS_LIGHT} opacity={0.55} />
+      <Path path={ground.dark} color={GRASS_DARK} opacity={0.55} />
+      <Path path={ground.tufts} style="stroke" strokeWidth={0.7} color={TUFT} opacity={0.75} />
+      <Path path={ground.tuftsLight} style="stroke" strokeWidth={0.7} color={TUFT_LIGHT} opacity={0.8} />
+      <Path path={ground.flowers} color="#e8d36a" />
+      <Path path={ground.enemyEdge} style="stroke" strokeWidth={1.5} color="rgba(200, 70, 50, 0.45)" />
       {/* The trap belt: bare earth, waiting for traps */}
       <Path path={ground.traps} color="#6a6446" />
+      <Path path={ground.clods} color="#57523a" />
       {/* The river up to the far wall (and its harbour), the moat (flooded from it once built), and the bridge at the gate */}
       <Path path={ground.river} color={WATER} />
       <Path path={ground.ripples} style="stroke" strokeWidth={1} color="rgba(170, 210, 228, 0.45)" />
       <Path path={ground.banks} style="stroke" strokeWidth={1.5} color="#c9b98a" />
       <Path path={ground.moat} color={flooded ? '#3f6f8a' : '#5e5038'} />
       <Path path={ground.moatRims} style="stroke" strokeWidth={1} color={flooded ? '#8fb8cc' : '#4a3f2c'} />
-      <Path path={ground.plaza} color="#82835d" />
+      {/* The keep's yard: packed dirt */}
+      <Path path={ground.yard} color="#8b7e58" />
+      <Path path={ground.pebbles} color="#6f6446" />
       <Path path={ground.gateRoad} color={ROAD_COLORS.dirt.fill} />
       {flooded && <Path path={ground.bridge} color="#8c6a3c" />}
-      <Path path={ground.grid} style="stroke" strokeWidth={0.6} color="rgba(20, 30, 14, 0.13)" />
     </Group>
   );
 }
@@ -844,10 +1108,26 @@ const PLANNED_WALL = (() => {
   const left = HARBOUR.x0 - 0.5;
   const right = HARBOUR.x1 + 1.5;
   const back = DOCKS_ROW + 0.5;
-  return poly([iso(a, a), iso(left, a), iso(left, back), iso(right, back), iso(right, a), iso(b, a), iso(b, b), iso(a, b)]);
+  // Round from one side of the gateway to the other, leaving the gate open.
+  const points = [iso(GATE_TILES[0], b), iso(a, b), iso(a, a), iso(left, a), iso(left, back), iso(right, back), iso(right, a), iso(b, a), iso(b, b), iso(GATE_TILES[2] + 1, b)];
+  return `M ${points.map((p) => `${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' L ')}`;
 })();
+// Until the wall is built, a low wattle fence of posts and two rails marks its line (no defence in battle).
+const FENCE_POSTS = WALL_TILES.filter(([x, y]) => !(y === CASTLE.y1 && GATE_TILES.includes(x)) && !(y === DOCKS_ROW && DOCK_TILES.includes(x)))
+  .map(([x, y]) => seg(iso(x + 0.5, y + 0.5), iso(x + 0.5, y + 0.5, 7)))
+  .join(' ');
 function PlannedWall() {
-  return <Path path={PLANNED_WALL} style="stroke" strokeWidth={1.5} color="rgba(224, 207, 150, 0.7)" />;
+  return (
+    <Group>
+      <Path path={svgPath(FENCE_POSTS)} style="stroke" strokeWidth={1.4} color="#6e4a2f" />
+      <Group transform={[{ translateY: -3 }]}>
+        <Path path={svgPath(PLANNED_WALL)} style="stroke" strokeWidth={1} color="#8c6a3c" />
+      </Group>
+      <Group transform={[{ translateY: -6 }]}>
+        <Path path={svgPath(PLANNED_WALL)} style="stroke" strokeWidth={1} color="#a5804c" />
+      </Group>
+    </Group>
+  );
 }
 
 // The belt's tiles, lit up while traps are being laid.
@@ -905,10 +1185,11 @@ function ClearingMarks({ orders }: { orders: ClearOrder[] }) {
     }).join(' ');
     return { now: mark(orders[0].tiles), later: mark(orders.slice(1).flatMap((order) => order.tiles)) };
   }, [orders]);
+  const [later, now] = useSvgPaths([paths.later, paths.now]);
   return (
     <Group>
-      <Path path={paths.later} style="stroke" strokeWidth={1} color="rgba(243, 210, 122, 0.55)" />
-      <Path path={paths.now} style="stroke" strokeWidth={1.6} color="#f3d27a" />
+      <Path path={later} style="stroke" strokeWidth={1} color="rgba(243, 210, 122, 0.55)" />
+      <Path path={now} style="stroke" strokeWidth={1.6} color="#f3d27a" />
     </Group>
   );
 }
@@ -1056,7 +1337,7 @@ function EmptyPlot({ plot }: { plot: Plot }) {
   const corners = [iso(plot.x, plot.y), iso(plot.x + plot.w, plot.y), iso(plot.x + plot.w, plot.y + plot.d), iso(plot.x, plot.y + plot.d)];
   return (
     <Group opacity={0.8}>
-      <Path path={poly(corners)} style="stroke" strokeWidth={1} color="#e0cf96" />
+      <Path path={svgPath(poly(corners))} style="stroke" strokeWidth={1} color="#e0cf96" />
       {corners.map((c, index) => <Rect key={index} x={c.x - 1} y={c.y - 7} width={2} height={7} color="#6e4a2f" />)}
     </Group>
   );
@@ -1064,7 +1345,8 @@ function EmptyPlot({ plot }: { plot: Plot }) {
 
 function Selection({ plot }: { plot: Plot }) {
   const corners = [iso(plot.x, plot.y), iso(plot.x + plot.w, plot.y), iso(plot.x + plot.w, plot.y + plot.d), iso(plot.x, plot.y + plot.d)];
-  return <Path path={poly(corners)} style="stroke" strokeWidth={2} color="#f3d27a" />;
+  const [outline] = useSvgPaths([poly(corners)]);
+  return <Path path={outline} style="stroke" strokeWidth={2} color="#f3d27a" />;
 }
 
 const tileDiamonds = (tiles: { x: number; y: number }[]) =>
@@ -1072,31 +1354,53 @@ const tileDiamonds = (tiles: { x: number; y: number }[]) =>
 
 // Something being placed: its footprint on a stronger grid, green where it fits and red where it
 // doesn't (and, for traps, the belt lit up).
+// The belt's tiles and edges, for laying traps: parsed once.
+let beltPaths: { tiles: ReturnType<typeof parsed>; edges: ReturnType<typeof parsed> } | null = null;
+
 function PlacementGhost({ ghost }: { ghost: Ghost }) {
   const { plot } = ghost;
-  const corners = plot ? [iso(plot.x, plot.y), iso(plot.x + plot.w, plot.y), iso(plot.x + plot.w, plot.y + plot.d), iso(plot.x, plot.y + plot.d)] : [];
   const tint = ghost.valid ? 'rgba(140, 220, 120, ' : 'rgba(232, 96, 74, ';
-  const shell: Mat = { left: `${tint}0.35)`, right: `${tint}0.25)`, top: `${tint}0.45)`, roof: '', roofDark: '' };
+  // The footprint and a see-through box standing on it (its two front walls and top).
+  let footprint = '';
+  let shell = ['', '', ''];
+  if (plot) {
+    const { x, y, w, d } = plot;
+    const h = Math.min(30, plot.tall / 2);
+    footprint = poly([iso(x, y), iso(x + w, y), iso(x + w, y + d), iso(x, y + d)]);
+    const top = [iso(x, y, h), iso(x + w, y, h), iso(x + w, y + d, h), iso(x, y + d, h)];
+    shell = [poly([iso(x, y + d), iso(x + w, y + d), top[2], top[3]]), poly([iso(x + w, y), iso(x + w, y + d), top[2], top[1]]), poly(top)];
+  }
+  const tiles = ghost.tiles ?? [];
+  const [area, left, right, lid, ok, bad] = useSvgPaths([
+    footprint,
+    ...shell,
+    tiles.length > 0 ? tileDiamonds(tiles.filter((tile) => tile.ok)) : '',
+    tiles.length > 0 ? tileDiamonds(tiles.filter((tile) => !tile.ok)) : '',
+  ]);
+  gridPath ??= parsed(GRID);
+  beltPaths ??= { tiles: parsed(BELT), edges: parsed(`${landRing(3)} ${landRing(5)}`) };
   return (
     <Group>
-      <Path path={GRID} style="stroke" strokeWidth={0.8} color="rgba(255, 255, 240, 0.22)" />
+      <Path path={gridPath} style="stroke" strokeWidth={0.8} color="rgba(255, 255, 240, 0.22)" />
       {ghost.belt && (
         <>
-          <Path path={BELT} color="rgba(255, 232, 160, 0.3)" />
-          <Path path={`${landRing(3)} ${landRing(5)}`} style="stroke" strokeWidth={1.5} color="rgba(255, 226, 140, 0.9)" />
+          <Path path={beltPaths.tiles} color="rgba(255, 232, 160, 0.3)" />
+          <Path path={beltPaths.edges} style="stroke" strokeWidth={1.5} color="rgba(255, 226, 140, 0.9)" />
         </>
       )}
-      {ghost.tiles && ghost.tiles.length > 0 && (
+      {tiles.length > 0 && (
         <>
-          <Path path={tileDiamonds(ghost.tiles.filter((tile) => tile.ok))} color="rgba(140, 220, 120, 0.55)" />
-          <Path path={tileDiamonds(ghost.tiles.filter((tile) => !tile.ok))} color="rgba(232, 96, 74, 0.55)" />
+          <Path path={ok} color="rgba(140, 220, 120, 0.55)" />
+          <Path path={bad} color="rgba(232, 96, 74, 0.55)" />
         </>
       )}
       {plot && (
         <>
-          <Path path={poly(corners)} color={`${tint}0.45)`} />
-          <Box x={plot.x} y={plot.y} w={plot.w} d={plot.d} h={Math.min(30, plot.tall / 2)} m={shell} />
-          <Path path={poly(corners)} style="stroke" strokeWidth={2} color={ghost.valid ? '#9fe08a' : '#ff7a5c'} />
+          <Path path={area} color={`${tint}0.45)`} />
+          <Path path={left} color={`${tint}0.35)`} />
+          <Path path={right} color={`${tint}0.25)`} />
+          <Path path={lid} color={`${tint}0.45)`} />
+          <Path path={area} style="stroke" strokeWidth={2} color={ghost.valid ? '#9fe08a' : '#ff7a5c'} />
         </>
       )}
     </Group>
@@ -1105,57 +1409,84 @@ function PlacementGhost({ ghost }: { ghost: Ghost }) {
 
 // ——— Defences ———
 
+// Which way the wall runs through a tile (along x, along y, or both at a corner).
+const WALL_SET = new Set(WALL_TILES.map(([x, y]) => `${String(x)},${String(y)}`));
+const wallRuns = (x: number, y: number) => ({
+  alongX: WALL_SET.has(`${String(x - 1)},${String(y)}`) || WALL_SET.has(`${String(x + 1)},${String(y)}`),
+  alongY: WALL_SET.has(`${String(x)},${String(y - 1)}`) || WALL_SET.has(`${String(x)},${String(y + 1)}`),
+});
+
+// One tile of the wall: a palisade of sharpened logs at first, then a continuous stone curtain wall with a
+// walkway and battlements on both faces.
 function WallSegment({ x, y, tier }: { x: number; y: number; tier: number }) {
-  const h = 12 + 5 * tier;
+  const { alongX, alongY } = wallRuns(x, y);
   if (tier === 1) {
-    // A palisade: sharpened stakes.
+    const logs: [number, number][] = [];
+    if (alongX || !alongY) for (const u of [0.05, 0.3, 0.55, 0.8]) logs.push([x + u, y + 0.4]);
+    if (alongY) for (const v of [0.05, 0.3, 0.55, 0.8]) logs.push([x + 0.4, y + v]);
     return (
       <Group>
-        <Box x={x + 0.25} y={y + 0.25} w={0.5} d={0.5} h={h - 3} m={MATS[0]} />
-        <Hip x={x + 0.25} y={y + 0.25} w={0.5} d={0.5} z={h - 3} rise={5} m={MATS[0]} />
+        {logs.map(([lx, ly]) => (
+          <Group key={`${String(lx)},${String(ly)}`}>
+            <Box x={lx} y={ly} w={0.2} d={0.2} h={14} m={MATS[0]} outline={false} />
+            <Hip x={lx} y={ly} w={0.2} d={0.2} z={14} rise={4} m={{ ...MATS[0], kind: undefined }} />
+          </Group>
+        ))}
       </Group>
     );
   }
-  const m = matOf(tier);
+  const m = fortMat(tier);
+  const h = 12 + 5 * tier;
+  const size = 0.22;
+  const merlons: [number, number][] = [];
+  for (const u of [0.1, 0.6]) {
+    if (alongX || !alongY) merlons.push([x + u, y], [x + u, y + 1 - size]);
+    if (alongY) merlons.push([x, y + u], [x + 1 - size, y + u]);
+  }
   return (
     <Group>
-      <Box x={x + 0.1} y={y + 0.1} w={0.8} d={0.8} h={h} m={m} />
-      <Crenels x={x + 0.1} y={y + 0.1} w={0.8} d={0.8} z={h} m={m} />
-      {tier === 4 && (x + y) % 4 === 0 && <LeftFace x={x + 0.1} yFront={y + 0.9} u0={0.3} u1={0.5} v0={h - 12} v1={h - 2} color={BANNER} />}
+      <Box x={x} y={y} w={1} d={1} h={h} m={m} outline={false} />
+      {merlons
+        .sort((a, b) => a[0] + a[1] - b[0] - b[1])
+        .map(([mx, my]) => <Box key={`${String(mx)},${String(my)}`} x={mx} y={my} w={size} d={size} h={4} z={h} m={m} />)}
+      {tier === 4 && (x + y) % 5 === 0 && <LeftFace x={x} yFront={y + 1} u0={0.35} u1={0.6} v0={h - 14} v1={h - 2} color={BANNER} />}
     </Group>
   );
 }
 
+// A tower on the wall: a timber watchtower at first, then a round stone tower with battlements (taller and
+// wider as it grows), an archer on top.
 function Tower({ x, y, tier }: { x: number; y: number; tier: number }) {
-  const m = matOf(tier);
+  const m = fortMat(tier);
   const h = 30 + 9 * tier;
-  const top = iso(x + 0.5, y + 0.5, tier === 1 ? h - 2 : h);
+  if (tier === 1) {
+    const top = iso(x + 0.5, y + 0.5, h - 2);
+    return (
+      <Group>
+        {[[0, 0.8], [0.8, 0.8], [0.8, 0]].map(([dx, dy]) => <Box key={`${String(dx)}${String(dy)}`} x={x + dx} y={y + dy} w={0.18} d={0.18} h={h - 10} m={m} />)}
+        <Box x={x - 0.05} y={y - 0.05} w={1.1} d={1.1} h={8} z={h - 10} m={m} />
+        <Peasant x={top.x} y={top.y} tunic="#3f5f9a" />
+        <Hip x={x - 0.05} y={y - 0.05} w={1.1} d={1.1} z={h - 2} rise={12} m={m} />
+      </Group>
+    );
+  }
+  const r = 0.62 + 0.06 * tier;
+  const top = iso(x + 0.5, y + 0.5, h);
+  const slit = iso(x + 0.5, y + 0.5 + r, h - 14);
   return (
     <Group>
-      {tier === 1 ? (
-        // A timber watchtower on legs.
-        <Group>
-          {[[0, 0.8], [0.8, 0.8], [0.8, 0]].map(([dx, dy]) => <Box key={`${String(dx)}${String(dy)}`} x={x + dx} y={y + dy} w={0.18} d={0.18} h={h - 10} m={m} />)}
-          <Box x={x - 0.05} y={y - 0.05} w={1.1} d={1.1} h={8} z={h - 10} m={m} />
-          <Peasant x={top.x} y={top.y} tunic="#3f5f9a" />
-          <Hip x={x - 0.05} y={y - 0.05} w={1.1} d={1.1} z={h - 2} rise={12} m={m} />
-        </Group>
-      ) : (
-        <Group>
-          <Box x={x - 0.15} y={y - 0.15} w={1.3} d={1.3} h={h} m={m} />
-          <LeftFace x={x - 0.15} yFront={y + 1.15} u0={0.55} u1={0.75} v0={h - 18} v1={h - 10} color={DARK} />
-          {/* An archer keeps watch. */}
-          <Peasant x={top.x} y={top.y} tunic="#3f5f9a" />
-          {tier >= 3 ? <Hip x={x - 0.2} y={y - 0.2} w={1.4} d={1.4} z={h} rise={16} m={m} /> : <Crenels x={x - 0.15} y={y - 0.15} w={1.3} d={1.3} z={h} m={m} />}
-          {tier === 4 && <Flag x={x + 0.5} y={y + 0.5} z={h + 16} color={GOLD} />}
-        </Group>
-      )}
+      <Cylinder cx={x + 0.5} cy={y + 0.5} r={r} h={h} m={m} />
+      <Rect x={slit.x - 0.8} y={slit.y - 4} width={1.6} height={7} color={DARK} />
+      <Peasant x={top.x} y={top.y} tunic="#3f5f9a" />
+      {tier === 4 && <Flag x={x + 0.5} y={y + 0.5} z={h + 4} color={GOLD} />}
     </Group>
   );
 }
 
+// The gate: a timber gate between two posts at first, then a stone gatehouse — two round towers flanking
+// an arched gateway with a portcullis, battlements on the bridge between them.
 function Gatehouse({ tier, plot }: { tier: number; plot: Plot }) {
-  const m = matOf(tier);
+  const m = fortMat(tier);
   const { x, y } = plot;
   if (tier === 1) {
     return (
@@ -1168,16 +1499,17 @@ function Gatehouse({ tier, plot }: { tier: number; plot: Plot }) {
       </Group>
     );
   }
-  const h = 28 + 6 * tier;
+  const h = 30 + 7 * tier;
+  const bridge = h - 6;
   return (
     <Group>
-      <Box x={x} y={y - 0.1} w={1} d={1.2} h={h} m={m} />
-      <Crenels x={x} y={y - 0.1} w={1} d={1.2} z={h} m={m} />
-      <Box x={x + 2} y={y - 0.1} w={1} d={1.2} h={h} m={m} />
-      <Crenels x={x + 2} y={y - 0.1} w={1} d={1.2} z={h} m={m} />
-      <Box x={x + 1} y={y} w={1} d={1} h={h - 22} z={22} m={m} />
-      <LeftFace x={x + 1} yFront={y + 1} u0={0.1} u1={0.9} v0={0} v1={22} color={DARK} />
-      {[0.25, 0.45, 0.65].map((u) => <LeftFace key={u} x={x + 1} yFront={y + 1} u0={u} u1={u + 0.04} v0={10} v1={22} color={tier === 4 ? GOLD : '#8a8477'} />)}
+      <Cylinder cx={x + 0.5} cy={y + 0.5} r={0.68} h={h} m={m} />
+      <Box x={x + 0.9} y={y + 0.1} w={1.2} d={0.8} h={bridge} m={m} />
+      <Crenels x={x + 0.9} y={y + 0.1} w={1.2} d={0.8} z={bridge} m={m} />
+      <LeftFace x={x + 0.9} yFront={y + 0.9} u0={0.2} u1={1.0} v0={0} v1={20} color={DARK} />
+      {[0.32, 0.5, 0.68, 0.86].map((u) => <LeftFace key={u} x={x + 0.9} yFront={y + 0.9} u0={u} u1={u + 0.04} v0={8} v1={20} color={tier === 4 ? GOLD : '#8a8477'} />)}
+      <LeftFace x={x + 0.9} yFront={y + 0.9} u0={0.2} u1={1.0} v0={12} v1={13} color={tier === 4 ? GOLD : '#8a8477'} />
+      <Cylinder cx={x + 2.5} cy={y + 0.5} r={0.68} h={h} m={m} />
       {tier >= 3 && <Flag x={x + 0.5} y={y + 0.5} z={h + 4} color={tier === 4 ? GOLD : BANNER} />}
       {tier >= 3 && <Flag x={x + 2.5} y={y + 0.5} z={h + 4} color={tier === 4 ? GOLD : BANNER} />}
     </Group>
@@ -1192,32 +1524,76 @@ function BuildingArt({ id, plot, tier, level }: { id: BuildingId; plot: Plot; ti
   const { x, y, w, d } = plot;
   switch (id) {
     case 'keep': {
-      const h = 38 + 10 * tier;
-      const bx = x + 0.6;
-      const by = y + 0.6;
-      const bw = w - 1.2;
-      const bd = d - 1.2;
+      // The keep, Stronghold-style: a timber keep (a tall wooden tower with an overhanging fighting
+      // platform and a thatched roof) at first; then a square stone keep with corner turrets; then a
+      // fortress keep with round corner towers and a central tower; dressed stone and gold at the last tier.
+      if (tier === 1) {
+        const h = 40;
+        const door = iso(x + 2.5, y + 3.7, 0);
+        return (
+          <Group>
+            {[[1.0, 1.0], [3.7, 1.0], [1.0, 3.7], [3.7, 3.7]].map(([px, py]) => (
+              <Box key={`${String(px)}${String(py)}`} x={x + px} y={y + py} w={0.3} d={0.3} h={h} m={m} />
+            ))}
+            <Box x={x + 1.4} y={y + 1.4} w={2.2} d={2.2} h={h - 6} m={m} />
+            <Box x={x + 0.9} y={y + 0.9} w={3.2} d={3.2} h={6} z={h - 6} m={m} />
+            <Crenels x={x + 0.9} y={y + 0.9} w={3.2} d={3.2} z={h} m={m} />
+            <Hip x={x + 1.5} y={y + 1.5} w={2.0} d={2.0} z={h} rise={22} m={m} />
+            <LeftFace x={x + 1.4} yFront={y + 3.6} u0={0.8} u1={1.4} v0={0} v1={12} color={DARK} />
+            <Rect x={door.x - 6} y={door.y - 1} width={12} height={2} color="#6e4a2f" />
+            <Flag x={x + 2.5} y={y + 2.5} z={h + 22} />
+          </Group>
+        );
+      }
+      const keepMat = fortMat(tier);
+      const h = 40 + 9 * tier;
+      const bx = x + 0.8;
+      const by = y + 0.8;
+      const bw = w - 1.6;
+      const bd = d - 1.6;
+      const slits = [0.6, 1.3, 2.1, 2.8].map((u) => <LeftFace key={u} x={bx} yFront={by + bd} u0={u} u1={u + 0.12} v0={h - 20} v1={h - 10} color={DARK} />);
+      const rightSlits = [0.6, 1.5, 2.6].map((u) => <RightFace key={u} xFront={bx + bw} y={by} u0={u} u1={u + 0.12} v0={h - 20} v1={h - 10} color={DARK} />);
+      if (tier === 2) {
+        // A square stone keep with two corner turrets at the front.
+        return (
+          <Group>
+            <Box x={bx} y={by} w={bw} d={bd} h={h} m={keepMat} />
+            <Crenels x={bx} y={by} w={bw} d={bd} z={h} m={keepMat} />
+            {slits}
+            {rightSlits}
+            <LeftFace x={bx} yFront={by + bd} u0={bw / 2 - 0.45} u1={bw / 2 + 0.45} v0={0} v1={16} color={DARK} />
+            {[[bx + bw - 0.6, by - 0.3], [bx - 0.3, by + bd - 0.6], [bx + bw - 0.6, by + bd - 0.6]].map(([tx, ty]) => (
+              <Group key={`${String(tx)}${String(ty)}`}>
+                <Box x={tx} y={ty} w={0.9} d={0.9} h={h + 10} m={keepMat} />
+                <Crenels x={tx} y={ty} w={0.9} d={0.9} z={h + 10} m={keepMat} />
+              </Group>
+            ))}
+            <Flag x={bx + bw / 2} y={by + bd / 2} z={h + 4} />
+          </Group>
+        );
+      }
+      // A fortress keep: round towers at the four corners, a central tower rising above the walls.
+      const corner = (cx: number, cy: number) => <Cylinder key={`${String(cx)},${String(cy)}`} cx={cx} cy={cy} r={0.75} h={h + 12} m={keepMat} />;
       return (
         <Group>
-          <Box x={bx} y={by} w={bw} d={bd} h={h} m={m} />
-          {tier === 1 ? <Hip x={bx} y={by} w={bw} d={bd} z={h} rise={20} m={m} /> : <Crenels x={bx} y={by} w={bw} d={bd} z={h} m={m} />}
-          {tier >= 3 && (
+          {corner(bx, by)}
+          <Box x={bx} y={by} w={bw} d={bd} h={h} m={keepMat} />
+          <Crenels x={bx} y={by} w={bw} d={bd} z={h} m={keepMat} />
+          {slits}
+          {rightSlits}
+          <LeftFace x={bx} yFront={by + bd} u0={bw / 2 - 0.5} u1={bw / 2 + 0.5} v0={0} v1={18} color={DARK} />
+          <Box x={bx + bw / 2 - 0.85} y={by + bd / 2 - 0.85} w={1.7} d={1.7} h={26} z={h} m={keepMat} />
+          <Crenels x={bx + bw / 2 - 0.85} y={by + bd / 2 - 0.85} w={1.7} d={1.7} z={h + 26} m={keepMat} />
+          {tier === 4 && (
             <Group>
-              <Box x={bx + bw / 2 - 0.8} y={by + bd / 2 - 0.8} w={1.6} d={1.6} h={24} z={h} m={m} />
-              <Crenels x={bx + bw / 2 - 0.8} y={by + bd / 2 - 0.8} w={1.6} d={1.6} z={h + 24} m={m} />
-              <Flag x={bx + bw / 2} y={by + bd / 2} z={h + 28} color={tier === 4 ? GOLD : BANNER} />
+              <LeftFace x={bx} yFront={by + bd} u0={0} u1={bw} v0={h - 4} v1={h - 2.5} color={GOLD} />
+              {[0.35, bw - 0.65].map((u) => <LeftFace key={u} x={bx} yFront={by + bd} u0={u} u1={u + 0.3} v0={h - 26} v1={h - 6} color={BANNER} />)}
             </Group>
           )}
-          {tier >= 2 && [[bx - 0.3, by + bd - 0.7], [bx + bw - 0.7, by + bd - 0.7], [bx + bw - 0.7, by - 0.3]].map(([tx, ty]) => (
-            <Group key={`${String(tx)}${String(ty)}`}>
-              <Box x={tx} y={ty} w={1} d={1} h={h + 12} m={m} />
-              {tier >= 3 ? <Hip x={tx - 0.05} y={ty - 0.05} w={1.1} d={1.1} z={h + 12} rise={16} m={m} /> : <Crenels x={tx} y={ty} w={1} d={1} z={h + 12} m={m} />}
-            </Group>
-          ))}
-          <LeftFace x={bx} yFront={by + bd} u0={bw / 2 - 0.4} u1={bw / 2 + 0.4} v0={0} v1={16} color={DARK} />
-          {[0.5, 1.2, 2.4, 3.1].map((u) => <LeftFace key={u} x={bx} yFront={by + bd} u0={u} u1={u + 0.22} v0={h - 18} v1={h - 10} color="#3d4438" />)}
-          {tier === 4 && <LeftFace x={bx} yFront={by + bd} u0={0} u1={bw} v0={h - 4} v1={h - 2.5} color={GOLD} />}
-          {tier < 3 && <Flag x={bx + bw / 2} y={by + bd / 2} z={h + (tier === 1 ? 20 : 4)} />}
+          {corner(bx + bw, by)}
+          {corner(bx, by + bd)}
+          {corner(bx + bw, by + bd)}
+          <Flag x={bx + bw / 2} y={by + bd / 2} z={h + 30} color={tier === 4 ? GOLD : BANNER} />
         </Group>
       );
     }
@@ -1383,8 +1759,8 @@ function BuildingArt({ id, plot, tier, level }: { id: BuildingId; plot: Plot; ti
           )}
           <Rect x={nest.x - 8} y={nest.y - 3} width={16} height={4} color="#7a5232" />
           <Rect x={nest.x - 3} y={nest.y - 9} width={8} height={6} color="#c9a34a" />
-          <Path path={poly([{ x: nest.x - 2, y: nest.y - 8 }, { x: nest.x - 13, y: nest.y - 17 }, { x: nest.x - 5, y: nest.y - 6 }])} color="#ece6d4" />
-          <Path path={poly([{ x: nest.x + 3, y: nest.y - 8 }, { x: nest.x + 13, y: nest.y - 18 }, { x: nest.x + 7, y: nest.y - 6 }])} color="#ece6d4" />
+          <Path path={svgPath(poly([{ x: nest.x - 2, y: nest.y - 8 }, { x: nest.x - 13, y: nest.y - 17 }, { x: nest.x - 5, y: nest.y - 6 }]))} color="#ece6d4" />
+          <Path path={svgPath(poly([{ x: nest.x + 3, y: nest.y - 8 }, { x: nest.x + 13, y: nest.y - 18 }, { x: nest.x + 7, y: nest.y - 6 }]))} color="#ece6d4" />
           <Rect x={nest.x + 4} y={nest.y - 12} width={4} height={4} color="#ece6d4" />
           {tier === 4 && <Flag x={x + w / 2} y={y + d / 2} z={h + 2} color={GOLD} />}
         </Group>
@@ -1433,7 +1809,7 @@ function BuildingArt({ id, plot, tier, level }: { id: BuildingId; plot: Plot; ti
           <Box x={x + 0.1} y={y + 0.1} w={w - 0.2} d={1.2} h={h} m={m} />
           <Gable x={x + 0.05} y={y + 0.05} w={w - 0.1} d={1.3} z={h} rise={8} m={m} />
           {[0.4, 1.3, 2.2, 3.0].map((u) => <LeftFace key={u} x={x + 0.1} yFront={y + 1.3} u0={u} u1={u + 0.5} v0={0} v1={8} color={DARK} />)}
-          <Path path={poly(fence)} style="stroke" strokeWidth={1.5} color="#8c6a3c" />
+          <Path path={svgPath(poly(fence))} style="stroke" strokeWidth={1.5} color="#8c6a3c" />
           {Array.from({ length: Math.min(4, tier + 1) }, (_, index) => {
             const p = iso(x + 0.8 + (index % 2) * 1.6, y + 2.0 + Math.floor(index / 2) * 0.6);
             const coat = index % 2 ? '#5a3a24' : '#7a5232';
@@ -1537,15 +1913,27 @@ function BuildingArt({ id, plot, tier, level }: { id: BuildingId; plot: Plot; ti
 // so they're drawn live instead of making the still image redraw.
 const Piles = memo(function Piles({ steps, plot }: { steps: string; plot: Plot }) {
   const piles = steps.split(',').map(Number);
+  // Each pile a little pyramid: its two lit faces in the resource's colour, the two shaded ones darker.
+  const svgs = RESOURCES.flatMap((resource, index) => {
+    const fill = piles[index] / PILE_STEPS;
+    if (fill <= 0) return ['', ''];
+    const x = plot.x + 0.15 + (index % 4) * 0.7;
+    const y = plot.y + 1.45 + Math.floor(index / 4) * 0.5;
+    const [A, B, C, D] = [iso(x, y), iso(x + 0.55, y), iso(x + 0.55, y + 0.4), iso(x, y + 0.4)];
+    const apex = iso(x + 0.275, y + 0.2, 3 + 9 * fill);
+    return [`${poly([A, D, apex])} ${poly([D, C, apex])}`, `${poly([A, B, apex])} ${poly([B, C, apex])}`];
+  });
+  const paths = useSvgPaths(svgs);
   return (
     <Group>
-      {RESOURCES.map((resource, index) => {
-        const fill = piles[index] / PILE_STEPS;
-        if (fill <= 0) return null;
-        const info = RESOURCE_INFO[resource];
-        const m: Mat = { left: info.color, right: info.dark, top: info.light, roof: info.color, roofDark: info.dark };
-        return <Hip key={resource} x={plot.x + 0.15 + (index % 4) * 0.7} y={plot.y + 1.45 + Math.floor(index / 4) * 0.5} w={0.55} d={0.4} z={0} rise={3 + 9 * fill} m={m} />;
-      })}
+      {RESOURCES.map((resource, index) =>
+        svgs[index * 2] ? (
+          <Group key={resource}>
+            <Path path={paths[index * 2]} color={RESOURCE_INFO[resource].color} />
+            <Path path={paths[index * 2 + 1]} color={RESOURCE_INFO[resource].dark} />
+          </Group>
+        ) : null,
+      )}
     </Group>
   );
 });
@@ -1801,8 +2189,28 @@ const BargeSprite = memo(function BargeSprite({ berth, arrivedAt, leftAt, flag, 
 
 // A small inland barge drawn at the origin: hull, deck with crates, a mast and a sail, and a pennant in
 // the color of the goods it wants.
+const bargeShapes = new Map<boolean, ReturnType<typeof buildBargeShape>>();
 const BargeArt = memo(function BargeArt({ alongX, flag }: { alongX: boolean; flag: string }) {
-  const paths = useMemo(() => {
+  let paths = bargeShapes.get(alongX);
+  if (!paths) {
+    paths = buildBargeShape(alongX);
+    bargeShapes.set(alongX, paths);
+  }
+  return (
+    <Group>
+      <Path path={paths.hull} color="#4e3420" />
+      <Path path={paths.deck} color="#8a6a42" />
+      <Path path={paths.crates} color="#6e4a2f" />
+      <Path path={paths.cratesTop} color="#b98a5a" />
+      <Line p1={vec(paths.mast.a.x, paths.mast.a.y)} p2={vec(paths.mast.b.x, paths.mast.b.y)} strokeWidth={1.2} color="#3a2a1c" />
+      <Path path={paths.sail} color="#ece4cc" />
+      <Path path={paths.pennant} color={flag} />
+    </Group>
+  );
+});
+// A barge's shape heading along x or y, parsed once and kept.
+function buildBargeShape(alongX: boolean) {
+  const svg = (() => {
     // Tile offsets (along the barge, across it) to screen offsets, raised `z` pixels.
     const at = (u: number, v: number, z = 0) => {
       const [dx, dy] = alongX ? [u, v] : [v, u];
@@ -1819,19 +2227,17 @@ const BargeArt = memo(function BargeArt({ alongX, flag }: { alongX: boolean; fla
       sail: poly([at(0.3, 0, 23), at(0.3, 0, 9), { x: at(0.3, 0, 11).x + 9, y: at(0.3, 0, 11).y }]),
       pennant: poly([at(0.3, 0, 24), at(0.3, 0, 20), { x: at(0.3, 0, 22).x - 8, y: at(0.3, 0, 22).y }]),
     };
-  }, [alongX]);
-  return (
-    <Group>
-      <Path path={paths.hull} color="#4e3420" />
-      <Path path={paths.deck} color="#8a6a42" />
-      <Path path={paths.crates} color="#6e4a2f" />
-      <Path path={paths.cratesTop} color="#b98a5a" />
-      <Line p1={vec(paths.mast.a.x, paths.mast.a.y)} p2={vec(paths.mast.b.x, paths.mast.b.y)} strokeWidth={1.2} color="#3a2a1c" />
-      <Path path={paths.sail} color="#ece4cc" />
-      <Path path={paths.pennant} color={flag} />
-    </Group>
-  );
-});
+  })();
+  return {
+    hull: parsed(svg.hull),
+    deck: parsed(svg.deck),
+    crates: parsed(svg.crates),
+    cratesTop: parsed(svg.cratesTop),
+    mast: svg.mast,
+    sail: parsed(svg.sail),
+    pennant: parsed(svg.pennant),
+  };
+}
 
 // The campfire's ring of stones and logs (the flame is live).
 function Campfire() {
@@ -1857,7 +2263,7 @@ function Headframe() {
   const ground = iso(cx, cy);
   return (
     <Group>
-      <Path path={poly(mouth)} color="#171d1b" />
+      <Path path={svgPath(poly(mouth))} color="#171d1b" />
       <Hip x={x + w - 0.9} y={y + d - 0.9} w={0.7} d={0.7} z={0} rise={7} m={{ ...STONE, roof: '#26262a', roofDark: '#1c1c1f' }} />
       {legs.map((leg, index) => <Line key={index} p1={vec(leg.x, leg.y)} p2={vec(WHEEL.x, WHEEL.y)} color="#805a3c" strokeWidth={3} />)}
       <Line p1={vec(WHEEL.x, WHEEL.y)} p2={vec(ground.x, ground.y)} color="#bd8d55" strokeWidth={1} />

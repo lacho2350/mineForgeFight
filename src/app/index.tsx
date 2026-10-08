@@ -25,7 +25,6 @@ import { isMoored } from '../game/ship';
 import { TRAP_DAMAGE, TRAP_INFO, TRAP_KINDS, TRAP_REFUND, trapAt, trapCounts, trapProblem, trapsFacing, type TrapKind } from '../game/traps';
 import { BUILDING_ICONS, ROAD_ICONS, TRAP_ICONS } from '../components/buildingIcons';
 import { plotOf } from '../components/GameSceneLayout';
-import { RESOURCES, RESOURCE_INFO, type Resource } from '../game/resources';
 import type { Workforce } from '../game/workforce';
 import { BuildingDetail, BuildingGrid, DefenceSummary } from '../components/BuildingsPanel';
 import CityView from '../components/CityView';
@@ -33,6 +32,7 @@ import { GameButton, SectionLabel } from '../components/GameUI';
 import BargesPanel from '../components/BargesPanel';
 import { DepotPanel, ForgePanel, GearStore } from '../components/ForgePanel';
 import { isForge } from '../game/forges';
+import CombatPanel, { hireableNow } from '../components/CombatPanel';
 import RaidBanner from '../components/RaidBanner';
 import Sheet from '../components/Sheet';
 import StockpileTable from '../components/StockpileTable';
@@ -46,6 +46,7 @@ type Popup =
   | { kind: 'buildings' }
   | { kind: 'tech' }
   | { kind: 'menu' }
+  | { kind: 'combat' }
   | null;
 /** A building being placed and where its footprint is now. */
 type Placing = { id: BuildingId; x: number; y: number } | null;
@@ -169,6 +170,7 @@ export default function StrongholdScreen() {
   };
   // Only live raids show over the map; the last battle's result is in the menu.
   const showRaid = !!game.raid || game.battle?.status === 'active';
+  const hireable = hireableNow(game, workforce);
 
   return (
     <View style={styles.screen}>
@@ -192,7 +194,7 @@ export default function StrongholdScreen() {
       />
 
       {/* Top: resources, peasants, the raid clock */}
-      <View style={[styles.top, { paddingTop: insets.top + 8 }]} pointerEvents="box-none" onLayout={(event) => setHudHeight(event.nativeEvent.layout.height)}>
+      <View style={[styles.top, { paddingTop: insets.top + 8, pointerEvents: 'box-none' }]} onLayout={(event) => setHudHeight(event.nativeEvent.layout.height)}>
         <Hud game={game} workforce={workforce} />
         {showRaid && (
           <View style={styles.raid}>
@@ -201,8 +203,21 @@ export default function StrongholdScreen() {
         )}
       </View>
 
+      {/* The War button on the side: raids, the army and the defences */}
+      {!placing && !painting && (
+        <View style={[styles.side, { top: hudHeight + 12 }]}>
+          <SideButton
+            icon="⚔️"
+            label="War: raids, the army and the defences"
+            onPress={() => setPopup({ kind: 'combat' })}
+            alarm={!!game.raid || game.battle?.status === 'active'}
+            badge={hireable > 0 ? String(hireable) : undefined}
+          />
+        </View>
+      )}
+
       {/* Bottom: the latest news and the toolbar */}
-      <View style={[styles.bottom, { paddingBottom: insets.bottom + 8 }]} pointerEvents="box-none" onLayout={(event) => setBarHeight(event.nativeEvent.layout.height)}>
+      <View style={[styles.bottom, { paddingBottom: insets.bottom + 8, pointerEvents: 'box-none' }]} onLayout={(event) => setBarHeight(event.nativeEvent.layout.height)}>
         {painting ? (
           <PaintBar game={game} painting={painting} result={paintResult} onPick={startPainting} onDone={() => setPainting(null)} />
         ) : placing ? (
@@ -275,6 +290,16 @@ export default function StrongholdScreen() {
           <TechTree game={game} />
         </Sheet>
       )}
+      {popup?.kind === 'combat' && (
+        <Sheet title="War" subtitle="RAIDS, THE ARMY AND THE DEFENCES" onClose={close}>
+          <CombatPanel
+            game={game}
+            workforce={workforce}
+            onOpenBuilding={openBuilding}
+            onLayTraps={() => startPainting({ tool: 'trap', kind: 'spikes' })}
+          />
+        </Sheet>
+      )}
       {popup?.kind === 'menu' && (
         <Sheet title="The hold" subtitle="PEASANTS, STOCKPILES AND THE GAME" onClose={close}>
           <Menu game={game} workforce={workforce} />
@@ -296,11 +321,6 @@ function Hud({ game, workforce }: { game: GameState; workforce: Workforce }) {
         <Stat label={`PEASANTS · ${String(workforce.idle)} IDLE`} value={`${String(game.population)}/${String(beds)}`} tone="#c0cd83" />
         {raidIn !== null && <Stat label={`RAID ${String(game.raidsFought + 1)}`} value={clock(raidIn)} tone="#e08a72" />}
       </View>
-      <View style={styles.resources}>
-        {RESOURCES.map((resource) => (
-          <ResourceChip key={resource} resource={resource} amount={Math.floor(game.warehouse[resource])} capacity={game.warehouseCapacity} />
-        ))}
-      </View>
     </View>
   );
 }
@@ -314,24 +334,6 @@ function Stat({ label, value, tone }: { label: string; value: string; tone: stri
   );
 }
 
-// One warehouse resource: its colour, the stock, and a bar for how full its pile is.
-function ResourceChip({ resource, amount, capacity }: { resource: Resource; amount: number; capacity: number }) {
-  const info = RESOURCE_INFO[resource];
-  const fill = Math.min(1, amount / Math.max(1, capacity));
-  return (
-    <View style={styles.chip} accessibilityLabel={`${info.name}: ${String(amount)} of ${String(capacity)}`}>
-      <View style={[styles.swatch, { backgroundColor: info.color, borderColor: info.light }]} />
-      <View style={styles.chipCopy}>
-        <Text style={[styles.chipValue, amount >= capacity && styles.chipFull]} numberOfLines={1}>
-          {amount.toLocaleString()}
-        </Text>
-        <View style={styles.chipTrack}>
-          <View style={[styles.chipFill, { width: `${Math.round(fill * 100)}%`, backgroundColor: info.tint }]} />
-        </View>
-      </View>
-    </View>
-  );
-}
 
 // ——— News and the toolbar ———
 
@@ -344,7 +346,7 @@ function Toast({ notice }: { notice: string }) {
   }, [notice]);
   if (expired === notice) return null;
   return (
-    <Animated.View key={notice} entering={FadeIn.duration(150)} exiting={FadeOut.duration(300)} style={styles.toast} pointerEvents="none">
+    <Animated.View key={notice} entering={FadeIn.duration(150)} exiting={FadeOut.duration(300)} style={[styles.toast, { pointerEvents: 'none' }]}>
       <Text style={styles.toastText}>{notice}</Text>
     </Animated.View>
   );
@@ -356,6 +358,17 @@ function ToolButton({ icon, label, onPress, badge }: { icon: string; label: stri
       <Text style={styles.toolIcon}>{icon}</Text>
       <Text style={styles.toolLabel}>{label}</Text>
       {badge && <Text style={styles.toolBadge}>{badge}</Text>}
+    </Pressable>
+  );
+}
+
+// A round button on the side of the map; `alarm` lights it red with a "!" (raiders sighted or a battle
+// waiting), otherwise `badge` shows a count.
+function SideButton({ icon, label, onPress, alarm, badge }: { icon: string; label: string; onPress: () => void; alarm: boolean; badge?: string }) {
+  return (
+    <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress} style={({ pressed }) => [styles.sideButton, alarm && styles.sideAlarm, pressed && styles.pressed]}>
+      <Text style={styles.sideIcon}>{icon}</Text>
+      {alarm ? <Text style={[styles.sideBadge, styles.sideBadgeAlarm]}>!</Text> : badge && <Text style={styles.sideBadge}>{badge}</Text>}
     </Pressable>
   );
 }
@@ -654,30 +667,14 @@ function Menu({ game, workforce }: { game: GameState; workforce: Workforce }) {
           {game.population < beds ? ' · a newcomer every few seconds' : unkept ? ' · the houses are short of housekeepers' : ' · houses full'}
         </Text>
       </View>
-      <LastRaid game={game} />
+      <View style={styles.block}>
+        <SectionLabel>RAIDS</SectionLabel>
+        <Text style={styles.body}>Raids, the army, recruiting, auto-resolve and the defences: the ⚔️ button on the side of the map.</Text>
+      </View>
       <Stockpiles game={game} />
       <NewGameButton onConfirm={game.resetGame} />
       <Text style={styles.footer}>DIG BELOW. BUILD ABOVE. · PROGRESS SAVES AUTOMATICALLY</Text>
     </>
-  );
-}
-
-// The last raid's outcome, with the way back to its battlefield while it's still open.
-function LastRaid({ game }: { game: GameState }) {
-  const report = game.raidReport;
-  return (
-    <View style={styles.block}>
-      <SectionLabel>RAIDS</SectionLabel>
-      <Text style={styles.body}>
-        {report
-          ? `Raid ${String(report.number)}: ${report.outcome === 'won' ? `victory, +${String(report.bounty)} gold` : report.outcome === 'lost' ? `defeat, ${String(report.plundered?.gold ?? 0)} gold plundered` : 'the raiders withdrew'}${report.trapKills ? `; the traps slew ${String(report.trapKills)}` : ''}.`
-          : 'No raids yet.'}
-        {` Next: raid ${String(game.raidsFought + 1)} in ${clock(game.nextRaidAt - game.elapsedSeconds)}.`}
-      </Text>
-      {game.battle && game.battle.status !== 'active' && (
-        <GameButton label="SEE THE LAST BATTLE" detail={`raid ${String(game.battle.raid)}`} onPress={() => router.push('/battle')} secondary />
-      )}
-    </View>
   );
 }
 
@@ -717,15 +714,6 @@ const styles = StyleSheet.create({
   stat: { gap: 2 },
   statLabel: { color: '#89907f', fontFamily: 'monospace', fontSize: 8 },
   statValue: { fontFamily: 'Georgia', fontSize: 18, fontWeight: 'bold' },
-  // Twelve resources: two rows of six.
-  resources: { flexDirection: 'row', flexWrap: 'wrap', columnGap: 6, rowGap: 5 },
-  chip: { flexGrow: 1, flexBasis: '14%', minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 5 },
-  swatch: { width: 10, height: 10, borderWidth: 1 },
-  chipCopy: { flex: 1, minWidth: 0, gap: 2 },
-  chipValue: { color: '#e6dfcb', fontFamily: 'monospace', fontSize: 10, fontWeight: '700' },
-  chipFull: { color: '#e9c475' },
-  chipTrack: { height: 2, backgroundColor: '#343a31' },
-  chipFill: { height: 2 },
   raid: { alignSelf: 'center', width: '100%', maxWidth: 720 },
 
   bottom: { position: 'absolute', left: 0, right: 0, bottom: 0, paddingHorizontal: 10, gap: 8, alignItems: 'center' },
@@ -736,6 +724,20 @@ const styles = StyleSheet.create({
   toolIcon: { fontSize: 18, lineHeight: 22 },
   toolLabel: { color: '#e6dfcb', fontFamily: 'monospace', fontSize: 9, fontWeight: '700' },
   toolBadge: { position: 'absolute', top: 4, right: 6, minWidth: 16, paddingHorizontal: 3, textAlign: 'center', backgroundColor: '#d2a45f', color: '#20231b', fontFamily: 'monospace', fontSize: 9, fontWeight: '700' },
+  side: { position: 'absolute', right: 12 },
+  sideButton: {
+    width: 48,
+    height: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#5a6150',
+    backgroundColor: 'rgba(17, 20, 16, 0.88)',
+  },
+  sideAlarm: { borderColor: '#e8604a', backgroundColor: 'rgba(58, 22, 18, 0.92)' },
+  sideIcon: { fontSize: 22, lineHeight: 26 },
+  sideBadge: { position: 'absolute', top: -6, right: -6, minWidth: 18, paddingHorizontal: 3, textAlign: 'center', backgroundColor: '#d2a45f', color: '#20231b', fontFamily: 'monospace', fontSize: 9, fontWeight: '700' },
+  sideBadgeAlarm: { backgroundColor: '#e8604a', color: '#fff4ee' },
 
   block: { gap: 8 },
   blockHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 },

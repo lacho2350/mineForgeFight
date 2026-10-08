@@ -103,7 +103,7 @@ export default function BattleScreen() {
             <Pressable accessibilityRole="button" onPress={() => (router.canGoBack() ? router.back() : router.replace('/'))} style={styles.back}>
               <Text style={styles.backText}>‹  HOLD</Text>
             </Pressable>
-            <Text style={styles.title}>{battle ? `Raid ${String(battle.raid)}` : 'The gate'}</Text>
+            <Text style={styles.title}>{battle ? `Raid ${String(battle.raid)} · ${battle.kind === 'field' ? 'In the field' : 'Siege'}` : 'The gate'}</Text>
             <Text style={styles.round}>{battle && battle.status === 'active' ? `ROUND ${String(battle.round)}` : ''}</Text>
           </View>
 
@@ -128,8 +128,7 @@ export default function BattleScreen() {
                     return (
                       <Text
                         key={`${String(battle.log.length)}-${String(index)}`}
-                        pointerEvents="none"
-                        style={[styles.floater, { left: center.x - 30, top: center.y - layout.size * 1.6 - index * 12 }, healing && styles.floaterHeal]}
+                        style={[styles.floater, { left: center.x - 30, top: center.y - layout.size * 1.6 - index * 12, pointerEvents: 'none' }, healing && styles.floaterHeal]}
                       >
                         {healing ? '✚' : `−${String(event.damage)}`}
                       </Text>
@@ -199,13 +198,12 @@ function StackLabel({ stack, size, small, preview }: { stack: Stack; size: numbe
   return (
     <>
       <Text
-        pointerEvents="none"
-        style={[styles.count, stack.side === 'defender' ? styles.countHold : styles.countRaider, { left: center.x - 2, top: center.y + size * 0.35 }]}
+        style={[styles.count, stack.side === 'defender' ? styles.countHold : styles.countRaider, { left: center.x - 2, top: center.y + size * 0.35, pointerEvents: 'none' }]}
       >
         {String(stackCount(stack))}
       </Text>
       {preview && (
-        <Text pointerEvents="none" style={[styles.preview, small && styles.previewSmall, { left: Math.max(0, center.x - (small ? 28 : 40)), top: center.y - size * 1.25 }]}>
+        <Text style={[styles.preview, small && styles.previewSmall, { left: Math.max(0, center.x - (small ? 28 : 40)), top: center.y - size * 1.25, pointerEvents: 'none' }]}>
           {preview}
         </Text>
       )}
@@ -235,7 +233,8 @@ function StackCard({ battle, stack }: { battle: Battle; stack: Stack }) {
 }
 
 function ReportCard({ report }: { report: RaidReport }) {
-  const title = report.outcome === 'won' ? 'Victory!' : report.outcome === 'lost' ? 'The hold has fallen' : 'The raiders withdrew';
+  const field = report.kind === 'field';
+  const title = report.outcome === 'won' ? 'Victory!' : report.outcome === 'lost' ? (field ? 'Beaten in the field' : 'The hold has fallen') : 'The raiders withdrew';
   const losses = Object.entries(report.losses) as [ArmyUnit, number][];
   return (
     <View style={styles.report}>
@@ -245,7 +244,7 @@ function ReportCard({ report }: { report: RaidReport }) {
         {report.trapKills ? ` (${String(report.trapKills)} by traps)` : ''}
       </Text>
       {report.bounty > 0 && <Text style={styles.cardText}>Bounty: +{String(report.bounty)} gold</Text>}
-      {report.plundered && <Text style={styles.cardText}>Plundered: {String(report.plundered.gold)} gold and 30% of every stockpile</Text>}
+      {report.plundered && <Text style={styles.cardText}>Plundered: {String(report.plundered.gold)} gold and {field ? '15% of every stockpile (the outskirts only)' : '30% of every stockpile'}</Text>}
       <Text style={styles.cardText}>
         {losses.length === 0 ? 'No losses.' : `Fallen: ${losses.map(([unit, count]) => `${String(count)} ${(count === 1 ? UNIT_STATS[unit].name : UNIT_STATS[unit].plural).toLowerCase()}`).join(', ')}`}
       </Text>

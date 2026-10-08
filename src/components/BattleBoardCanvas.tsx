@@ -5,6 +5,7 @@ import { BATTLE_COLS, BATTLE_ROWS, GATE_ROW, MOAT_COL, WALL_COL, inMoat, isAlive
 import type { UnitId } from '../game/units';
 import { hexCenter, hexPath, type BoardLayout } from './battleLayout';
 import { SPRITE_SIZE, spritePixels } from './unitSprites';
+import { useSvgPaths } from './skiaPaths';
 
 export type BattleBoardProps = {
   battle: Battle;
@@ -19,7 +20,7 @@ const keyHex = (key: number) => ({ col: key % BATTLE_COLS, row: Math.floor(key /
 
 function BattleBoardCanvas({ battle, layout, moves, targets, helps }: BattleBoardProps) {
   const { size, width, height, fieldWidth } = layout;
-  const grid = useMemo(() => {
+  const gridSvg = useMemo(() => {
     const parts: string[] = [];
     for (let row = 0; row < BATTLE_ROWS; row++) for (let col = 0; col < BATTLE_COLS; col++) parts.push(hexPath(size, col, row, 0.5));
     return parts.join(' ');
@@ -30,21 +31,54 @@ function BattleBoardCanvas({ battle, layout, moves, targets, helps }: BattleBoar
   // The flooded moat in front of the wall (and the bridge at the gate, unless it's raised).
   const moat = Array.from({ length: BATTLE_ROWS }, (_, row) => row).filter((row) => inMoat(battle, MOAT_COL, row));
   const bridge = (battle.moat ?? 0) > 0 && !battle.moatAtGate;
+  // In the field: open grass all the way across, with a few bushes and stones (no courtyard or towers).
+  const field = battle.kind === 'field';
+  const scrubSvg = useMemo(() => {
+    const parts: string[] = [];
+    for (let i = 0; i < 18; i++) {
+      const x = ((i * 137) % 97) / 97;
+      const y = ((i * 71) % 89) / 89;
+      const r = 2 + (i % 3);
+      const cx = x * width;
+      const cy = y * height;
+      parts.push(`M ${(cx - r).toFixed(1)} ${cy.toFixed(1)} a ${String(r)} ${String(r * 0.7)} 0 1 0 ${String(2 * r)} 0 a ${String(r)} ${String(r * 0.7)} 0 1 0 ${String(-2 * r)} 0 Z`);
+    }
+    return parts.join(' ');
+  }, [width, height]);
+  // Every shape on the board as a path held here (so they're freed when the board changes; see skiaPaths).
+  const standingWalls = battle.walls.filter((piece) => piece.hp > 0);
+  const [grid, scrub, moatPath, bridgePath, movesPath, helpsPath, targetsPath, activePath, ...wallPaths] = useSvgPaths([
+    gridSvg,
+    scrubSvg,
+    moat.map((row) => hexPath(size, MOAT_COL, row, 0)).join(' '),
+    bridge ? hexPath(size, MOAT_COL, GATE_ROW, 3) : '',
+    tint(moves),
+    tint(helps),
+    tint(targets),
+    active ? hexPath(size, active.col, active.row, 1) : '',
+    ...standingWalls.map((piece) => hexPath(size, piece.col, piece.row, 1)),
+  ]);
 
   return (
     <View style={[styles.frame, { width, height }]}>
       <Canvas style={{ width, height }}>
-        {/* Field outside, paved courtyard inside, the tower strip on the right */}
+        {/* A siege: field outside, paved courtyard inside, the tower strip on the right. In the field: grass all across. */}
         <Rect x={0} y={0} width={width} height={height} color="#5f7046" />
-        <Rect x={courtyard} y={0} width={fieldWidth - courtyard} height={height} color="#7a7158" />
-        <Rect x={fieldWidth} y={0} width={width - fieldWidth} height={height} color="#4a4535" />
-        {moat.length > 0 && <Path path={moat.map((row) => hexPath(size, MOAT_COL, row, 0)).join(' ')} color="#3f6f8a" />}
-        {bridge && <Path path={hexPath(size, MOAT_COL, GATE_ROW, 3)} color="#8c6a3c" />}
+        {field ? (
+          <Path path={scrub} color="#4c5d36" />
+        ) : (
+          <Group>
+            <Rect x={courtyard} y={0} width={fieldWidth - courtyard} height={height} color="#7a7158" />
+            <Rect x={fieldWidth} y={0} width={width - fieldWidth} height={height} color="#4a4535" />
+          </Group>
+        )}
+        {moat.length > 0 && <Path path={moatPath} color="#3f6f8a" />}
+        {bridge && <Path path={bridgePath} color="#8c6a3c" />}
         <Path path={grid} style="stroke" strokeWidth={1} color="rgba(20, 24, 18, 0.35)" />
 
-        {moves.length > 0 && <Path path={tint(moves)} color="rgba(120, 170, 220, 0.35)" />}
-        {helps.length > 0 && <Path path={tint(helps)} color="rgba(150, 210, 120, 0.45)" />}
-        {targets.length > 0 && <Path path={tint(targets)} style="stroke" strokeWidth={2.5} color="#e8604a" />}
+        {moves.length > 0 && <Path path={movesPath} color="rgba(120, 170, 220, 0.35)" />}
+        {helps.length > 0 && <Path path={helpsPath} color="rgba(150, 210, 120, 0.45)" />}
+        {targets.length > 0 && <Path path={targetsPath} style="stroke" strokeWidth={2.5} color="#e8604a" />}
 
         {battle.walls.map((piece) => {
           const center = hexCenter(size, piece.col, piece.row);
@@ -52,7 +86,7 @@ function BattleBoardCanvas({ battle, layout, moves, targets, helps }: BattleBoar
           return (
             <Group key={`${String(piece.col)}-${String(piece.row)}`}>
               {standing ? (
-                <Path path={hexPath(size, piece.col, piece.row, 1)} color={piece.gate ? '#7a5232' : '#9c9a8c'} />
+                <Path path={wallPaths[standingWalls.indexOf(piece)]} color={piece.gate ? '#7a5232' : '#9c9a8c'} />
               ) : (
                 <Group>
                   <Rect x={center.x - size * 0.5} y={center.y} width={size * 0.4} height={size * 0.3} color="#7f7d71" />
@@ -94,7 +128,7 @@ function BattleBoardCanvas({ battle, layout, moves, targets, helps }: BattleBoar
           return <Line key={index} p1={vec(from.x, from.y)} p2={vec(to.x, to.y)} color={color} strokeWidth={2} />;
         })}
 
-        {active && <Path path={hexPath(size, active.col, active.row, 1)} style="stroke" strokeWidth={2.5} color="#f3d27a" />}
+        {active && <Path path={activePath} style="stroke" strokeWidth={2.5} color="#f3d27a" />}
 
         {battle.stacks.filter(isAlive).map((stack) => {
           const center = hexCenter(size, stack.col, stack.row);

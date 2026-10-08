@@ -32,9 +32,11 @@ import {
   type Army,
   type ArmyUnit,
 } from './units';
-import { act, battleOutcome, createBattle, raiderStrength, resolveBattle, stepAI, type Battle, type BattleAction } from './combat';
+import { act, battleOutcome, createBattle, raiderStrength, resolveBattle, stepAI, type Battle, type BattleAction, type BattleKind } from './combat';
 import {
   FIRST_RAID_AT,
+  FIELD_BOUNTY,
+  FIELD_PLUNDER_SHARE,
   PLUNDER_SHARE,
   RAID_AUTO_AFTER,
   RAID_INTERVAL,
@@ -42,10 +44,12 @@ import {
   holdPower,
   partyValue,
   raidBounty,
+  raidKind,
   raidParty,
   raidSide,
   raidStrength,
   type HoldPower,
+  type RaidKind,
   type RaidParty,
 } from './raids';
 import { SAVE_KEY, SAVE_VERSION, createSaveStorage } from './save';
@@ -148,12 +152,20 @@ type TickFlow = {
 /** A building being raised to `level`; done once `progress` reaches `duration` seconds. */
 export type Construction = { building: BuildingId; level: number; progress: number; duration: number; crew: number };
 
-/** Raiders on their way: sighted at first, then at the gate. */
-export type Raid = { number: number; arrivesAt: number; party: RaidParty };
+/**
+ * Raiders on their way: sighted at first, then at the gate (or in the fields). A siege army can be met in the
+ * field instead if the hold rides out (`rideOut`).
+ */
+export type Raid = { number: number; arrivesAt: number; party: RaidParty; kind: RaidKind; rideOut?: boolean };
+
+/** Where a raid will be fought: in the field (a raiding party, or a siege army the hold rides out to meet) or at the walls. */
+export const raidBattleKind = (raid: Raid): BattleKind => (raid.kind === 'field' || raid.rideOut ? 'field' : 'siege');
 
 /** What came of a raid. */
 export type RaidReport = {
   number: number;
+  /** Fought in the field or at the walls (missing in older reports: a siege). */
+  kind?: BattleKind;
   outcome: 'won' | 'lost' | 'withdrawn';
   bounty: number;
   losses: Partial<Record<ArmyUnit, number>>;
@@ -247,6 +259,8 @@ export type GameState = {
   raidsFought: number;
   /** Raids lost in a row (the next ones come smaller until one is won). */
   raidsLostInARow: number;
+  /** Fight every raid out at once when it arrives (the auto-resolver), instead of waiting for orders. */
+  autoResolveRaids: boolean;
   /** Game second the next raiders arrive. */
   nextRaidAt: number;
   /** Raiders sighted or at the gate. */
@@ -308,6 +322,10 @@ export type GameState = {
   setForgeTarget: (forge: ForgeId, target: number) => void;
   /** Hire waiting recruits at a unit's dwelling. */
   recruit: (unit: ArmyUnit, amount: number | 'max') => void;
+  /** Against a siege army: ride out and meet it in the field (true), or hold the walls (false). */
+  setRideOut: (rideOut: boolean) => void;
+  /** Turn the auto-resolver on or off: raids fought out at once when they arrive. */
+  setAutoResolveRaids: (on: boolean) => void;
   /** Take command of the battle at the gate (it then waits for the player's orders). */
   commandBattle: () => void;
   /** Order the stack whose turn it is. */
@@ -702,8 +720,10 @@ function settleBattle(state: SettleState, battle: Battle) {
   const army = { ...state.army };
   for (const unit of ARMY_UNITS) army[unit] = Math.max(0, army[unit] - state.battleArmy[unit] + survivors[unit]);
   const number = state.raid?.number ?? battle.raid;
+  const field = battle.kind === 'field';
   const report: RaidReport = {
     number,
+    kind: field ? 'field' : 'siege',
     outcome: battle.status === 'won' ? 'won' : battle.status === 'lost' ? 'lost' : 'withdrawn',
     bounty: 0,
     losses,
@@ -714,21 +734,23 @@ function settleBattle(state: SettleState, battle: Battle) {
   let { gold, warehouse } = state;
   let notice: string;
   if (report.outcome === 'won') {
-    report.bounty = raidBounty(raiderStrength(battle));
+    report.bounty = Math.round(raidBounty(raiderStrength(battle)) * (field ? FIELD_BOUNTY : 1));
     gold += report.bounty;
-    notice = `Raid ${String(number)} beaten! The raiders' bounty: ${String(report.bounty)} gold.`;
+    notice = `Raid ${String(number)} beaten${field ? ' in the field' : ''}! The raiders' bounty: ${String(report.bounty)} gold.`;
   } else if (report.outcome === 'lost') {
     const taken: Partial<Stock> = {};
     warehouse = { ...warehouse };
     for (const resource of RESOURCES) {
-      const amount = Math.floor(warehouse[resource] * PLUNDER_SHARE);
+      const amount = Math.floor(warehouse[resource] * (field ? FIELD_PLUNDER_SHARE : PLUNDER_SHARE));
       if (amount > 0) taken[resource] = amount;
       warehouse[resource] = roundCoal(warehouse[resource] - amount);
     }
-    const goldTaken = Math.floor(gold * PLUNDER_SHARE);
+    const goldTaken = Math.floor(gold * (field ? FIELD_PLUNDER_SHARE : PLUNDER_SHARE));
     gold -= goldTaken;
     report.plundered = { gold: goldTaken, resources: taken };
-    notice = `Raid ${String(number)}: the hold fell. The raiders carried off ${String(goldTaken)} gold and a share of every stockpile.`;
+    notice = field
+      ? `Raid ${String(number)}: the army was beaten in the field. The raiders pillaged the outskirts: ${String(goldTaken)} gold and a little of every stockpile.`
+      : `Raid ${String(number)}: the hold fell. The raiders carried off ${String(goldTaken)} gold and a share of every stockpile.`;
   } else {
     notice = `Raid ${String(number)}: the raiders gave up and withdrew.`;
   }
@@ -913,6 +935,7 @@ export const useGameStore = create<GameState>()(persist<GameState, [], [], Saved
   army: { ...emptyArmy(), pikeman: 12 },
   raidsFought: 0,
   raidsLostInARow: 0,
+  autoResolveRaids: false,
   recruits: { ...emptyArmy(), pikeman: 7 },
   nextRaidAt: FIRST_RAID_AT,
   raid: null,
@@ -1234,17 +1257,25 @@ export const useGameStore = create<GameState>()(persist<GameState, [], [], Saved
     const { raid, battle } = state;
     const battleRunning = battle?.status === 'active';
     if (!raid && !battleRunning && elapsedSeconds + RAID_WARNING >= state.nextRaidAt) {
-      // Raiders sized to the hold as it stands when they're sighted.
+      // Raiders sized to the hold as it stands when they're sighted: a raiding party in the fields to the
+      // army alone (walls can't help out there), a siege army to the army and the defences.
       const number = state.raidsFought + 1;
-      const power = holdPowerOf({ ...state, buildings, construction, population, sites, pendingSites }).total;
-      const party = raidParty(number, raidStrength(number, power, state.raidsLostInARow));
-      raidFields = { raid: { number, arrivesAt: state.nextRaidAt, party } };
+      const kind = raidKind(number);
+      const power = holdPowerOf({ ...state, buildings, construction, population, sites, pendingSites });
+      const party = raidParty(number, raidStrength(number, kind === 'field' ? power.army : power.total, state.raidsLostInARow), kind);
+      raidFields = { raid: { number, arrivesAt: state.nextRaidAt, party, kind } };
       const side = raidSide(number);
       const traps = trapsFacing(state.traps, side).length;
-      notice = `Raiders sighted to the ${SIDE_NAMES[side]}: ${describeParty(party)}. They attack in ${String(state.nextRaidAt - elapsedSeconds)} s${traps > 0 ? `, crossing ${String(traps)} trap${traps === 1 ? '' : 's'}` : ' — no traps on that side'}.`;
+      const soon = String(state.nextRaidAt - elapsedSeconds);
+      notice =
+        kind === 'field'
+          ? `Raiders pillaging the fields to the ${SIDE_NAMES[side]}: ${describeParty(party)}. The army must meet them in the open in ${soon} s.`
+          : `A siege army to the ${SIDE_NAMES[side]}: ${describeParty(party)}. They storm the walls in ${soon} s${traps > 0 ? `, crossing ${String(traps)} trap${traps === 1 ? '' : 's'}` : ' — no traps on that side'} (or ride out to meet them).`;
     } else if (raid && !battleRunning && elapsedSeconds >= raid.arrivesAt) {
       const stats = buildingStats(buildings, workforce.staff, techs);
+      const kind = raidBattleKind(raid);
       const created = createBattle({
+        kind,
         raid: raid.number,
         army: state.army,
         enemies: raid.party,
@@ -1262,10 +1293,12 @@ export const useGameStore = create<GameState>()(persist<GameState, [], [], Saved
         moatAtGate: stats.moatAtGate,
         unitBonus: stats.unitBonus,
       });
-      if (created.status !== 'active') {
-        // Decided before it began (no army to defend the hold): settle the raid at once.
-        const settled = settleBattle({ ...state, gold, warehouse: toStore.to, elapsedSeconds, battleArmy: state.army }, created);
-        raidFields = { ...settled, battle: created, battleArmy: state.army, battleCommanded: false };
+      if (created.status !== 'active' || state.autoResolveRaids) {
+        // Decided before it began (no army to defend the hold), or the auto-resolver is on: fight it out and
+        // settle the raid at once (the result stays on the battlefield to look at).
+        const fought = created.status === 'active' ? resolveBattle(created) : created;
+        const settled = settleBattle({ ...state, gold, warehouse: toStore.to, elapsedSeconds, battleArmy: state.army }, fought);
+        raidFields = { ...settled, battle: fought, battleArmy: state.army, battleCommanded: false };
         notice = settled.notice;
       } else {
         raidFields = {
@@ -1274,7 +1307,10 @@ export const useGameStore = create<GameState>()(persist<GameState, [], [], Saved
           battleCommanded: false,
           battleDeadline: elapsedSeconds + RAID_AUTO_AFTER,
         };
-        notice = `Raiders at the gate! Take command, or the defence fights on its own in ${String(RAID_AUTO_AFTER)} s.`;
+        notice =
+          kind === 'field'
+            ? `The armies meet in the field! Take command, or it's fought without you in ${String(RAID_AUTO_AFTER)} s.`
+            : `Raiders at the gate! Take command, or the defence fights on its own in ${String(RAID_AUTO_AFTER)} s.`;
       }
     } else if (battle && battleRunning && !state.battleCommanded && elapsedSeconds >= state.battleDeadline) {
       const settled = settleBattle({ ...state, gold, warehouse: toStore.to, elapsedSeconds }, resolveBattle(battle));
@@ -1491,6 +1527,22 @@ export const useGameStore = create<GameState>()(persist<GameState, [], [], Saved
   closeBattle: () => set((state) => (state.battle && state.battle.status !== 'active' ? { battle: null } : {})),
 
   dismissRaidReport: () => set({ raidReport: null }),
+
+  setAutoResolveRaids: (on) => set({
+    autoResolveRaids: on,
+    notice: on ? 'Auto-resolve on: every raid is fought out the moment it arrives.' : 'Auto-resolve off: raids wait for your orders (they fight on their own after 30 s).',
+  }),
+
+  setRideOut: (rideOut) => set((state) => {
+    const { raid } = state;
+    if (!raid || raid.kind !== 'siege' || state.battle?.status === 'active' || !!raid.rideOut === rideOut) return {};
+    return {
+      raid: { ...raid, rideOut },
+      notice: rideOut
+        ? 'The army will ride out and meet the siege army in the field: no walls or towers, but half the losses if beaten and half again the bounty if it wins.'
+        : 'The army will hold the walls: walls, gate, towers, oil, moat and traps all fight.',
+    };
+  }),
 
   resetGame: () => set((state) => ({
     ...useGameStore.getInitialState(),
@@ -1944,11 +1996,14 @@ function mergeSave(saved: Partial<SavedState> | undefined, fresh: GameState): Ga
   };
   // The old timed barge's bookkeeping.
   for (const key of ['shipVisit', 'shipSold', 'craftQueue']) delete (merged as Record<string, unknown>)[key];
-  // A raid sighted under older, harsher rules (well beyond what the hold's power now calls for) is sized afresh.
+  // Raids sighted before field battles were sieges. One sighted under older, harsher rules (well beyond what
+  // the hold's power now calls for) is sized afresh.
+  if (merged.raid && merged.raid.kind !== 'field' && merged.raid.kind !== 'siege') merged.raid = { ...merged.raid, kind: 'siege' };
   const { raid } = merged;
   if (raid && merged.battle?.status !== 'active') {
-    const strength = raidStrength(raid.number, holdPowerOf(merged).total, merged.raidsLostInARow);
-    if (partyValue(raid.party) > strength * 1.2) merged.raid = { ...raid, party: raidParty(raid.number, strength) };
+    const power = holdPowerOf(merged);
+    const strength = raidStrength(raid.number, raid.kind === 'field' ? power.army : power.total, merged.raidsLostInARow);
+    if (partyValue(raid.party) > strength * 1.2) merged.raid = { ...raid, party: raidParty(raid.number, strength, raid.kind) };
   }
   if (washedAway.count > 0) {
     merged.notice = `The river now runs up to the far wall: its ${String(washedAway.count)} trap${washedAway.count === 1 ? '' : 's'} on that side were paid back (${String(washedAway.gold)} gold).`;

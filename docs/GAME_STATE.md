@@ -14,12 +14,13 @@ Two screens (Expo Router, `src/app/`):
 
 | Route | File | What it shows |
 |---|---|---|
-| `/` | `src/app/index.tsx` | Stronghold, full screen: the isometric castle map (`CityView`: drag to pan, pinch / wheel / +− to zoom, tap a building), a resource bar on top (gold, peasants, raid clock, and the 12 warehouse resources in two rows of six), live raid alerts, a news toast, and a toolbar (Mine, Build, Buildings, Tech, Docks, Menu; Tech shows how many techs are ready to research, Docks shows how many barges are moored). Build opens a palette of unbuilt buildings, rock clearing, roads and traps; picking a building enters placement mode (drag the green/red footprint — a drag that starts on it moves it, any other drag pans — or tap where it should go, then Build here); picking Clear rocks, a road or a trap enters paint mode (one finger paints a stroke of tiles, laid on release; two fingers / right-drag pan; the bar switches kind; Done ends it). Tapping a building opens its pop-up (`Sheet` + `BuildingDetail`, with Destroy; the warehouse adds the haul-route table, the keep the defence summary); tapping a trap opens its sheet (effect, side, Take it up). |
+| `/` | `src/app/index.tsx` | Stronghold, full screen: the isometric castle map (`CityView`: drag to pan, pinch / wheel / +− to zoom, tap a building), a slim bar on top (gold, peasants, raid clock — the warehouse's resources are in the warehouse's pop-up and the Menu, not on screen), a ⚔️ **War** button on the right edge under it (red with "!" while raiders are sighted or a battle waits; otherwise a badge with the recruits that can be hired now) opening the War sheet (`CombatPanel`: the raid now via `RaidBanner inPanel` — with ride out / hold the walls, command, auto-resolve now, the next raid's kind and strength —, the auto-resolve switch, every unit with army / waiting / gear and RECRUIT ALL, the defences summary with traps per side, LAY TRAPS and links to the keep, wall, towers, gate, moat and armory, and the stakes), live raid alerts, a news toast, and a toolbar (Mine, Build, Buildings, Tech, Docks, Menu; Tech shows how many techs are ready to research, Docks shows how many barges are moored). Build opens a palette of unbuilt buildings, rock clearing, roads and traps; picking a building enters placement mode (drag the green/red footprint — a drag that starts on it moves it, any other drag pans — or tap where it should go, then Build here); picking Clear rocks, a road or a trap enters paint mode (one finger paints a stroke of tiles, laid on release; two fingers / right-drag pan; the bar switches kind; Done ends it). Tapping a building opens its pop-up (`Sheet` + `BuildingDetail`, with Destroy; the warehouse adds the haul-route table, the keep the defence summary); tapping a trap opens its sheet (effect, side, Take it up). |
 | `/mine` | `src/app/mine.tsx` | The mine map (pan/zoom camera), Dig toggle, deposit info panel, stockpile table, hauling chain, haulage, the mine's tech branch, Dig Deeper. |
-| `/battle` | `src/app/battle.tsx` | The battle at the gate: hex board, orders, auto-battle / quick resolve, log, result. |
+| `/battle` | `src/app/battle.tsx` | The battle — a siege at the walls or a battle in the field: hex board, orders, auto-battle / quick resolve, log, result. |
 
 The mine screen shows a `RaidBanner` (next raid countdown → raiders sighted → at the gate → result); the
-stronghold shows it only for live raids (sighted / at the gate) and puts the last result in the Menu.
+stronghold shows it only for live raids (sighted / at the gate); the full raid status, last result and every
+combat option are in the War sheet (⚔️ side button) — the Menu just points there.
 
 `src/app/_layout.tsx` wraps everything in `GestureHandlerRootView` + `SafeAreaProvider`, loads the saved
 game, and starts the 1-second simulation (`startSimulation()`).
@@ -252,6 +253,19 @@ game, and starts the 1-second simulation (`startSimulation()`).
   carts; the depot's pop-up (`DepotPanel`) lists every cart's trip (`wagonText`) with RECALL
   (`recallWagon`: undelivered materials go back to the warehouse, undelivered pieces back onto their
   forge's rack — or into the store if the forge has moved on).
+- **Two kinds of battle** (`BattleKind`, `raidKind(n)`): each raid is announced as a **raiding party in the
+  fields** or a **siege army** (raids 1–2 are raiding parties, then about half each, hashed by number).
+  A field battle is troops only — `createBattle({ kind: 'field' })` leaves out the walls, gate, towers,
+  oil, moat and traps — and a raiding party is sized to the army's value alone and brings no wall-breakers
+  (no ogres or cyclopes, `SIEGE_ONLY`). A siege is the battle at the walls as before, sized to army +
+  defences. Against a siege army the hold can **ride out** to meet it in the field instead
+  (`setRideOut`, RIDE OUT / HOLD THE WALLS on the raid banner; `raidBattleKind`). Stakes in the field:
+  beaten, the raiders only reach the outskirts and take half as much (`FIELD_PLUNDER_SHARE` 15%); won,
+  the bounty is half again (`FIELD_BOUNTY` ×1.5). The battle board shows open grass in the field.
+  **Auto-resolver**: `autoResolveRaids` (switch on the raid banner and in the War sheet) fights each raid out the
+  moment it arrives (`resolveBattle`, settled at once, the result left on the battlefield); otherwise the
+  banner's AUTO-RESOLVE button settles a battle waiting for orders (`quickResolveBattle`), and an
+  uncommanded battle still fights itself after `RAID_AUTO_AFTER` (30 s). Reports say which kind it was.
 - **Raids** (`src/game/raids.ts`): first raiders arrive at 6:00, then 5 min after each raid ends; sighted
   60 s ahead. **Raids are sized to the hold**: at sighting, `holdPowerOf(state)` = army value +
   defences at half their worth (`holdPower`: towers × damage × shots × 5 rounds × 11 value/HP, wall HP
@@ -345,12 +359,27 @@ src/
     HaulagePanel.tsx       carts per level + Add Cart
     StockpileTable.tsx     resources × stages table (both screens)
     BargesPanel.tsx        the barges waiting at the docks: one card per order (sell 10, fill, send away)
+    CombatPanel.tsx        the War sheet behind the ⚔️ side button: raid now, auto-resolve, army and
+                           recruiting, defences and traps, stakes (`hireableNow` for the button's badge)
     ForgePanel.tsx         a forge's pop-up (status, shelf, target, task list), GearStore (carts, forges,
                            the store) and DepotPanel (every cart's trip)
-    GameScene*.tsx         the castle map (Skia, isometric like Firefly's Stronghold): iso boxes/roofs
-                           painted back to front; every building in 4 looks by tier (timber, plaster,
-                           stone, dressed stone + gold); wall ring, towers (an archer on each),
-                           gatehouse; army on parade. Round it a backdrop drawn live (a few paths):
+    GameScene*.tsx         the castle map (Skia, isometric, styled after Firefly's Stronghold): iso
+                           boxes/roofs painted back to front; every building in 4 looks by tier, its
+                           material's `kind` dressing walls and roofs (`faceDressing`, `roofRows`):
+                           plank huts under thatch, half-timbered plaster under red tiles, stone and
+                           dressed stone under slate; boxes and roofs outlined. Fortifications go
+                           from timber straight to stone (`fortMat`): a timber keep (tower with an
+                           overhanging fighting platform), then a square stone keep with turrets,
+                           then a fortress keep with round corner towers (`Cylinder`) and a central
+                           tower; a palisade, then a continuous crenellated stone curtain wall
+                           (`WallSegment`, battlements on both faces by `wallRuns`); round stone
+                           towers with an archer; a gatehouse of two round towers and a portcullis;
+                           a low wattle fence marks the wall's line until it's built (no defence).
+                           The ground has no grid (the placement ghost shows it only while placing or
+                           painting): grass in broad lighter/darker patches from value noise with
+                           tufts and flowers, bare earth in the trap belt, a ragged dirt yard round
+                           the keep (`buildGrass`), and soft blurred shadows from every building,
+                           wall, tower and tree. Army on parade. Round it a backdrop drawn live (a few paths):
                            sky, three mountain ranges behind the far sides and two (further out,
                            never over the map) in front of the near sides, the river running on
                            through gaps in them, the gate road through a pass, and woods carrying on
@@ -378,6 +407,7 @@ src/
     TechTree.tsx           the tech tree (all branches) and one branch with its tiers, details, Research
     BattleBoard(.web).tsx, BattleBoardCanvas.tsx   battlefield (Skia): hexes, wall/gate, towers, sprites
     battleLayout.ts        hex geometry for the board, taps and labels (Skia-free)
+    skiaPaths.ts           who owns a Skia path: parse once, held by a component, or freed with a drawing
     unitSprites.ts         12×12 pixel sprites for all 16 creatures (also the army on parade)
     RaidBanner.tsx         raid status banner on both main screens
     CityView.tsx           the stronghold's full-screen map: camera (shared values), gestures, wheel,
@@ -410,6 +440,18 @@ src/
   change with building levels / selection), heavy rows are memoized components with primitive props
   (`BuildingChip`, `StockRow`, `BargeCard`) and `upgradeBlocker` takes a shared `workforce`. Measured on a built-up game (dev build): 65–100 ms per frame and ~45 ms per tick
   before → no frames over 50 ms and ~10 ms per tick after.
+- **Never give a live canvas's `<Path>` an SVG string** (`src/components/skiaPaths.ts`). On web nothing
+  in Skia is garbage-collected, and a `<Path path="…">` has its string parsed into a new path every time
+  the canvas draws — on a canvas with anything animated, every frame — and never freed. That filled
+  CanvasKit's memory within an hour or two ("memory access out of bounds" in `PictureRecorder`, then
+  "Cannot read properties of null (reading 'getCanvas')" thousands of times, and a dead screen).
+  Every path now has an owner: module-level geometry is parsed once (`parseSvg`: the backdrop, barges,
+  ground, grid, belt); a component's changing shapes are held by `useSvgPaths` (freed 5 s after it stops
+  drawing them: piles, selection, placement ghost, clearing marks, the battle board); the still castle
+  image's components use `svgPath`, collected per drawing and freed once its image is made
+  (`collectPaths`, which also runs those drawings one at a time and skips outdated ones). `svgPath`
+  warns in development if used outside a drawing. To check: count `CanvasKit.Path.MakeFromSVGString`
+  calls over a few seconds on an idle screen — it should be 0.
 - **Freeing Skia images** (the castle's still image, the mine's terrain blocks): never `dispose()` an
   image the canvas might still draw. A canvas keeps replaying its last drawing for animations, and on
   web a screen in the background is not really frozen — React keeps committing while its canvas keeps
