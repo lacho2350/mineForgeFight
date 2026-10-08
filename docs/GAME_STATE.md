@@ -321,7 +321,17 @@ src/
     index.tsx              stronghold screen
     mine.tsx               mine screen (layout + live state → MineScene, panels)
   game/                    simulation + pure model (no React Native / Skia)
-    gameStore.ts           Zustand store: all state + tick() + actions
+    gameStore.ts           Zustand store: the starting state, the actions, persistence, loadGame,
+                           startSimulation
+    state.ts               the state's types (GameState, Raid, RaidReport, …) and `raidBattleKind`
+    tick.ts                `tickGame(state)`: one second of the game (the store's `tick`)
+    hold.ts                pure reads of the state: workforce, walks, mine layout, hold power, forge and
+                           cart status, what can be recruited
+    costs.ts               costs and blockers (the reason a build, tech, trap, barge or dig can't happen)
+    updates.ts             state changes shared by actions and the tick (settling a battle, returning
+                           goods, starting a building, moving stock)
+    saveMigration.ts       `migrateSave` / `mergeSave`: older saves moved onto the current map and laid
+                           over a fresh game
     mineLayout.ts          the tile model: dug tiles & kinds, deposits/clusters, sites, dig rules,
                            deposit info, auto-dig route finder
     haulage.ts             cart routes (BFS to lift), trip schedule, cart pose (worklet), events
@@ -399,6 +409,14 @@ src/
                            balloons, flame, mine wheel, the river barges) and every peasant as one `Atlas` moved by a
                            single `useRSXformBuffer` worklet (haulers, staff errands, crews, idlers).
                            One frame-callback clock at ≤30 fps, paused when the screen isn't focused.
+                           `GameSceneCanvas.tsx` puts the scene together (the still image's contents,
+                           the live layer); its parts are in `stronghold/`: `shapes` (materials, iso
+                           boxes/roofs/towers/flags, shared colours), `backdrop`, `ground` (grass, rocks,
+                           roads, traps, trees, raiders), `fortifications` (wall, towers, gatehouse),
+                           `buildingArt` (every building, campfire, headframe, scaffolds, parade),
+                           `live` (piles, smoke, balloons, wheel, carts, barges, progress bars),
+                           `peasants` (the sprite atlas), `overlays` (plots, selection, placement
+                           ghost) and `stillImage` (`useStillImage`, `pictureToImage`).
     GameSceneLayout.ts     drawing the tile map: `iso()` / `groundAt()` projection, `plotOf()` (plots from
                            placements), doors and peasant routes, silhouettes and the depth-ordered
                            tap list (the wall is tapped at the front end of its left run);
@@ -462,12 +480,12 @@ src/
 - **Offscreen images on web — never `drawAsImageFromPicture`**: on web it makes a new WebGL context
   (an OffscreenCanvas) for every image and never frees it; browsers keep ~16 per page and then drop the
   oldest — the map's canvas — so the stronghold went black after enough castle redraws. The castle image
-  is drawn with `pictureToImage` (`GameSceneCanvas.tsx`): a CPU raster surface on web (no context; ~30
+  is drawn with `pictureToImage` (`stronghold/stillImage.tsx`): a CPU raster surface on web (no context; ~30
   ms for the whole castle), an offscreen GPU surface on iOS/Android, both disposed straight away. As a
   safety net, `CityView` remounts the scene if its canvas ever fires `webglcontextlost`.
 - **Castle redraw cost**: the still image is rebuilt from a fresh React tree each time, so anything
   computed inside it is redone too. Big static paths are parsed into Skia paths once (`buildGround`),
-  rocks and roads keep one parsed set for their current state (`latest`, freeing the replaced set a few
+  rocks and roads keep one parsed set for their current state (`latest` in `skiaPaths.ts`, freeing the replaced set a few
   seconds later). A rebuild is ~35–45 ms recording + ~30 ms rasterising on web (was ~95 + leaks).
 - **Web quirks**: Skia's web `<Canvas style>` must be a plain object (not an array). Modules imported
   by non-lazy web code must not touch Skia at module load (hence `MineHaulerSteps.ts`). Avoid

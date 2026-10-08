@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { BUILDING_INFO } from '../game/buildings';
-import { techBlocker, techNeeds, type GameState } from '../game/gameStore';
+import type { GameState } from '../game/state';
+import { techBlocker, techNeeds } from '../game/costs';
 import { TECHS, TECH_BRANCHES, TECH_IDS, techCost, techsOf, tierName, type TechBranch, type TechId, type Tier } from '../game/techs';
 import { BUILDING_ICONS } from './buildingIcons';
 import { GameButton } from './GameUI';

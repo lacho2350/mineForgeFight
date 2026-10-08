@@ -9,7 +9,8 @@ import Animated, {
   type SharedValue,
 } from 'react-native-reanimated';
 import { scheduleOnRN } from 'react-native-worklets';
-import { FIXED_TICK_MS, type CartLoad } from '../game/gameStore';
+import type { CartLoad } from '../game/state';
+import { FIXED_TICK_MS } from '../game/gameStore';
 import type { LevelCarts } from '../game/haulage';
 import { RESOURCES, type Resource, type Stock } from '../game/resources';
 import { checkDigStep, depositRemaining, findDigParent, parseKey, tileKey, type MineLayout } from '../game/mineLayout';

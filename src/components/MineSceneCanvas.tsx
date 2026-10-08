@@ -30,7 +30,7 @@ import {
   terrainViewCommitted,
 } from './mineTerrain';
 import { ExitStockpiles, LevelCart, MinerStockpiles } from './MineHaulers';
-import type { CartLoad } from '../game/gameStore';
+import type { CartLoad } from '../game/state';
 import type { Resource } from '../game/resources';
 
 const tileSize = MINE_TILE_SIZE;

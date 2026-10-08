@@ -1,7 +1,7 @@
 import { Group, Picture, Skia, createPicture, type SkCanvas, type SkPicture } from '@shopify/react-native-skia';
 import { useDerivedValue, type SharedValue } from 'react-native-reanimated';
 import { CART_HEIGHT, CART_WIDTH, cartPose, type CartRoute } from '../game/haulage';
-import type { CartLoad } from '../game/gameStore';
+import type { CartLoad } from '../game/state';
 import { depositAt, type Site } from '../game/mineLayout';
 import { RESOURCES, RESOURCE_INFO, type Resource } from '../game/resources';
 import { MINE_EXIT_BIN_WIDTH, MINE_GROUND_Y, MINE_TILE_SIZE, getExitBinX } from './MineMapLayout';

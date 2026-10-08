@@ -15,7 +15,19 @@ import {
   type BuildingId,
 } from '../game/buildings';
 import { isPlaceable } from '../game/cityMap';
-import { affordableRecruits, destroyRefund, forgesMaking, freeForge, holdPowerOf, isShownBuilding, siteFactor, siteWalk, unitAvailable, upgradeBlocker, workforceOf, type GameState } from '../game/gameStore';
+import type { GameState } from '../game/state';
+import {
+  affordableRecruits,
+  forgesMaking,
+  freeForge,
+  holdPowerOf,
+  isShownBuilding,
+  siteFactor,
+  siteWalk,
+  unitAvailable,
+  workforceOf,
+} from '../game/hold';
+import { destroyRefund, upgradeBlocker } from '../game/costs';
 import { gearComing } from '../game/wagons';
 import { FORGE_IDS, FORGE_NAMES, isForge } from '../game/forges';
 import { ITEM_INFO, UNIT_GEAR } from '../game/items';

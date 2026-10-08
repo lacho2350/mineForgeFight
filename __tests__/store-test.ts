@@ -1,5 +1,6 @@
 import { buildingStats, KEEP_BEDS } from '../src/game/buildings';
-import { affordableRecruits, itemsCounted, raidBattleKind } from '../src/game/gameStore';
+import { raidBattleKind } from '../src/game/state';
+import { affordableRecruits, itemsCounted } from '../src/game/hold';
 import { raidKind } from '../src/game/raids';
 import { emptyArmy } from '../src/game/units';
 import { build, game, newGame, run, warehouseWith } from './support';

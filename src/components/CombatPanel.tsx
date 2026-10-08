@@ -1,7 +1,8 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { BUILDING_INFO, type BuildingId } from '../game/buildings';
 import { RAID_SIDES, SIDE_NAMES } from '../game/cityMap';
-import { affordableRecruits, unitAvailable, type GameState } from '../game/gameStore';
+import type { GameState } from '../game/state';
+import { affordableRecruits, unitAvailable } from '../game/hold';
 import { ITEM_INFO, UNIT_GEAR } from '../game/items';
 import { trapsFacing } from '../game/traps';
 import { ARMY_RECRUITING, ARMY_UNITS, UNIT_STATS, armyValue, type ArmyUnit } from '../game/units';

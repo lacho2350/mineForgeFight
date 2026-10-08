@@ -8,7 +8,8 @@ import { useEffect, useMemo } from 'react';
 // ("memory access out of bounds"). So canvases here only draw parsed paths, each with an owner:
 //   • `parseSvg` — built once and kept (module-level geometry that never changes);
 //   • `useSvgPaths` — held by the component that draws them, freed a little after it stops;
-//   • `svgPath` — for one offscreen drawing (the castle's still image), freed with it (`collectPaths`).
+//   • `svgPath` — for one offscreen drawing (the castle's still image), freed with it (`collectPaths`);
+//   • `latest` — a module-level slot holding the set for what a layer shows now; a replaced set is freed.
 
 const EMPTY = 'M 0 0';
 /** How long a path outlives its last use: the canvas may still replay the drawing that used it. */
@@ -88,4 +89,27 @@ export function collectPaths<T, R>(draw: () => Promise<T>, finish: (result: T) =
   const next = queue.then(run, run);
   queue = next.catch(() => undefined);
   return next;
+}
+
+// Free every Skia object in a (nested) set of paths.
+function disposePaths(value: unknown) {
+  if (!value || typeof value !== 'object') return;
+  if ('dispose' in value && typeof value.dispose === 'function') {
+    (value as { dispose: () => void }).dispose();
+    return;
+  }
+  for (const inner of Object.values(value)) disposePaths(inner);
+}
+
+/** One layer's parsed paths, kept for the latest thing they show (`key`). */
+export type Slot<K, T> = { key?: K; value?: T };
+// The paths for `key`, built once; the set they replace is freed a little later (a redraw already under
+// way may still be recording with it), so Skia's memory doesn't grow with every change.
+export function latest<K, T>(slot: Slot<K, T>, key: K, build: () => T): T {
+  if (slot.value !== undefined && slot.key === key) return slot.value;
+  const old = slot.value;
+  slot.key = key;
+  slot.value = build();
+  if (old !== undefined) setTimeout(() => disposePaths(old), DISPOSE_AFTER_MS);
+  return slot.value;
 }

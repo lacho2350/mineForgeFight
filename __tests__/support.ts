@@ -1,7 +1,9 @@
 // Shared set-up for the game-logic tests (not a test file itself: only `*-test.ts` files run).
 import type { BuildingId } from '../src/game/buildings';
 import { nearestFreeSpot, type Spot } from '../src/game/cityMap';
-import { BUILDING_NAMES, useGameStore, type GameState } from '../src/game/gameStore';
+import type { GameState } from '../src/game/state';
+import { BUILDING_NAMES } from '../src/game/hold';
+import { useGameStore } from '../src/game/gameStore';
 import { emptyStock, type Resource, type Stock } from '../src/game/resources';
 
 /** A `localStorage` kept in memory, so the save can be written and read back. */

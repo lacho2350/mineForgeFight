@@ -1,6 +1,8 @@
 import { memo } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { bargeBlocker, docksOf, type GameState } from '../game/gameStore';
+import type { GameState } from '../game/state';
+import { docksOf } from '../game/hold';
+import { bargeBlocker } from '../game/costs';
 import { RESOURCE_INFO } from '../game/resources';
 import { MAX_BARGES, isMoored, isWaiting, type Barge } from '../game/ship';
 

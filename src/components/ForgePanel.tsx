@@ -1,7 +1,8 @@
 import { memo } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { buildingStats } from '../game/buildings';
-import { forgeSpeedsOf, forgeStatus, loadText, wagonText, workforceOf, type ForgeStatus, type GameState } from '../game/gameStore';
+import type { GameState } from '../game/state';
+import { forgeSpeedsOf, forgeStatus, loadText, wagonText, workforceOf, type ForgeStatus } from '../game/hold';
 import { FORGE_IDS, FORGE_NAMES, FORGE_OUTPUT_CAP, FORGE_TARGETS, loadUnits, type ForgeId } from '../game/forges';
 import { GEAR_IDS, ITEM_INFO, PART_IDS, UNIT_GEAR, recipeParts, type ItemId } from '../game/items';
 import { RESOURCE_INFO, type Resource } from '../game/resources';

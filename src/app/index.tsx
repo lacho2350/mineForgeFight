@@ -4,19 +4,10 @@ import { StatusBar } from 'expo-status-bar';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import {
-  BUILDING_NAMES,
-  haulWalk,
-  isShownBuilding,
-  orderedRocks,
-  roadCostText,
-  trapBlocker,
-  trapCostText,
-  upgradeBlocker,
-  useGameStore,
-  workforceOf,
-  type GameState,
-} from '../game/gameStore';
+import type { GameState } from '../game/state';
+import { BUILDING_NAMES, haulWalk, isShownBuilding, orderedRocks, workforceOf } from '../game/hold';
+import { roadCostText, trapBlocker, trapCostText, upgradeBlocker } from '../game/costs';
+import { useGameStore } from '../game/gameStore';
 import { BUILDING_IDS, BUILDING_INFO, MAX_BUILDING_LEVEL, buildingCost, buildingStats, type BuildingId } from '../game/buildings';
 import { DEFAULT_SPOTS, FOOTPRINTS, MAP_SIZE, SIDE_NAMES, coveredTiles, isPlaceable, nearestFreeSpot, placementProblem, sidesOf, type Spot } from '../game/cityMap';
 import { ROAD_INFO, ROAD_KINDS, haulFactor, roadProblem, roadsUnder, type RoadKind } from '../game/roads';

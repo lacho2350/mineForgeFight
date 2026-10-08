@@ -1,5 +1,6 @@
 import { StyleSheet, Text, View } from 'react-native';
-import { cartCost, minersByLevel } from '../game/gameStore';
+import { minersByLevel } from '../game/hold';
+import { cartCost } from '../game/costs';
 import { cartsOnLevel, type LevelCarts } from '../game/haulage';
 import type { TechId } from '../game/techs';
 import type { Site } from '../game/mineLayout';

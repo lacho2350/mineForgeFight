@@ -6,7 +6,7 @@ import { scheduleOnRN } from 'react-native-worklets';
 import type { BuildingId } from '../game/buildings';
 import type { Placements } from '../game/cityMap';
 import GameScene from './GameScene';
-import type { Ghost } from './GameSceneCanvas';
+import type { Ghost } from './stronghold/overlays';
 import {
   MINE_PLOT,
   ORIGIN_X,

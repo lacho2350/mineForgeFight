@@ -1,7 +1,9 @@
 import { router } from 'expo-router';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SIDE_NAMES } from '../game/cityMap';
-import { describeParty, holdPowerOf, raidBattleKind, useGameStore } from '../game/gameStore';
+import { raidBattleKind } from '../game/state';
+import { describeParty, holdPowerOf } from '../game/hold';
+import { useGameStore } from '../game/gameStore';
 import { partyValue, raidKind, raidRelief, raidSide, raidStrength } from '../game/raids';
 import { trapsFacing } from '../game/traps';
 import { UNIT_STATS, type ArmyUnit } from '../game/units';

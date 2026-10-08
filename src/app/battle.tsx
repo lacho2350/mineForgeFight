@@ -19,7 +19,8 @@ import {
   type Battle,
   type Stack,
 } from '../game/combat';
-import { useGameStore, type RaidReport } from '../game/gameStore';
+import type { RaidReport } from '../game/state';
+import { useGameStore } from '../game/gameStore';
 import { UNIT_STATS, type ArmyUnit } from '../game/units';
 import BattleBoard from '../components/BattleBoard';
 import { boardLayout, hexAt, hexCenter } from '../components/battleLayout';
