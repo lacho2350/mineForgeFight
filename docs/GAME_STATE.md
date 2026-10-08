@@ -477,6 +477,14 @@ src/
 
 - Node is only available via **nvm** (v24). In a non-interactive shell: `source ~/.nvm/nvm.sh` first.
 - Checks (run before calling anything done): `npx tsc --noEmit` · `npx expo lint` · `npx expo-doctor`.
+- **Tests**: `npm test` (jest with the `jest-expo` preset) runs `__tests__/*-test.ts` — never put tests in
+  `src/app/` (every file there is a route). `support.ts` has helpers: `newGame(overrides)` resets the store
+  (no raid comes unless a test asks), `run(seconds)` ticks it, `build(levels)` places buildings like the
+  player would. `raids-test` (sizing, kinds, siege-only units), `combat-test` (siege vs field, determinism),
+  `items-test` (gear per unit, the relic's resources, mine depths), `store-test` (forge chain by cart, task
+  changes, gear deliveries, auto-resolve / orders / riding out) and `save-test` (v2→v3 map growth, the old
+  armory refund, the save guard) — the save tests load a fresh copy of the store over an in-memory
+  `localStorage`, so they never touch a real save.
 - Web dev server: `npx expo start --web --port 8081` (`.claude/launch.json` has an `expo-web` config).
   **Never set `CI=1`** — Metro then stops watching files and serves stale lazy chunks.
 - **Saving**: the store is wrapped in Zustand `persist` (key `mineforge-save`, `SAVE_VERSION` 3). Storage is
@@ -513,7 +521,7 @@ src/
 
 - **Git**: work is committed on feature branches and merged to `main` (remote `origin`, GitHub
   `lacho2350/mineForgeFight`). `.claude/` (launch config) is untracked.
-- Verified: typecheck, lint, expo-doctor pass; flows tested in the web preview and via Node sims.
+- Verified: typecheck, lint, expo-doctor and the jest suite pass; flows tested in the web preview and via Node sims.
   Pinch zoom and right-drag pan are untested (desktop automation can't do two-finger touch/right-drag).
 
 ## Known gaps / likely next steps
