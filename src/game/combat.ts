@@ -1,13 +1,19 @@
 // Turn-based hex battles in the spirit of Heroes of Might and Magic III: stacks of creatures take
-// turns by speed, move and strike, shooters shoot, defenders retaliate. Raiders come from the left;
-// the hold's army stands on the right behind the wall, with the gate in the middle and towers
-// shooting every round. Pure TS (no React/Skia), deterministic from the battle's seed.
+// turns by speed, move and strike, shooters shoot, defenders retaliate. Raiders come from the left,
+// after crossing the traps on their side of the belt; the hold's army stands on the right behind the
+// wall, with the gate in the middle and towers shooting every round. A flooded moat runs in front of
+// the wall: raiders on foot who wade in stop there and are hurt every round they stay. Pure TS (no React/Skia),
+// deterministic from the battle's seed.
+import type { UnitBonus } from './techs';
+import { TRAP_DAMAGE, type TrapCounts } from './traps';
 import { ARMY_UNITS, UNIT_STATS, type Army, type ArmyUnit, type UnitId } from './units';
 
 export const BATTLE_COLS = 13;
 export const BATTLE_ROWS = 9;
 export const WALL_COL = 9;
 export const GATE_ROW = 4;
+/** The moat's column, just in front of the wall. */
+export const MOAT_COL = WALL_COL - 1;
 /** After this many rounds the raiders give up and leave. */
 export const MAX_ROUNDS = 30;
 /** Shots at targets further than this do half damage. */
@@ -31,12 +37,14 @@ export type Stack = {
   defending: boolean;
   /** Has used its once-per-battle resurrection. */
   resurrected: boolean;
+  /** Caught in a snare: loses its next turn. */
+  snared?: boolean;
 };
 
 export type WallPiece = { col: number; row: number; hp: number; maxHp: number; gate: boolean };
 
 export type BattleEvent = {
-  kind: 'round' | 'move' | 'melee' | 'shot' | 'retaliate' | 'tower' | 'heal' | 'resurrect' | 'defend' | 'wall' | 'end';
+  kind: 'round' | 'trap' | 'move' | 'melee' | 'shot' | 'retaliate' | 'tower' | 'oil' | 'moat' | 'heal' | 'resurrect' | 'defend' | 'wall' | 'end';
   text: string;
   actor?: number;
   target?: number;
@@ -55,8 +63,20 @@ export type Battle = {
   walls: WallPiece[];
   towers: number;
   towerDamage: number;
+  /** Shots each tower fires every round (ballista platforms: 2). */
+  towerShots?: number;
+  /** Boiling oil from the wall: damage every round to each raider company beside a standing section. */
+  wallOil?: number;
+  /** The flooded moat: damage every round to each raider company wading in it (0 / missing: no moat). */
+  moat?: number;
+  /** The bridge at the gate is raised, so the gate row is moat too. */
+  moatAtGate?: boolean;
+  /** Raiders killed by the traps on the way in. */
+  trapKills?: number;
   /** The armory's bonus for the hold's units. */
   bonus: { attack: number; defence: number };
+  /** Bonuses for single units of the hold (the dwellings' techs). */
+  unitBonus?: Partial<Record<UnitId, UnitBonus>>;
   /** Stacks still to act this round; the first one is acting now. */
   queue: number[];
   status: BattleStatus;
@@ -165,6 +185,13 @@ export function createBattle({
   towerDamage,
   attackBonus,
   defenceBonus,
+  traps,
+  trapPower = 1,
+  towerShots = 1,
+  wallOil = 0,
+  moatDamage = 0,
+  moatAtGate = false,
+  unitBonus = {},
 }: {
   raid: number;
   army: Army;
@@ -175,6 +202,17 @@ export function createBattle({
   towerDamage: number;
   attackBonus: number;
   defenceBonus: number;
+  /** Traps on the raiders' side of the belt. */
+  traps?: TrapCounts;
+  /** Trap damage multiplier (the research facility's engineers). */
+  trapPower?: number;
+  towerShots?: number;
+  wallOil?: number;
+  /** Moat damage per round to raiders wading in it (0: no moat), and whether the gate's bridge is raised. */
+  moatDamage?: number;
+  moatAtGate?: boolean;
+  /** Bonuses for single units of the hold. */
+  unitBonus?: Partial<Record<UnitId, UnitBonus>>;
 }): Battle {
   const stacks: Stack[] = [];
   const add = (unit: UnitId, count: number, side: Side, col: number, row: number) => {
@@ -188,7 +226,7 @@ export function createBattle({
       row,
       hp,
       startHp: hp,
-      shots: stats.shots ?? 0,
+      shots: stats.shots ? stats.shots + (side === 'defender' ? (unitBonus[unit]?.shots ?? 0) : 0) : 0,
       retaliations: stats.retaliations ?? 1,
       defending: false,
       resurrected: false,
@@ -220,13 +258,19 @@ export function createBattle({
     walls,
     towers,
     towerDamage,
+    towerShots,
+    wallOil,
+    moat: moatDamage,
+    moatAtGate,
     bonus: { attack: attackBonus, defence: defenceBonus },
+    unitBonus,
     queue: [],
     status: 'active',
     auto: false,
     log: [],
     last: [],
   };
+  if (traps) springTraps(battle, traps, trapPower);
   // With no army to defend it, the hold has only its towers: they get a few volleys as the raiders come.
   if (living(battle, 'defender').length === 0) {
     for (let volley = 0; volley < 3 && battle.towers > 0 && living(battle, 'attacker').length > 0; volley++) towerVolley(battle);
@@ -248,6 +292,8 @@ function startRound(battle: Battle) {
   emit(battle, { kind: 'round', text: `Round ${String(battle.round)}` });
   for (const stack of battle.stacks) stack.retaliations = UNIT_STATS[stack.unit].retaliations ?? 1;
   towerVolley(battle);
+  pourOil(battle);
+  soakInMoat(battle);
   checkEnd(battle);
   if (battle.status !== 'active') return;
   // Fastest first; on ties the defenders move first.
@@ -257,9 +303,117 @@ function startRound(battle: Battle) {
   beginTurn(battle);
 }
 
-// Every tower shoots the most dangerous raiders.
+// The raiders on foot cross the traps on their side of the belt: pitch burns under all of them, each
+// spike pit swallows whoever falls in, each snare holds a company back for its first turn.
+function springTraps(battle: Battle, traps: TrapCounts, power: number) {
+  const onFoot = () => living(battle, 'attacker').filter((stack) => !UNIT_STATS[stack.unit].flying);
+  const before = new Map(battle.stacks.map((stack) => [stack.id, stackCount(stack)]));
+  const plural = (stack: Stack) => UNIT_STATS[stack.unit].plural.toLowerCase();
+  const at = (stack: Stack): Hex => ({ col: stack.col, row: stack.row });
+  if (traps.spikes + traps.pitch + traps.snare === 0) return;
+  for (const stack of living(battle, 'attacker')) {
+    if (UNIT_STATS[stack.unit].flying) emit(battle, { kind: 'trap', text: `The ${plural(stack)} fly over the traps.`, actor: stack.id });
+  }
+
+  if (traps.pitch > 0) {
+    const damage = Math.round(traps.pitch * TRAP_DAMAGE.pitch * power);
+    for (const stack of onFoot()) {
+      const count = stackCount(stack);
+      stack.hp = Math.max(0, stack.hp - damage);
+      emit(battle, {
+        kind: 'trap',
+        text: `Burning pitch scorches the ${plural(stack)} for ${String(damage)}${killText(count - stackCount(stack))}.`,
+        target: stack.id,
+        to: at(stack),
+        damage,
+      });
+    }
+  }
+
+  if (traps.spikes > 0) {
+    const hits = new Map<number, { pits: number; damage: number; count: number }>();
+    for (let pit = 0; pit < traps.spikes; pit++) {
+      const victims = onFoot();
+      if (victims.length === 0) break;
+      const stack = victims[Math.floor(random(battle) * victims.length)];
+      const damage = Math.min(stack.hp, Math.round(TRAP_DAMAGE.spikes * power));
+      const hit = hits.get(stack.id) ?? { pits: 0, damage: 0, count: stackCount(stack) };
+      hit.pits += 1;
+      hit.damage += damage;
+      hits.set(stack.id, hit);
+      stack.hp -= damage;
+    }
+    for (const [id, { pits, damage, count }] of hits) {
+      const stack = battle.stacks[id];
+      emit(battle, {
+        kind: 'trap',
+        text: `${pits === 1 ? 'A spike pit swallows' : `${String(pits)} spike pits swallow`} the ${plural(stack)} for ${String(damage)}${killText(count - stackCount(stack))}.`,
+        target: id,
+        to: at(stack),
+        damage,
+      });
+    }
+  }
+
+  for (let snare = 0; snare < traps.snare; snare++) {
+    const free = onFoot().filter((stack) => !stack.snared);
+    if (free.length === 0) break;
+    const stack = free[Math.floor(random(battle) * free.length)];
+    stack.snared = true;
+    emit(battle, { kind: 'trap', text: `The ${plural(stack)} are caught in a snare: they lose their first turn.`, target: stack.id });
+  }
+
+  battle.trapKills = battle.stacks
+    .filter((stack) => stack.side === 'attacker')
+    .reduce((sum, stack) => sum + (before.get(stack.id) ?? 0) - stackCount(stack), 0);
+}
+
+// Boiling oil poured from the wall onto every raider company standing beside a whole section.
+function pourOil(battle: Battle) {
+  const damage = battle.wallOil ?? 0;
+  if (damage <= 0) return;
+  for (const stack of living(battle, 'attacker')) {
+    const underWall = battle.walls.some((piece) => piece.hp > 0 && adjacent(piece, stack));
+    if (!underWall) continue;
+    const before = stackCount(stack);
+    stack.hp = Math.max(0, stack.hp - damage);
+    emit(battle, {
+      kind: 'oil',
+      text: `Boiling oil scalds the ${UNIT_STATS[stack.unit].plural.toLowerCase()} for ${String(damage)}${killText(before - stackCount(stack))}.`,
+      target: stack.id,
+      to: { col: stack.col, row: stack.row },
+      damage,
+    });
+  }
+}
+
+/** Is this hex flooded moat (raiders on foot who wade in stop there and are hurt every round)? */
+export function inMoat(battle: Battle, col: number, row: number) {
+  return (battle.moat ?? 0) > 0 && col === MOAT_COL && (row !== GATE_ROW || !!battle.moatAtGate);
+}
+const wading = (battle: Battle, stack: Stack) => stack.side === 'attacker' && !UNIT_STATS[stack.unit].flying && inMoat(battle, stack.col, stack.row);
+
+// Raiders on foot standing in the moat are hurt every round.
+function soakInMoat(battle: Battle) {
+  const damage = battle.moat ?? 0;
+  if (damage <= 0) return;
+  for (const stack of living(battle, 'attacker')) {
+    if (!wading(battle, stack)) continue;
+    const before = stackCount(stack);
+    stack.hp = Math.max(0, stack.hp - damage);
+    emit(battle, {
+      kind: 'moat',
+      text: `The ${UNIT_STATS[stack.unit].plural.toLowerCase()} flounder in the moat for ${String(damage)}${killText(before - stackCount(stack))}.`,
+      target: stack.id,
+      to: { col: stack.col, row: stack.row },
+      damage,
+    });
+  }
+}
+
+// Every tower shoots the most dangerous raiders (twice, from ballista platforms).
 function towerVolley(battle: Battle) {
-  for (let tower = 0; tower < battle.towers; tower++) {
+  for (let tower = 0; tower < battle.towers * (battle.towerShots ?? 1); tower++) {
     const target = living(battle, 'attacker').sort((a, b) => stackValue(b) - stackValue(a))[0];
     if (!target) break;
     const before = stackCount(target);
@@ -274,11 +428,19 @@ function towerVolley(battle: Battle) {
 }
 
 function beginTurn(battle: Battle) {
-  // Skip stacks that died before their turn came.
-  while (battle.queue.length > 0 && !isAlive(battle.stacks[battle.queue[0]])) battle.queue.shift();
-  if (battle.queue.length === 0) {
-    startRound(battle);
-    return;
+  for (;;) {
+    // Skip stacks that died before their turn came.
+    while (battle.queue.length > 0 && !isAlive(battle.stacks[battle.queue[0]])) battle.queue.shift();
+    if (battle.queue.length === 0) {
+      startRound(battle);
+      return;
+    }
+    const stack = battle.stacks[battle.queue[0]];
+    if (!stack.snared) break;
+    // Caught in a snare: the turn goes on struggling free.
+    stack.snared = false;
+    emit(battle, { kind: 'trap', text: `${nameOf(stack)} struggle free of the snare.`, actor: stack.id });
+    battle.queue.shift();
   }
   battle.stacks[battle.queue[0]].defending = false;
 }
@@ -320,12 +482,12 @@ function auraOf(battle: Battle, side: Side) {
 }
 
 export function attackOf(battle: Battle, stack: Stack) {
-  const bonus = stack.side === 'defender' ? battle.bonus.attack : 0;
+  const bonus = stack.side === 'defender' ? battle.bonus.attack + (battle.unitBonus?.[stack.unit]?.attack ?? 0) : 0;
   return UNIT_STATS[stack.unit].attack + bonus + auraOf(battle, stack.side).attack;
 }
 
 export function defenceOf(battle: Battle, stack: Stack) {
-  const bonus = stack.side === 'defender' ? battle.bonus.defence : 0;
+  const bonus = stack.side === 'defender' ? battle.bonus.defence + (battle.unitBonus?.[stack.unit]?.defence ?? 0) : 0;
   const base = UNIT_STATS[stack.unit].defence + bonus + auraOf(battle, stack.side).defence;
   // Defending: +30% defence until the stack's next turn.
   return stack.defending ? Math.round(base * 1.3) : base;
@@ -430,8 +592,10 @@ export function reachable(battle: Battle, stack: Stack): Map<number, number> {
         const key = hexKey(n.col, n.row);
         if (seen.has(key) || !passable(battle, stack, n.col, n.row, false)) continue;
         seen.set(key, step);
-        next.push(n);
         if (passable(battle, stack, n.col, n.row, true)) result.set(key, step);
+        // Raiders who wade into the moat stop there.
+        if (stack.side === 'attacker' && inMoat(battle, n.col, n.row)) continue;
+        next.push(n);
       }
     }
     frontier = next;
@@ -562,7 +726,8 @@ export function act(previous: Battle, action: BattleAction): Battle {
         if (!spot) return previous;
         target.col = spot.col;
         target.row = spot.row;
-        target.shots = UNIT_STATS[target.unit].shots ?? 0;
+        const shots = UNIT_STATS[target.unit].shots;
+        target.shots = shots ? shots + (target.side === 'defender' ? (battle.unitBonus?.[target.unit]?.shots ?? 0) : 0) : 0;
       }
       const before = stackCount(target);
       const amount = Math.min(target.startHp - target.hp, stats.resurrects * stackCount(stack));
@@ -669,6 +834,8 @@ function approachField(battle: Battle, stack: Stack) {
       const piece = wallAt(battle, n.col, n.row);
       let step = 1;
       if (piece >= 0 && !(battle.walls[piece].gate && stack.side === 'defender')) step += battle.walls[piece].hp / 25;
+      // Raiders would rather not wade (it stops them and hurts), so a dry bridge is worth a detour.
+      if (stack.side === 'attacker' && inMoat(battle, n.col, n.row)) step += 2;
       if (occupant && occupant.id !== stack.id) step += 3;
       if (cost[current] + step < cost[key]) cost[key] = cost[current] + step;
     }
@@ -778,6 +945,15 @@ export function resolveBattle(battle: Battle): Battle {
   let current: Battle = { ...battle, auto: true };
   for (let guard = 0; guard < 5000 && current.status === 'active'; guard++) current = stepAI(current);
   return current;
+}
+
+/** The raiders' strength when the battle began (total creature value). */
+export function raiderStrength(battle: Battle) {
+  return Math.round(
+    battle.stacks
+      .filter((stack) => stack.side === 'attacker')
+      .reduce((sum, stack) => sum + (stack.startHp / UNIT_STATS[stack.unit].hp) * UNIT_STATS[stack.unit].value, 0),
+  );
 }
 
 /** The hold's army after the battle: survivors (healed and resurrected ones included) and losses. */

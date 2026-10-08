@@ -1,5 +1,6 @@
+import { memo } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { RESOURCES, RESOURCE_INFO, type Stock } from '../game/resources';
+import { RESOURCES, RESOURCE_INFO, type Resource, type Stock } from '../game/resources';
 
 type Stage = { label: string; stock: Stock; capacity: number };
 
@@ -13,35 +14,44 @@ export default function StockpileTable({ stages }: { stages: Stage[] }) {
           <Text key={stage.label} style={[styles.heading, styles.cell]}>{stage.label}</Text>
         ))}
       </View>
-      {RESOURCES.map((resource) => {
-        const info = RESOURCE_INFO[resource];
+      {RESOURCES.map((resource) => (
+        <StockRow
+          key={resource}
+          resource={resource}
+          cells={stages.map((stage) => `${String(Math.floor(stage.stock[resource]))}/${String(stage.capacity)}`).join(' ')}
+        />
+      ))}
+    </View>
+  );
+}
+
+// One resource's row; `cells` ("value/capacity" per stage) is a string, so the row only redraws when a number changes.
+const StockRow = memo(function StockRow({ resource, cells }: { resource: Resource; cells: string }) {
+  const info = RESOURCE_INFO[resource];
+  return (
+    <View style={styles.row}>
+      <View style={[styles.nameCell, styles.name]}>
+        <View style={[styles.swatch, { backgroundColor: info.color, borderColor: info.light }]} />
+        <Text style={styles.nameText}>{info.name.toUpperCase()}</Text>
+      </View>
+      {cells.split(' ').map((cell, index) => {
+        const [value, capacity] = cell.split('/').map(Number);
+        const fill = capacity > 0 ? Math.min(1, value / capacity) : 0;
         return (
-          <View key={resource} style={styles.row}>
-            <View style={[styles.nameCell, styles.name]}>
-              <View style={[styles.swatch, { backgroundColor: info.color, borderColor: info.light }]} />
-              <Text style={styles.nameText}>{info.name.toUpperCase()}</Text>
+          <View key={index} style={styles.cell}>
+            <Text style={[styles.value, value <= 0 && styles.valueEmpty]}>
+              {String(value)}
+              <Text style={styles.capacity}> / {String(capacity)}</Text>
+            </Text>
+            <View style={styles.track}>
+              <View style={[styles.fill, { width: `${Math.round(fill * 100)}%`, backgroundColor: info.tint }]} />
             </View>
-            {stages.map((stage) => {
-              const value = stage.stock[resource];
-              const fill = stage.capacity > 0 ? Math.min(1, value / stage.capacity) : 0;
-              return (
-                <View key={stage.label} style={styles.cell}>
-                  <Text style={[styles.value, value <= 0 && styles.valueEmpty]}>
-                    {String(Math.floor(value))}
-                    <Text style={styles.capacity}> / {String(stage.capacity)}</Text>
-                  </Text>
-                  <View style={styles.track}>
-                    <View style={[styles.fill, { width: `${Math.round(fill * 100)}%`, backgroundColor: info.tint }]} />
-                  </View>
-                </View>
-              );
-            })}
           </View>
         );
       })}
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   table: { gap: 7 },

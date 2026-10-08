@@ -177,7 +177,10 @@ export default function BattleScreen() {
               <View style={styles.log}>
                 <SectionLabel>BATTLE LOG</SectionLabel>
                 {battle.log.slice(-8).reverse().map((event, index) => (
-                  <Text key={battle.log.length - index} style={[styles.logLine, event.kind === 'round' && styles.logRound, index === 0 && styles.logLatest]}>
+                  <Text
+                    key={battle.log.length - index}
+                    style={[styles.logLine, event.kind === 'round' && styles.logRound, (event.kind === 'trap' || event.kind === 'oil' || event.kind === 'moat') && styles.logTrap, index === 0 && styles.logLatest]}
+                  >
                     {event.text}
                   </Text>
                 ))}
@@ -237,7 +240,10 @@ function ReportCard({ report }: { report: RaidReport }) {
   return (
     <View style={styles.report}>
       <Text style={[styles.reportTitle, report.outcome === 'lost' && styles.reportLost]}>{title}</Text>
-      <Text style={styles.cardText}>Raiders slain: {String(report.slain)}</Text>
+      <Text style={styles.cardText}>
+        Raiders slain: {String(report.slain)}
+        {report.trapKills ? ` (${String(report.trapKills)} by traps)` : ''}
+      </Text>
       {report.bounty > 0 && <Text style={styles.cardText}>Bounty: +{String(report.bounty)} gold</Text>}
       {report.plundered && <Text style={styles.cardText}>Plundered: {String(report.plundered.gold)} gold and 30% of every stockpile</Text>}
       <Text style={styles.cardText}>
@@ -307,5 +313,6 @@ const styles = StyleSheet.create({
   log: { gap: 4, paddingTop: 6 },
   logLine: { color: '#8d947e', fontFamily: 'monospace', fontSize: 9 },
   logRound: { color: '#d2a45f' },
+  logTrap: { color: '#c9a66b' },
   logLatest: { color: '#e6dfcb' },
 });

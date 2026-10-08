@@ -11,7 +11,7 @@ Essentials:
 - Node is installed via nvm only: run `source ~/.nvm/nvm.sh` in non-interactive shells.
 - Game logic lives in `src/game/` (pure TS, no React Native/Skia); rendering in `src/components/`.
 - The user's rule: tunnels/shafts never run side by side (one rock tile between them). Don't break it.
-- No save/load yet — a page reload resets the game.
+- The game autosaves (Zustand `persist` → `localStorage`, see `src/game/save.ts`); give new state a default.
 
 ## Expo has changed — do not trust your training data
 

@@ -1,8 +1,10 @@
 import { router } from 'expo-router';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { describeParty, useGameStore } from '../game/gameStore';
-import { raidValue } from '../game/raids';
-import { UNIT_STATS, armyValue, type ArmyUnit } from '../game/units';
+import { SIDE_NAMES } from '../game/cityMap';
+import { describeParty, holdPowerOf, useGameStore } from '../game/gameStore';
+import { partyValue, raidRelief, raidSide, raidStrength } from '../game/raids';
+import { trapsFacing } from '../game/traps';
+import { UNIT_STATS, type ArmyUnit } from '../game/units';
 import { GameButton } from './GameUI';
 
 const clock = (seconds: number) => `${String(Math.floor(seconds / 60))}:${String(Math.max(0, seconds % 60)).padStart(2, '0')}`;
@@ -17,7 +19,10 @@ export default function RaidBanner() {
   const report = useGameStore((state) => state.raidReport);
   const nextRaidAt = useGameStore((state) => state.nextRaidAt);
   const raidsFought = useGameStore((state) => state.raidsFought);
-  const army = useGameStore((state) => state.army);
+  const lostInARow = useGameStore((state) => state.raidsLostInARow);
+  // Raids are sized to the hold's power (army + defences).
+  const power = useGameStore((state) => holdPowerOf(state).total);
+  const traps = useGameStore((state) => state.traps);
   const dismissRaidReport = useGameStore((state) => state.dismissRaidReport);
 
   if (battle?.status === 'active') {
@@ -34,6 +39,25 @@ export default function RaidBanner() {
       </View>
     );
   }
+  if (raid) {
+    const side = raidSide(raid.number);
+    const facing = trapsFacing(traps, side).length;
+    return (
+      <View style={[styles.banner, styles.warning]}>
+        <View style={styles.copy}>
+          <Text style={styles.warningTitle}>
+            RAIDERS SIGHTED TO THE {SIDE_NAMES[side].toUpperCase()} · ATTACK IN {clock(raid.arrivesAt - elapsed)}
+          </Text>
+          <Text style={styles.detail}>
+            {describeParty(raid.party)} · strength {partyValue(raid.party).toLocaleString()} vs your hold’s power {power.toLocaleString()}
+          </Text>
+          <Text style={styles.detail}>
+            {facing > 0 ? `${String(facing)} trap${facing === 1 ? '' : 's'} on that side of the belt.` : 'No traps on that side of the belt yet (BUILD → Traps).'}
+          </Text>
+        </View>
+      </View>
+    );
+  }
   if (battle) {
     return (
       <View style={styles.banner}>
@@ -44,31 +68,21 @@ export default function RaidBanner() {
       </View>
     );
   }
-  if (raid) {
-    return (
-      <View style={[styles.banner, styles.warning]}>
-        <View style={styles.copy}>
-          <Text style={styles.warningTitle}>RAIDERS SIGHTED · AT THE GATE IN {clock(raid.arrivesAt - elapsed)}</Text>
-          <Text style={styles.detail}>
-            {describeParty(raid.party)} · strength {raidValue(raid.number).toLocaleString()} vs your army {armyValue(army).toLocaleString()}
-          </Text>
-        </View>
-      </View>
-    );
-  }
   return (
     <View style={styles.banner}>
       <View style={styles.copy}>
         {report ? (
           <Text style={[styles.title, report.outcome === 'lost' && styles.lost]}>
             Raid {String(report.number)}: {report.outcome === 'won' ? `victory, +${String(report.bounty)} gold` : report.outcome === 'lost' ? `defeat, ${String(report.plundered?.gold ?? 0)} gold plundered` : 'the raiders withdrew'}
+            {report.trapKills ? ` · traps slew ${String(report.trapKills)}` : ''}
             {Object.keys(report.losses).length > 0
               ? ` · fallen: ${(Object.entries(report.losses) as [ArmyUnit, number][]).map(([unit, count]) => `${String(count)} ${UNIT_STATS[unit].plural.toLowerCase()}`).join(', ')}`
               : ''}
           </Text>
         ) : null}
         <Text style={styles.detail}>
-          Next raid ({String(raidsFought + 1)}) in {clock(nextRaidAt - elapsed)} · expected strength {raidValue(raidsFought + 1).toLocaleString()} · your army {armyValue(army).toLocaleString()}
+          Next raid ({String(raidsFought + 1)}) in {clock(nextRaidAt - elapsed)} · expected strength {raidStrength(raidsFought + 1, power, lostInARow).toLocaleString()} (it grows with your hold
+          {lostInARow > 0 ? `, ${String(Math.round((1 - raidRelief(lostInARow)) * 100))}% smaller after ${String(lostInARow)} lost in a row` : ''}) · your hold’s power {power.toLocaleString()}
         </Text>
       </View>
       {report && (

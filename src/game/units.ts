@@ -3,7 +3,6 @@
 // attack/defence change damage by 5% / 2.5% per point, damage is rolled per creature, a stack's
 // health is a pool (the top creature may be wounded). Pure data, no React/Skia.
 import type { BuildingId } from './buildings';
-import type { Resource } from './resources';
 
 export const ARMY_UNITS = ['pikeman', 'bowman', 'swordsman', 'monk', 'balloon', 'cavalry', 'griffin', 'paladin', 'angel'] as const;
 export type ArmyUnit = (typeof ARMY_UNITS)[number];
@@ -61,8 +60,8 @@ export const UNIT_STATS: Record<UnitId, UnitStats> = {
     antiCavalry: true, value: 80, ability: 'Set pikes: +50% damage against riders.',
   },
   bowman: {
-    name: 'Bowman', plural: 'Bowmen', attack: 6, defence: 3, minDamage: 2, maxDamage: 3, hp: 10, speed: 4,
-    shots: 12, value: 126, ability: 'Ranged: 12 arrows.',
+    name: 'Crossbowman', plural: 'Crossbowmen', attack: 6, defence: 3, minDamage: 2, maxDamage: 3, hp: 10, speed: 4,
+    shots: 12, value: 126, ability: 'Ranged: 12 bolts.',
   },
   swordsman: {
     name: 'Swordsman', plural: 'Swordsmen', attack: 10, defence: 12, minDamage: 6, maxDamage: 9, hp: 35, speed: 5,
@@ -125,32 +124,29 @@ export const UNIT_STATS: Record<UnitId, UnitStats> = {
   },
 };
 
-/** Where each unit is raised, what one costs, how many come per muster and the keep level they need. */
-export const ARMY_RECRUITING: Record<ArmyUnit, {
-  dwelling: BuildingId;
-  gold: number;
-  resources: Partial<Record<Resource, number>>;
-  growth: number;
-  requiresKeep: number;
-}> = {
-  pikeman: { dwelling: 'guardhouse', gold: 25, resources: {}, growth: 14, requiresKeep: 1 },
-  bowman: { dwelling: 'archery', gold: 40, resources: {}, growth: 9, requiresKeep: 2 },
-  swordsman: { dwelling: 'barracks', gold: 120, resources: { iron: 1 }, growth: 4, requiresKeep: 3 },
-  monk: { dwelling: 'monastery', gold: 160, resources: { copper: 1 }, growth: 3, requiresKeep: 5 },
-  balloon: { dwelling: 'balloonWorks', gold: 240, resources: { copper: 2, coal: 2 }, growth: 2, requiresKeep: 7 },
-  cavalry: { dwelling: 'stables', gold: 400, resources: { iron: 2 }, growth: 2, requiresKeep: 9 },
-  griffin: { dwelling: 'griffinEyrie', gold: 500, resources: { granite: 2 }, growth: 2, requiresKeep: 11 },
-  paladin: { dwelling: 'chapel', gold: 800, resources: { iron: 3, gold: 1 }, growth: 1, requiresKeep: 13 },
-  angel: { dwelling: 'sanctum', gold: 1200, resources: { diamond: 1 }, growth: 1, requiresKeep: 15 },
+/**
+ * Where each unit is raised, the gold one costs, how many come per muster and the keep level they need.
+ * Each soldier also takes one piece of its gear, made at the armory (`UNIT_GEAR` in items.ts).
+ */
+export const ARMY_RECRUITING: Record<ArmyUnit, { dwelling: BuildingId; gold: number; growth: number; requiresKeep: number }> = {
+  pikeman: { dwelling: 'guardhouse', gold: 25, growth: 14, requiresKeep: 1 },
+  bowman: { dwelling: 'archery', gold: 40, growth: 9, requiresKeep: 2 },
+  swordsman: { dwelling: 'barracks', gold: 120, growth: 4, requiresKeep: 3 },
+  monk: { dwelling: 'monastery', gold: 160, growth: 3, requiresKeep: 5 },
+  balloon: { dwelling: 'balloonWorks', gold: 240, growth: 2, requiresKeep: 7 },
+  cavalry: { dwelling: 'stables', gold: 400, growth: 2, requiresKeep: 9 },
+  griffin: { dwelling: 'griffinEyrie', gold: 500, growth: 2, requiresKeep: 11 },
+  paladin: { dwelling: 'chapel', gold: 800, growth: 1, requiresKeep: 13 },
+  angel: { dwelling: 'sanctum', gold: 1200, growth: 1, requiresKeep: 15 },
 };
 
 /** Seconds between musters: each dwelling's new recruits arrive spread over this time. */
 export const MUSTER_SECONDS = 120;
 
-/** Recruits a dwelling adds per muster at a level (0 when it isn't built). */
-export function unitGrowth(unit: ArmyUnit, dwellingLevel: number) {
+/** Recruits a dwelling adds per muster at a level (0 when it isn't built); `bonus` from techs (0.25 = +25%). */
+export function unitGrowth(unit: ArmyUnit, dwellingLevel: number, bonus = 0) {
   if (dwellingLevel <= 0) return 0;
-  return Math.round(ARMY_RECRUITING[unit].growth * (1 + 0.15 * (dwellingLevel - 1)) * 10) / 10;
+  return Math.round(ARMY_RECRUITING[unit].growth * (1 + 0.15 * (dwellingLevel - 1)) * (1 + bonus) * 10) / 10;
 }
 
 /** Recruits pile up for at most this many musters. */

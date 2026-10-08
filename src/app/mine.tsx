@@ -4,7 +4,9 @@ import { StatusBar } from 'expo-status-bar';
 import { Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { ScrollView } from 'react-native-gesture-handler';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { MAX_DEPTH, MINE_STATIONS_PER_GALLERY, VEIN_CAPACITY_PER_DEPTH, getDepthCost, idleMiners, selectMineLayout, tileDigCost, tunnelCost, useGameStore } from '../game/gameStore';
+import { MAX_DEPTH, MINE_STATIONS_PER_GALLERY, VEIN_CAPACITY_PER_DEPTH, getDepthCost, freeHands, haulWalk, selectMineLayout, tileDigCost, tunnelCost, useGameStore, workforceOf } from '../game/gameStore';
+import { haulFactor } from '../game/roads';
+import { buildingStats } from '../game/buildings';
 import { findDigRoute, getDepositInfo, standingTargets, tileKey } from '../game/mineLayout';
 import DepositPanel from '../components/DepositPanel';
 import HaulagePanel from '../components/HaulagePanel';
@@ -14,10 +16,11 @@ import { MINE_TILE_SIZE } from '../components/MineMapLayout';
 import MineScene from '../components/MineScene';
 import { GameButton, LiveSignal, SectionLabel } from '../components/GameUI';
 import RaidBanner from '../components/RaidBanner';
+import { TechBranchView } from '../components/TechTree';
 
 export default function MineScreen() {
   const game = useGameStore();
-  const depthCost = getDepthCost(game.depth);
+  const depthCost = getDepthCost(game.depth, game.techs);
   const atBedrock = game.depth >= MAX_DEPTH;
   const layout = selectMineLayout(game);
   const [digMode, setDigMode] = useState(false);
@@ -26,13 +29,13 @@ export default function MineScreen() {
   const selected = selectedKey ? getDepositInfo({ ...layout, depositMined: game.depositMined }, selectedKey) : null;
   const selectedPending = !!selectedKey && game.pendingSites.some((site) => tileKey(site.faceRow, site.faceColumn) === selectedKey);
   const selectedStatus = selected?.status;
-  const { buildings } = game;
+  const { buildings, techs } = game;
   // The tunnel diggers would cut to reach the selected deposit; only recomputed when the mine changes.
   const selectedRoute = useMemo(() => {
     if (!selectedKey || selectedStatus !== 'unreachable') return null;
     const route = findDigRoute(layout, new Set(game.digPlan), standingTargets(layout, selectedKey));
-    return route ? { tiles: route.length, cost: tunnelCost({ buildings }, route) } : null;
-  }, [layout, selectedKey, selectedStatus, game.digPlan, buildings]);
+    return route ? { tiles: route.length, cost: tunnelCost({ buildings, techs }, route) } : null;
+  }, [layout, selectedKey, selectedStatus, game.digPlan, buildings, techs]);
   const { height: windowHeight } = useWindowDimensions();
   const pageScrollRef = useRef<ScrollView>(null);
   // The map can be thousands of pixels tall; show a fixed window onto it and scroll inside.
@@ -66,7 +69,7 @@ export default function MineScreen() {
 
           <View style={styles.mineHeader}>
             <View><SectionLabel>SHAFT {String(game.depth).padStart(2, '0')}</SectionLabel><Text style={styles.mineSubheading}>{String(game.depth)} {game.depth === 1 ? 'gallery' : 'galleries'} open. Follow the lift down.</Text></View>
-            <View style={styles.minerCount}><Text style={styles.minerCountValue}>{String(game.miners)}</Text><Text style={styles.minerCountLabel}>MINERS{idleMiners(game) > 0 ? ` · ${String(idleMiners(game))} IDLE` : ''}</Text></View>
+            <View style={styles.minerCount}><Text style={styles.minerCountValue}>{String(game.sites.length + game.pendingSites.length)}</Text><Text style={styles.minerCountLabel}>MINERS · {String(freeHands(game))} FREE PEASANTS</Text></View>
           </View>
 
           <View style={styles.digBar}>
@@ -119,7 +122,7 @@ export default function MineScreen() {
           {selected && (
             <DepositPanel
               info={selected}
-              idle={idleMiners(game)}
+              idle={freeHands(game)}
               gold={game.gold}
               pending={selectedPending}
               route={selectedRoute}
@@ -146,7 +149,7 @@ export default function MineScreen() {
             <LogisticsStep index="01" title="Miners dig" detail={`${String(game.sites.length)} working miners · ${String(game.minerRate)} / sec each`} live />
             <LogisticsStep index="02" title="Miners → mine exit" detail={`Mine carts carry ${String(game.mineCartCapacity)} per load · ${String(game.lastFlow.toMineExit).replace(/\.0$/, '')} tipped last tick`} />
             <LogisticsStep index="03" title="Mine exit → mine stockpile" detail={`${String(Math.floor(stockTotal(game.mineExit)))} staged at the exit · ${String(game.lastFlow.toMineStockpile).replace(/\.0$/, '')} unloaded last tick`} />
-            <LogisticsStep index="04" title="Mine stockpile → warehouse" detail={`Surface wagons carry ${String(game.surfaceHaul)} per trip · ${String(game.lastFlow.toWarehouse).replace(/\.0$/, '')} delivered last tick`} />
+            <LogisticsStep index="04" title="Mine stockpile → warehouse" detail={`${String(buildingStats(game.buildings, workforceOf(game).staff).haulers)} haulers carry ${String(game.surfaceHaul)} per trip (×${String(haulFactor(haulWalk(game)))} for the walk) · ${String(game.lastFlow.toWarehouse).replace(/\.0$/, '')} delivered last tick`} />
           </View>
 
           <HaulagePanel
@@ -154,8 +157,15 @@ export default function MineScreen() {
             carts={game.carts}
             coal={game.warehouse.coal}
             gold={game.gold}
+            techs={game.techs}
             onBuyCart={game.buyCart}
           />
+
+          <View style={styles.techSection}>
+            <SectionLabel>MINE TECH TREE</SectionLabel>
+            <Text style={styles.mineSubheading}>Upgrades bought with gold, for good</Text>
+            <TechBranchView game={game} branch="mine" showName={false} />
+          </View>
 
           <View style={styles.deeperSection}>
             <View style={styles.deeperCopy}>
@@ -225,6 +235,7 @@ const styles = StyleSheet.create({
   stepCopy: { flex: 1, gap: 4 },
   stepTitle: { color: '#e7e1d0', fontFamily: 'Georgia', fontSize: 14 },
   stepDetail: { color: '#87907f', fontFamily: 'monospace', fontSize: 9 },
+  techSection: { gap: 10, paddingTop: 22 },
   deeperSection: { gap: 12, paddingTop: 22, paddingBottom: 20 },
   deeperCopy: { gap: 1 },
   backBar: { minHeight: 41, flexDirection: 'row', alignItems: 'center', gap: 13, paddingHorizontal: 11, backgroundColor: '#1b2019' },

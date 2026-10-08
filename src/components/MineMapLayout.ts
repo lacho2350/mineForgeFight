@@ -35,7 +35,7 @@ export function getWorkRow(level: number) {
 
 // Work stations, filled nearest-first alternating sides of the lift. Every miner's ladder shaft keeps a
 // tile of solid rock between it and the lift or the next shaft: lift | rock | shaft, ore | rock | shaft, ore …
-export const MINE_STATIONS = [-2, 2, -5, 5, -8, 8, -11, 11].map((offset) => ({
+export const MINE_STATIONS = [-2, 2, -5, 5, -8, 8, -11, 11, -14, 14, -17, 17].map((offset) => ({
   minerColumn: MINE_SHAFT_COLUMN + offset,
   oreColumn: MINE_SHAFT_COLUMN + offset + Math.sign(offset),
 }));

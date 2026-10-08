@@ -5,7 +5,7 @@ import { GameButton, SectionLabel } from './GameUI';
 
 
 
-// Details for the tile the player tapped, with the action that fits it: put an idle miner on a
+// Details for the tile the player tapped, with the action that fits it: put a free peasant to mine a
 // coal deposit, or take the miner off it.
 export default function DepositPanel({
   info,
@@ -35,8 +35,8 @@ export default function DepositPanel({
   const detail = {
     worked: 'A miner is working this deposit.',
     available: idle > 0
-      ? `${String(idle)} idle miner${idle === 1 ? '' : 's'} ready. Tip: double-tap a deposit to assign straight away.`
-      : 'No idle miners — build a miner hut or release one.',
+      ? `${String(idle)} free peasant${idle === 1 ? '' : 's'} can mine. Tip: double-tap a deposit to assign straight away.`
+      : 'No free peasants: wait for newcomers, stop a building, or release a miner.',
     unreachable: route
       ? `Nothing dug beside it yet. Diggers can cut a ${String(route.tiles)}-tile tunnel to it for ${String(route.cost)} gold, then a miner starts. Double-tap does the same.`
       : 'No legal tunnel reaches it from nearby. Dig closer to it first.',
@@ -72,19 +72,19 @@ export default function DepositPanel({
       {!pending && <Text style={styles.detail}>{detail}</Text>}
 
       {pending && <Text style={styles.detail}>A miner is on the way. They start as soon as the tunnel is through.</Text>}
-      {pending && <GameButton label="CANCEL" detail="miner stays idle" onPress={onRelease} secondary />}
+      {pending && <GameButton label="CANCEL" detail="back to the campfire" onPress={onRelease} secondary />}
       {!pending && info.status === 'unreachable' && route && (
         <GameButton
           label="DIG & ASSIGN"
-          detail={`${String(route.tiles)} tiles · ${String(route.cost)} gold · ${String(idle)} idle`}
+          detail={`${String(route.tiles)} tiles · ${String(route.cost)} gold · ${String(idle)} free`}
           onPress={onAssign}
           disabled={idle <= 0 || gold < route.cost}
         />
       )}
       {info.status === 'available' && (
-        <GameButton label="ASSIGN MINER" detail={`${String(idle)} idle`} onPress={onAssign} disabled={idle <= 0} />
+        <GameButton label="ASSIGN MINER" detail={`${String(idle)} free peasants`} onPress={onAssign} disabled={idle <= 0} />
       )}
-      {info.status === 'worked' && <GameButton label="RELEASE MINER" detail="miner becomes idle" onPress={onRelease} secondary />}
+      {info.status === 'worked' && <GameButton label="RELEASE MINER" detail="back to the campfire" onPress={onRelease} secondary />}
     </View>
   );
 }

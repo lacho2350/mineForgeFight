@@ -1,4 +1,4 @@
-import { memo, useMemo } from 'react';
+import { memo, useEffect, useMemo, useState } from 'react';
 import {
   Canvas,
   DashPathEffect,
@@ -14,11 +14,21 @@ import {
   type SkPicture,
 } from '@shopify/react-native-skia';
 import { StyleSheet } from 'react-native';
+import { useIsFocused } from 'expo-router';
 import { useDerivedValue, type SharedValue } from 'react-native-reanimated';
 import { getCartRoutes, type LevelCarts } from '../game/haulage';
 import { digTime, isDug, parseKey, type MineLayout, type Site } from '../game/mineLayout';
 import { MINE_SURFACE_ROWS, MINE_TILE_SIZE } from './MineMapLayout';
-import { TERRAIN_BLOCK_COLUMNS, TERRAIN_BLOCK_COUNT_X, TERRAIN_BLOCK_ROWS, getBlockImage } from './mineTerrain';
+import {
+  TERRAIN_BLOCK_COLUMNS,
+  TERRAIN_BLOCK_COUNT_X,
+  TERRAIN_BLOCK_ROWS,
+  closeTerrainView,
+  getBlockImage,
+  newTerrainView,
+  openTerrainView,
+  terrainViewCommitted,
+} from './mineTerrain';
 import { ExitStockpiles, LevelCart, MinerStockpiles } from './MineHaulers';
 import type { CartLoad } from '../game/gameStore';
 import type { Resource } from '../game/resources';
@@ -87,7 +97,18 @@ export type MineView = { left: number; top: number; right: number; bottom: numbe
 // sampling keeps the pixel art crisp when zoomed in.
 const pixelSampling = { filter: FilterMode.Nearest, mipmap: MipmapMode.None };
 
-function TerrainBlocks({ view, layout }: { view: MineView; layout: MineLayout }) {
+function TerrainBlocks({ view, layout, active }: { view: MineView; layout: MineLayout; active: boolean }) {
+  // Tell the block cache when this view has moved on from older images, so it can free them safely.
+  // Only commits made in view count: on web a screen in the background keeps committing while its
+  // canvas keeps replaying the old drawing.
+  const [viewId] = useState(newTerrainView);
+  useEffect(() => {
+    openTerrainView(viewId);
+    return () => closeTerrainView(viewId);
+  }, [viewId]);
+  useEffect(() => {
+    if (active) terrainViewCommitted(viewId);
+  });
   const blockWidth = TERRAIN_BLOCK_COLUMNS * tileSize;
   const blockHeight = TERRAIN_BLOCK_ROWS * tileSize;
   const firstRow = Math.max(0, Math.floor(view.top / blockHeight));
@@ -235,6 +256,7 @@ function MineSceneCanvas({
   dig,
   selectedKey,
 }: MineSceneCanvasProps) {
+  const focused = useIsFocused();
   const minerPicture = useMemo(() => createMinerPicture(), []);
   const transform = useDerivedValue(() => [
     { scale: zoom.get() },
@@ -254,7 +276,7 @@ function MineSceneCanvas({
     <Canvas style={{ ...styles.canvas, width, height }}>
       <Rect x={0} y={0} width={width} height={height} color="#0d0a08" />
       <Group transform={transform}>
-        <TerrainBlocks view={view} layout={layout} />
+        <TerrainBlocks view={view} layout={layout} active={focused} />
         {view.top < MINE_SURFACE_ROWS * tileSize && <ExitStockpiles steps={exitPileSteps} />}
         {routes.map(([cart, route]) => (
           <LevelCart key={`cart-${cart}`} route={route} time={time} load={cartLoads[cart] as CartLoad | undefined} />

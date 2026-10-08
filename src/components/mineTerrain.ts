@@ -204,6 +204,76 @@ function drawDeposit(p: Painter, layout: MineLayout, row: number, column: number
       p.rect(cx + 9, cy - 2, 1, 3, light, 0.8);
       p.rect(cx + 8, cy - 1, 3, 1, light, 0.8);
     }
+  } else if (deposit === 'tin') {
+    // Dark slate nuggets with a pale glint.
+    for (let i = 0; i < amount + 1; i += 1) {
+      const h = hash(row, column, 70 + i);
+      const cx = x + (h % 28) + 6;
+      const cy = (h >>> 6) % 26 + 8;
+      p.rect(cx + 1, cy, 6, 7, color);
+      p.rect(cx, cy + 1, 8, 5, color);
+      p.rect(cx + 1, cy + 5, 6, 2, dark);
+      p.rect(cx + 2, cy + 1, 2, 2, light);
+    }
+  } else if (deposit === 'silver') {
+    // Thin wiry veins wandering across the tile.
+    for (let i = 0; i < Math.ceil(amount / 2) + 1; i += 1) {
+      const h = hash(row, column, 80 + i);
+      let vx = x + 3 + (h % 8);
+      let vy = (h >>> 6) % 28 + 8;
+      for (let k = 0; k < 6; k += 1) {
+        p.rect(vx, vy, 5, 2, color);
+        p.rect(vx + 1, vy, 2, 1, light);
+        vx += 5;
+        vy = Math.max(6, Math.min(T - 8, vy + ((h >>> (8 + k)) & 1 ? 2 : -2)));
+      }
+    }
+  } else if (deposit === 'sulfur') {
+    // Lumpy yellow crusts.
+    for (let i = 0; i < amount + 1; i += 1) {
+      const h = hash(row, column, 90 + i);
+      const cx = x + (h % 26) + 6;
+      const cy = (h >>> 6) % 26 + 8;
+      p.rect(cx, cy + 2, 10, 4, color);
+      p.rect(cx + 2, cy, 6, 8, color);
+      p.rect(cx + 3, cy + 1, 2, 2, light);
+      p.rect(cx + 1, cy + 6, 8, 1, dark);
+    }
+  } else if (deposit === 'salt') {
+    // Pale pink cubes.
+    for (let i = 0; i < Math.ceil(amount / 2) + 1; i += 1) {
+      const h = hash(row, column, 100 + i);
+      const cx = x + (h % 20) + 6;
+      const cy = (h >>> 6) % 22 + 9;
+      p.rect(cx, cy, 9, 9, color);
+      p.rect(cx, cy, 9, 2, light);
+      p.rect(cx + 7, cy, 2, 9, dark);
+      p.rect(cx + 10, cy + 4, 6, 6, color);
+      p.rect(cx + 10, cy + 4, 6, 1, light);
+    }
+  } else if (deposit === 'emerald') {
+    // Tall green prisms.
+    for (let i = 0; i < Math.ceil(amount / 2) + 1; i += 1) {
+      const h = hash(row, column, 110 + i);
+      const cx = x + (h % 28) + 8;
+      const cy = (h >>> 6) % 20 + 10;
+      p.rect(cx + 1, cy, 4, 1, light);
+      p.rect(cx, cy + 1, 6, 10, color);
+      p.rect(cx + 4, cy + 1, 2, 10, dark);
+      p.rect(cx + 1, cy + 2, 1, 6, light, 0.8);
+    }
+  } else if (deposit === 'mithril') {
+    // Pale blue bands through the rock, and bright flecks.
+    for (let i = 0; i < 3; i += 1) p.rect(x + 5, 12 + i * 10, T - 10, 2, color, 0.55);
+    for (let i = 0; i < amount; i += 1) {
+      const h = hash(row, column, 120 + i);
+      const cx = x + (h % 28) + 6;
+      const cy = (h >>> 6) % 28 + 7;
+      p.rect(cx, cy, 8, 4, color);
+      p.rect(cx + 1, cy + 1, 4, 1, light);
+      p.rect(cx, cy + 3, 8, 1, dark);
+      p.rect(cx + 9, cy - 2, 1, 1, light);
+    }
   }
 }
 
@@ -363,12 +433,12 @@ function drawSurface(p: Painter) {
   p.rect(shedX, 50, T * 2, groundY - 50, palette.woodLight);
   p.rect(shedX - 4, 44, T * 2 + 8, 7, palette.woodDark);
   p.rect(shedX + 34, 62, 28, groundY - 62, palette.woodDark);
-  const cabinX = (MINE_SHAFT_COLUMN + 9) * T + 10; // leaves room for the mine exit stockpiles beside the headhouse
+  const cabinX = (MINE_SHAFT_COLUMN + 15) * T + 10; // leaves room for the twelve exit stockpiles beside the headhouse
   p.rect(cabinX, 58, T + 10, groundY - 58, palette.wood);
   p.rect(cabinX - 4, 52, T + 18, 7, palette.woodDark);
   p.rect(cabinX + 10, 66, 12, 10, '#3b2a1c');
   // Fence posts.
-  for (let column = MINE_SHAFT_COLUMN + 11; column < MINE_SHAFT_COLUMN + 16; column += 1) {
+  for (let column = MINE_SHAFT_COLUMN + 17; column < MINE_SHAFT_COLUMN + 22; column += 1) {
     p.rect(column * T + 8, groundY - 12, 4, 12, palette.woodDark);
     p.rect(column * T, groundY - 9, T, 3, palette.wood);
   }
@@ -446,18 +516,40 @@ function getSurfacePicture(): SkPicture {
 
 type CachedBlock = { stamp: number; image: SkImage };
 const blockCache = new Map<string, CachedBlock>();
-// Replaced or evicted images may still be in the scene the canvas is drawing until React commits
-// the new one, so they are freed a little later rather than straight away.
+// A replaced or evicted image may still be in the scene a canvas is drawing (and redrawing for
+// animations) until React commits the new one, so it's freed only once every mounted terrain view has
+// committed since it was retired, and a few seconds have passed. A view frozen in the background
+// (another copy of the mine screen) doesn't commit, so nothing it might still draw is freed.
 const RETIRE_AFTER_MS = 3000;
-const retired: { image: SkImage; at: number }[] = [];
+const retired: { image: SkImage; at: number; commit: number }[] = [];
+let commits = 0;
+const views = new Map<number, number>(); // view → commit count when it last committed
+let nextView = 1;
 
 function retire(image: SkImage) {
-  retired.push({ image, at: Date.now() });
+  retired.push({ image, at: Date.now(), commit: commits });
 }
 
 function disposeRetired() {
   const now = Date.now();
-  while (retired.length > 0 && now - retired[0].at > RETIRE_AFTER_MS) retired.shift()?.image.dispose();
+  let settled = Infinity;
+  for (const last of views.values()) settled = Math.min(settled, last);
+  while (retired.length > 0 && now - retired[0].at > RETIRE_AFTER_MS && retired[0].commit < settled) retired.shift()?.image.dispose();
+}
+
+/** A terrain view (a mounted canvas drawing blocks) — call when it mounts, with the id from `newTerrainView`. */
+export const newTerrainView = () => nextView++;
+export function openTerrainView(id: number) {
+  views.set(id, commits);
+}
+export function closeTerrainView(id: number) {
+  views.delete(id);
+}
+/** Call after every commit of a terrain view: the blocks it drew before are no longer on screen. */
+export function terrainViewCommitted(id: number) {
+  commits += 1;
+  views.set(id, commits);
+  disposeRetired();
 }
 const blockStamps = new Map<string, number>();
 let trackedLayout: MineLayout | null = null;

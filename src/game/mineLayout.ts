@@ -115,8 +115,28 @@ function isReservedTile(row: number, column: number) {
   return rise >= 1 && rise <= MINE_WORK_RISE && MINE_STATIONS.some((station) => station.minerColumn === column);
 }
 
-// Deeper rock holds more of the precious ores.
-function pickDepositType(row: number, roll: number): Deposit {
+// The newer ores, each from a depth down (tile rows; a gallery is 5 rows) and growing commoner over the
+// next 60 rows to its full share (percent of clusters). Shallow ones raise the early units, deep ones
+// the late ones.
+const NEW_ORES: { type: Deposit; from: number; share: number }[] = [
+  { type: 'tin', from: 8, share: 7 },
+  { type: 'silver', from: 20, share: 5 },
+  { type: 'sulfur', from: 35, share: 5 },
+  { type: 'salt', from: 50, share: 5 },
+  { type: 'emerald', from: 75, share: 3 },
+  { type: 'mithril', from: 105, share: 2.5 },
+];
+
+// Deeper rock holds more of the precious ores. A cluster is first given a chance (`newRoll`) to be one of
+// the newer ores reached at its depth; the rest are drawn as before (`roll`), so the older ores lie
+// where they always did.
+function pickDepositType(row: number, roll: number, newRoll: number): Deposit {
+  let chance = (newRoll / 0xffffffff) * 100;
+  for (const { type, from, share } of NEW_ORES) {
+    if (row < from) continue;
+    chance -= share * Math.min(1, 0.4 + (row - from) / 100);
+    if (chance < 0) return type;
+  }
   const depth = Math.min(1, row / MAP_ROWS);
   const weights: [Deposit, number][] = [
     ['coal', 38],
@@ -161,7 +181,7 @@ function cellCluster(cellRow: number, cellColumn: number): Cluster | null {
         tiles.add(next);
         placed.push([row + dr, column + dc]);
       }
-      cluster = { tiles, type: pickDepositType(startRow, hash(cellRow, cellColumn, 66)) };
+      cluster = { tiles, type: pickDepositType(startRow, hash(cellRow, cellColumn, 66), hash(cellRow, cellColumn, 67)) };
     }
   }
   clusterCache.set(key, cluster);
@@ -184,6 +204,12 @@ const DEPOSIT_SIZE: Record<Deposit, [number, number]> = {
   iron: [1000, 4000],
   gold: [1000, 2500],
   diamond: [1000, 2000],
+  tin: [1000, 4000],
+  silver: [1000, 3000],
+  sulfur: [1000, 3500],
+  salt: [1000, 4000],
+  emerald: [800, 2000],
+  mithril: [600, 1500],
 };
 
 /** How much a deposit holds when untouched. */

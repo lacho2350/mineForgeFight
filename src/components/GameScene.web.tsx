@@ -2,12 +2,12 @@ import { WithSkiaWeb } from '@shopify/react-native-skia/lib/module/web';
 import { StyleSheet, View } from 'react-native';
 import type { GameSceneProps } from './GameSceneCanvas';
 
-export default function GameScene({ layout }: GameSceneProps) {
+export default function GameScene(props: GameSceneProps) {
   return (
-    <View style={[styles.viewport, { height: layout.height }]}>
+    <View style={styles.viewport}>
       <WithSkiaWeb
         getComponent={() => import('./GameSceneCanvas')}
-        componentProps={{ layout }}
+        componentProps={props}
         opts={{ locateFile: (file) => `https://cdn.jsdelivr.net/npm/canvaskit-wasm@0.41.0/bin/full/${file}` }}
         fallback={<View style={styles.fallback} />}
       />
@@ -16,6 +16,6 @@ export default function GameScene({ layout }: GameSceneProps) {
 }
 
 const styles = StyleSheet.create({
-  viewport: { width: '100%' },
-  fallback: { flex: 1, backgroundColor: '#252d23' },
+  viewport: { flex: 1 },
+  fallback: { flex: 1, backgroundColor: '#4f6a3c' },
 });

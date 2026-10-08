@@ -1,7 +1,7 @@
 import { memo, useMemo } from 'react';
 import { Canvas, Group, Line, Path, Rect, vec } from '@shopify/react-native-skia';
 import { StyleSheet, View } from 'react-native';
-import { BATTLE_COLS, BATTLE_ROWS, WALL_COL, isAlive, type Battle } from '../game/combat';
+import { BATTLE_COLS, BATTLE_ROWS, GATE_ROW, MOAT_COL, WALL_COL, inMoat, isAlive, type Battle } from '../game/combat';
 import type { UnitId } from '../game/units';
 import { hexCenter, hexPath, type BoardLayout } from './battleLayout';
 import { SPRITE_SIZE, spritePixels } from './unitSprites';
@@ -27,6 +27,9 @@ function BattleBoardCanvas({ battle, layout, moves, targets, helps }: BattleBoar
   const courtyard = hexCenter(size, WALL_COL, 0).x;
   const active = battle.status === 'active' ? battle.stacks.find((stack) => stack.id === battle.queue[0]) : undefined;
   const tint = (keys: number[], inset = 2) => keys.map((key) => hexPath(size, keyHex(key).col, keyHex(key).row, inset)).join(' ');
+  // The flooded moat in front of the wall (and the bridge at the gate, unless it's raised).
+  const moat = Array.from({ length: BATTLE_ROWS }, (_, row) => row).filter((row) => inMoat(battle, MOAT_COL, row));
+  const bridge = (battle.moat ?? 0) > 0 && !battle.moatAtGate;
 
   return (
     <View style={[styles.frame, { width, height }]}>
@@ -35,6 +38,8 @@ function BattleBoardCanvas({ battle, layout, moves, targets, helps }: BattleBoar
         <Rect x={0} y={0} width={width} height={height} color="#5f7046" />
         <Rect x={courtyard} y={0} width={fieldWidth - courtyard} height={height} color="#7a7158" />
         <Rect x={fieldWidth} y={0} width={width - fieldWidth} height={height} color="#4a4535" />
+        {moat.length > 0 && <Path path={moat.map((row) => hexPath(size, MOAT_COL, row, 0)).join(' ')} color="#3f6f8a" />}
+        {bridge && <Path path={hexPath(size, MOAT_COL, GATE_ROW, 3)} color="#8c6a3c" />}
         <Path path={grid} style="stroke" strokeWidth={1} color="rgba(20, 24, 18, 0.35)" />
 
         {moves.length > 0 && <Path path={tint(moves)} color="rgba(120, 170, 220, 0.35)" />}

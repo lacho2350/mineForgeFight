@@ -1,6 +1,7 @@
 import { StyleSheet, Text, View } from 'react-native';
 import { cartCost, minersByLevel } from '../game/gameStore';
 import { cartsOnLevel, type LevelCarts } from '../game/haulage';
+import type { TechId } from '../game/techs';
 import type { Site } from '../game/mineLayout';
 import { GameButton, SectionLabel } from './GameUI';
 
@@ -11,12 +12,14 @@ export default function HaulagePanel({
   carts,
   coal,
   gold,
+  techs,
   onBuyCart,
 }: {
   sites: Site[];
   carts: LevelCarts;
   coal: number;
   gold: number;
+  techs: readonly TechId[];
   onBuyCart: (level: number) => void;
 }) {
   const levels = [...minersByLevel(sites)].sort(([a], [b]) => a - b);
@@ -34,7 +37,7 @@ export default function HaulagePanel({
       {levels.map(([level, miners]) => {
         const current = cartsOnLevel(carts, level);
         const full = current >= miners;
-        const cost = cartCost(current);
+        const cost = cartCost(current, techs);
         return (
           <View key={level} style={styles.row}>
             <View style={styles.copy}>
