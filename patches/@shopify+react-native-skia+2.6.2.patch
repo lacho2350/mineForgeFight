@@ -1,0 +1,432 @@
+diff --git a/node_modules/@shopify/react-native-skia/lib/module/skia/web/Host.js b/node_modules/@shopify/react-native-skia/lib/module/skia/web/Host.js
+index c64f325..eb492bf 100644
+--- a/node_modules/@shopify/react-native-skia/lib/module/skia/web/Host.js
++++ b/node_modules/@shopify/react-native-skia/lib/module/skia/web/Host.js
+@@ -26,6 +26,13 @@ export class BaseHostObject extends Host {
+   }
+   [Symbol.dispose]() {
+     if (this.ref !== null && typeof this.ref === "object" && "delete" in this.ref && typeof this.ref.delete === "function") {
++      // Renderer-owned and user-owned disposal can overlap (and emscripten
++      // throws on double delete) — make disposing an already-deleted object
++      // a no-op.
++      const ref = this.ref;
++      if (typeof ref.isDeleted === "function" && ref.isDeleted()) {
++        return;
++      }
+       this.ref.delete();
+     }
+   }
+diff --git a/node_modules/@shopify/react-native-skia/lib/module/skia/web/JsiSkPaint.js b/node_modules/@shopify/react-native-skia/lib/module/skia/web/JsiSkPaint.js
+index 4671009..7c5d64b 100644
+--- a/node_modules/@shopify/react-native-skia/lib/module/skia/web/JsiSkPaint.js
++++ b/node_modules/@shopify/react-native-skia/lib/module/skia/web/JsiSkPaint.js
+@@ -56,10 +56,15 @@ export class JsiSkPaint extends HostObject {
+     return new JsiSkPaint(this.CanvasKit, this.ref.copy());
+   }
+   assign(paint) {
++    const previous = this.ref;
+     this.ref = paint.ref.copy();
++    // The replaced ref is a WASM object the GC will not reclaim.
++    previous.delete();
+   }
+   reset() {
++    const previous = this.ref;
+     this.ref = new this.CanvasKit.Paint();
++    previous.delete();
+   }
+   getAlphaf() {
+     return this.getColor()[3];
+diff --git a/node_modules/@shopify/react-native-skia/lib/module/sksg/Container.web.js b/node_modules/@shopify/react-native-skia/lib/module/sksg/Container.web.js
+index 728bc58..0195341 100644
+--- a/node_modules/@shopify/react-native-skia/lib/module/sksg/Container.web.js
++++ b/node_modules/@shopify/react-native-skia/lib/module/sksg/Container.web.js
+@@ -3,7 +3,7 @@ function _toPropertyKey(t) { var i = _toPrimitive(t, "string"); return "symbol"
+ function _toPrimitive(t, r) { if ("object" != typeof t || !t) return t; var e = t[Symbol.toPrimitive]; if (void 0 !== e) { var i = e.call(t, r || "default"); if ("object" != typeof i) return i; throw new TypeError("@@toPrimitive must return a primitive value."); } return ("string" === r ? String : Number)(t); }
+ import Rea from "../external/reanimated/ReanimatedProxy";
+ import { HAS_REANIMATED_3 } from "../external/reanimated/renderHelpers";
+-import { Recorder } from "./Recorder/Recorder";
++import { Recorder, disposeRecording } from "./Recorder/Recorder";
+ import { visit } from "./Recorder/Visitor";
+ import { replay } from "./Recorder/Player";
+ import { createDrawingContext } from "./Recorder/DrawingContext";
+@@ -23,12 +23,26 @@ const drawOnscreen = (Skia, nativeId, recording) => {
+   //const start = performance.now();
+ 
+   const ctx = createDrawingContext(Skia, recording.paintPool, canvas);
+-  replay(ctx, recording.commands);
+-  const picture = rec.finishRecordingAsPicture();
+-  rec.dispose();
++  let picture;
++  try {
++    replay(ctx, recording.commands);
++    picture = rec.finishRecordingAsPicture();
++  } finally {
++    // Frame-scoped objects (shaders, filters, paint copies, ...) are
++    // referenced by the picture once it is finished — delete the JS handles,
++    // otherwise they leak on Web where the GC cannot see WASM memory.
++    ctx.dispose();
++    rec.dispose();
++  }
+   //const end = performance.now();
+   //console.log("Recording time: ", end - start);
+   SkiaViewApi.setJsiProperty(nativeId, "picture", picture);
++  // The view now references the new picture; the previous one is ours to
++  // delete.
++  if (recording.lastPicture) {
++    recording.lastPicture.dispose();
++  }
++  recording.lastPicture = picture;
+ };
+ class ReanimatedContainer extends Container {
+   constructor(Skia, nativeId) {
+@@ -36,13 +50,38 @@ class ReanimatedContainer extends Container {
+     this.nativeId = nativeId;
+     _defineProperty(this, "mapperId", null);
+   }
++  unmount() {
++    super.unmount();
++    if (this.mapperId !== null) {
++      // The mapper closure retains the recording and keeps updating the
++      // picture of an unmounted view — stop it or it leaks for the
++      // lifetime of the app.
++      Rea.stopMapper(this.mapperId);
++      this.mapperId = null;
++    }
++    const {
++      recording
++    } = this;
++    if (recording) {
++      this.recording = null;
++      // Deferred through the same channel as the draw calls so it runs after
++      // any of them that are still queued.
++      Rea.runOnUI(() => {
++        "worklet";
++
++        disposeRecording(recording);
++      })();
++    }
++  }
+   redraw() {
+     if (this.mapperId !== null) {
+       Rea.stopMapper(this.mapperId);
++      this.mapperId = null;
+     }
+     if (this.unmounted) {
+       return;
+     }
++    const previousRecording = this.recording;
+     const recorder = new Recorder();
+     visit(recorder, this.root);
+     const record = recorder.getRecording();
+@@ -68,6 +107,10 @@ class ReanimatedContainer extends Container {
+     Rea.runOnUI(() => {
+       "worklet";
+ 
++      if (previousRecording) {
++        // Runs after any still-queued draw of the previous recording.
++        disposeRecording(previousRecording);
++      }
+       drawOnscreen(Skia, nativeId, recording);
+     })();
+   }
+diff --git a/node_modules/@shopify/react-native-skia/lib/module/sksg/Recorder/DrawingContext.js b/node_modules/@shopify/react-native-skia/lib/module/sksg/Recorder/DrawingContext.js
+index d131685..74f6a28 100644
+--- a/node_modules/@shopify/react-native-skia/lib/module/sksg/Recorder/DrawingContext.js
++++ b/node_modules/@shopify/react-native-skia/lib/module/sksg/Recorder/DrawingContext.js
+@@ -1,6 +1,16 @@
++import { createFrameScope } from "./FrameScope";
+ export const createDrawingContext = (Skia, paintPool, canvas) => {
+   "worklet";
+ 
++  // Everything the renderer creates through frameSkia is frame-scoped and
++  // deleted by dispose() once the frame has been recorded. The paint pool is
++  // recording-scoped and deliberately allocated with the raw Skia instance.
++  const {
++    Skia: frameSkia,
++    track,
++    dispose
++  } = createFrameScope(Skia);
++
+   // State (formerly class fields)
+   const paints = [];
+   const colorFilters = [];
+@@ -12,7 +22,14 @@ export const createDrawingContext = (Skia, paintPool, canvas) => {
+   let nextPaintIndex = 1;
+ 
+   // Initialize first paint and opacity
+-  paintPool[0] = Skia.Paint();
++  if (paintPool.length === 0) {
++    paintPool.push(Skia.Paint());
++  } else {
++    // reset() produces an anti-alias false paint, unlike the Skia.Paint()
++    // factory: restore the default so reused pools render like the first frame.
++    paintPool[0].reset();
++    paintPool[0].setAntiAlias(true);
++  }
+   paints.push(paintPool[0]);
+   opacities.push(1);
+ 
+@@ -42,7 +59,7 @@ export const createDrawingContext = (Skia, paintPool, canvas) => {
+     } else {
+       const cf = colorFilters.pop();
+       if (cf) {
+-        imageFilter = Skia.ImageFilter.MakeColorFilter(cf, null);
++        imageFilter = frameSkia.ImageFilter.MakeColorFilter(cf, null);
+       }
+     }
+     canvas.saveLayer(undefined, null, imageFilter);
+@@ -60,7 +77,7 @@ export const createDrawingContext = (Skia, paintPool, canvas) => {
+   const materializePaint = () => {
+     // Color Filters
+     if (colorFilters.length > 0) {
+-      getCurrentPaint().setColorFilter(colorFilters.reduceRight((inner, outer) => inner ? Skia.ColorFilter.MakeCompose(outer, inner) : outer));
++      getCurrentPaint().setColorFilter(colorFilters.reduceRight((inner, outer) => inner ? frameSkia.ColorFilter.MakeCompose(outer, inner) : outer));
+     }
+     // Shaders
+     if (shaders.length > 0) {
+@@ -68,12 +85,12 @@ export const createDrawingContext = (Skia, paintPool, canvas) => {
+     }
+     // Image Filters
+     if (imageFilters.length > 0) {
+-      getCurrentPaint().setImageFilter(imageFilters.reduceRight((inner, outer) => inner ? Skia.ImageFilter.MakeCompose(outer, inner) : outer));
++      getCurrentPaint().setImageFilter(imageFilters.reduceRight((inner, outer) => inner ? frameSkia.ImageFilter.MakeCompose(outer, inner) : outer));
+     }
+ 
+     // Path Effects
+     if (pathEffects.length > 0) {
+-      getCurrentPaint().setPathEffect(pathEffects.reduceRight((inner, outer) => inner ? Skia.PathEffect.MakeCompose(outer, inner) : outer));
++      getCurrentPaint().setPathEffect(pathEffects.reduceRight((inner, outer) => inner ? frameSkia.PathEffect.MakeCompose(outer, inner) : outer));
+     }
+ 
+     // Clear arrays
+@@ -86,8 +103,10 @@ export const createDrawingContext = (Skia, paintPool, canvas) => {
+   // Return an object containing the Skia reference, the canvas, and the methods
+   return {
+     // Public fields
+-    Skia,
++    Skia: frameSkia,
+     canvas,
++    track,
++    dispose,
+     paints,
+     colorFilters,
+     shaders,
+diff --git a/node_modules/@shopify/react-native-skia/lib/module/sksg/Recorder/FrameScope.js b/node_modules/@shopify/react-native-skia/lib/module/sksg/Recorder/FrameScope.js
+new file mode 100644
+index 0000000..384516c
+--- /dev/null
++++ b/node_modules/@shopify/react-native-skia/lib/module/sksg/Recorder/FrameScope.js
+@@ -0,0 +1,58 @@
++const isDisposable = value => {
++  "worklet";
++
++  return value !== null && typeof value === "object" && typeof value.dispose === "function";
++};
++/**
++ * Wraps a Skia instance so that every object created through its factories is
++ * collected and deleted when the scope is disposed. The renderer only keeps
++ * the objects it creates alive for the duration of a frame: once the frame
++ * has been recorded they can be deleted. This is required on Web where
++ * CanvasKit objects live in WASM memory that the JS garbage collector does
++ * not perceive, so it (almost) never reclaims them on its own.
++ *
++ * Objects passed in via props are user-owned: they are not created through
++ * this facade and are therefore never tracked nor disposed.
++ */
++export const createFrameScope = Skia => {
++  "worklet";
++
++  const disposables = [];
++  const track = value => {
++    if (isDisposable(value)) {
++      disposables.push(value);
++    }
++    return value;
++  };
++  const wrap = obj => {
++    const cache = new Map();
++    return new Proxy(obj, {
++      get(target, prop) {
++        if (cache.has(prop)) {
++          return cache.get(prop);
++        }
++        // eslint-disable-next-line @typescript-eslint/no-explicit-any
++        const value = target[prop];
++        let wrapped = value;
++        if (typeof value === "function") {
++          wrapped = (...args) => track(value.apply(target, args));
++        } else if (value !== null && typeof value === "object") {
++          wrapped = wrap(value);
++        }
++        cache.set(prop, wrapped);
++        return wrapped;
++      }
++    });
++  };
++  const dispose = () => {
++    for (let i = 0; i < disposables.length; i++) {
++      disposables[i].dispose();
++    }
++    disposables.length = 0;
++  };
++  return {
++    Skia: wrap(Skia),
++    track,
++    dispose
++  };
++};
+diff --git a/node_modules/@shopify/react-native-skia/lib/module/sksg/Recorder/Player.js b/node_modules/@shopify/react-native-skia/lib/module/sksg/Recorder/Player.js
+index cf984eb..cb6b32d 100644
+--- a/node_modules/@shopify/react-native-skia/lib/module/sksg/Recorder/Player.js
++++ b/node_modules/@shopify/react-native-skia/lib/module/sksg/Recorder/Player.js
+@@ -110,9 +110,8 @@ const play = (ctx, _command) => {
+   } else if (isCommand(command, CommandType.RestoreCTM)) {
+     ctx.canvas.restore();
+   } else {
+-    // TODO: is a copy needed here?
+     // apply opacity to the current paint.
+-    const paint = ctx.paint.copy();
++    const paint = ctx.track(ctx.paint.copy());
+     paint.setAlphaf(paint.getAlphaf() * ctx.getOpacity());
+     const paints = [paint, ...ctx.paintDeclarations];
+     ctx.paintDeclarations = [];
+diff --git a/node_modules/@shopify/react-native-skia/lib/module/sksg/Recorder/Recorder.js b/node_modules/@shopify/react-native-skia/lib/module/sksg/Recorder/Recorder.js
+index 743d8db..e40815f 100644
+--- a/node_modules/@shopify/react-native-skia/lib/module/sksg/Recorder/Recorder.js
++++ b/node_modules/@shopify/react-native-skia/lib/module/sksg/Recorder/Recorder.js
+@@ -5,6 +5,16 @@ import { NodeType } from "../../dom/types";
+ import { isSharedValue } from "../utils";
+ import { isColorFilter, isImageFilter, isPathEffect, isShader } from "../Node";
+ import { CommandType } from "./Core";
++export const disposeRecording = recording => {
++  "worklet";
++
++  recording.paintPool.forEach(paint => paint.dispose());
++  recording.paintPool.length = 0;
++  if (recording.lastPicture) {
++    recording.lastPicture.dispose();
++    recording.lastPicture = null;
++  }
++};
+ export class Recorder {
+   constructor() {
+     _defineProperty(this, "commands", []);
+diff --git a/node_modules/@shopify/react-native-skia/lib/module/sksg/Recorder/commands/Drawing.js b/node_modules/@shopify/react-native-skia/lib/module/sksg/Recorder/commands/Drawing.js
+index 3d6c1f5..2c377c6 100644
+--- a/node_modules/@shopify/react-native-skia/lib/module/sksg/Recorder/commands/Drawing.js
++++ b/node_modules/@shopify/react-native-skia/lib/module/sksg/Recorder/commands/Drawing.js
+@@ -94,14 +94,14 @@ export const drawTextPath = (ctx, props) => {
+     const widths = font.getGlyphWidths(ids);
+     const rsx = [];
+     const meas = ctx.Skia.ContourMeasureIter(path, false, 1);
+-    let cont = meas.next();
++    let cont = ctx.track(meas.next());
+     let dist = initialOffset;
+     for (let i = 0; i < text.length && cont; i++) {
+       const width = widths[i];
+       dist += width / 2;
+       if (dist > cont.length()) {
+         // jump to next contour
+-        cont = meas.next();
++        cont = ctx.track(meas.next());
+         if (!cont) {
+           // We have come to the end of the path - terminate the string
+           // right here.
+@@ -177,7 +177,7 @@ export const drawPath = (ctx, props) => {
+   if (hasFillType) {
+     const builder = ctx.Skia.PathBuilder.MakeFromPath(path);
+     builder.setFillType(FillType[enumKey(fillType)]);
+-    path = builder.build();
++    path = ctx.track(builder.build());
+   }
+ 
+   // Apply stroke using static Path.Stroke
+diff --git a/node_modules/@shopify/react-native-skia/lib/module/sksg/Recorder/commands/Shaders.js b/node_modules/@shopify/react-native-skia/lib/module/sksg/Recorder/commands/Shaders.js
+index b40139e..56a568d 100644
+--- a/node_modules/@shopify/react-native-skia/lib/module/sksg/Recorder/commands/Shaders.js
++++ b/node_modules/@shopify/react-native-skia/lib/module/sksg/Recorder/commands/Shaders.js
+@@ -13,7 +13,7 @@ const declareShader = (ctx, props, children) => {
+   } = props;
+   const m3 = ctx.Skia.Matrix();
+   processTransformProps(m3, transform);
+-  const shader = source.makeShaderWithChildren(processUniforms(source, uniforms), ctx.shaders.splice(0, children), m3);
++  const shader = ctx.track(source.makeShaderWithChildren(processUniforms(source, uniforms), ctx.shaders.splice(0, children), m3));
+   ctx.shaders.push(shader);
+ };
+ const declareColorShader = (ctx, props) => {
+@@ -156,10 +156,10 @@ const declareImageShader = (ctx, props) => {
+   processTransformProps(lm, imageShaderProps);
+   let shader;
+   if (sampling && isCubicSampling(sampling)) {
+-    shader = image.makeShaderCubic(TileMode[enumKey(tx)], TileMode[enumKey(ty)], sampling.B, sampling.C, lm);
++    shader = ctx.track(image.makeShaderCubic(TileMode[enumKey(tx)], TileMode[enumKey(ty)], sampling.B, sampling.C, lm));
+   } else {
+     var _sampling$filter, _sampling$mipmap;
+-    shader = image.makeShaderCubic(TileMode[enumKey(tx)], TileMode[enumKey(ty)], (_sampling$filter = sampling === null || sampling === void 0 ? void 0 : sampling.filter) !== null && _sampling$filter !== void 0 ? _sampling$filter : FilterMode.Linear, (_sampling$mipmap = sampling === null || sampling === void 0 ? void 0 : sampling.mipmap) !== null && _sampling$mipmap !== void 0 ? _sampling$mipmap : MipmapMode.None, lm);
++    shader = ctx.track(image.makeShaderCubic(TileMode[enumKey(tx)], TileMode[enumKey(ty)], (_sampling$filter = sampling === null || sampling === void 0 ? void 0 : sampling.filter) !== null && _sampling$filter !== void 0 ? _sampling$filter : FilterMode.Linear, (_sampling$mipmap = sampling === null || sampling === void 0 ? void 0 : sampling.mipmap) !== null && _sampling$mipmap !== void 0 ? _sampling$mipmap : MipmapMode.None, lm));
+   }
+   ctx.shaders.push(shader);
+ };
+diff --git a/node_modules/@shopify/react-native-skia/lib/module/sksg/StaticContainer.js b/node_modules/@shopify/react-native-skia/lib/module/sksg/StaticContainer.js
+index 291d749..ac9dee8 100644
+--- a/node_modules/@shopify/react-native-skia/lib/module/sksg/StaticContainer.js
++++ b/node_modules/@shopify/react-native-skia/lib/module/sksg/StaticContainer.js
+@@ -1,7 +1,7 @@
+ function _defineProperty(e, r, t) { return (r = _toPropertyKey(r)) in e ? Object.defineProperty(e, r, { value: t, enumerable: !0, configurable: !0, writable: !0 }) : e[r] = t, e; }
+ function _toPropertyKey(t) { var i = _toPrimitive(t, "string"); return "symbol" == typeof i ? i : i + ""; }
+ function _toPrimitive(t, r) { if ("object" != typeof t || !t) return t; var e = t[Symbol.toPrimitive]; if (void 0 !== e) { var i = e.call(t, r || "default"); if ("object" != typeof i) return i; throw new TypeError("@@toPrimitive must return a primitive value."); } return ("string" === r ? String : Number)(t); }
+-import { Recorder } from "./Recorder/Recorder";
++import { Recorder, disposeRecording } from "./Recorder/Recorder";
+ import { visit } from "./Recorder/Visitor";
+ import { replay } from "./Recorder/Player";
+ import { createDrawingContext } from "./Recorder/DrawingContext";
+@@ -30,7 +30,14 @@ export class Container {
+       throw new Error("No recording to draw");
+     }
+     const ctx = createDrawingContext(this.Skia, this.recording.paintPool, canvas);
+-    replay(ctx, this.recording.commands);
++    try {
++      replay(ctx, this.recording.commands);
++    } finally {
++      // Frame-scoped objects created during the replay are no longer needed
++      // once drawn — delete them, otherwise they leak on Web where the GC
++      // cannot see WASM memory.
++      ctx.dispose();
++    }
+   }
+ }
+ export class StaticContainer extends Container {
+@@ -38,7 +45,23 @@ export class StaticContainer extends Container {
+     super(Skia);
+     this.nativeId = nativeId;
+   }
++  unmount() {
++    super.unmount();
++    if (this.recording) {
++      disposeRecording(this.recording);
++      this.recording = null;
++    }
++  }
+   redraw() {
++    if (this.unmounted) {
++      // The unmount commit triggers a last redraw — recording it would
++      // resurrect a recording for a container that has just disposed it.
++      return;
++    }
++    if (this.recording) {
++      disposeRecording(this.recording);
++      this.recording = null;
++    }
+     const recorder = new Recorder();
+     visit(recorder, this.root);
+     this.recording = recorder.getRecording();
+@@ -50,6 +73,9 @@ export class StaticContainer extends Container {
+       const picture = rec.finishRecordingAsPicture();
+       rec.dispose();
+       SkiaViewApi.setJsiProperty(this.nativeId, "picture", picture);
++      // The view keeps its own reference to the picture it displays; this
++      // one is renderer-owned and disposed with the recording.
++      this.recording.lastPicture = picture;
+     }
+   }
+ }

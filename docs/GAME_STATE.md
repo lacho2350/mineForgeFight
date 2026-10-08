@@ -470,6 +470,15 @@ src/
   (`collectPaths`, which also runs those drawings one at a time and skips outdated ones). `svgPath`
   warns in development if used outside a drawing. To check: count `CanvasKit.Path.MakeFromSVGString`
   calls over a few seconds on an idle screen — it should be 0.
+- **React Native Skia 2.6.2 leaks every frame on web — patched** (`patches/@shopify+react-native-skia+2.6.2.patch`,
+  applied by `patch-package`). Its web renderer made, for every frame of every animated canvas, a paint copy
+  per draw command, a new pool paint, a Picture and any shaders, and freed none of them (`JsiSkPaint.assign`
+  /`reset` also dropped the paint they replaced): ~6,400 CanvasKit objects a second on the stronghold, so
+  CanvasKit ran out of memory after an hour or two (`Aborted()`, then "memory access out of bounds"). The patch
+  backports the fix from Skia 2.14 (frame-scoped objects deleted once each frame is recorded, the previous
+  picture and old recordings freed, offscreen drawings freed on unmount). Expo SDK 57 pins 2.6.2; drop the
+  patch when an SDK ships a fixed Skia. To check: count CanvasKit objects made vs deleted (wrap the classes'
+  `delete` and factories) — every type should balance within a few seconds.
 - **Freeing Skia images** (the castle's still image, the mine's terrain blocks): never `dispose()` an
   image the canvas might still draw. A canvas keeps replaying its last drawing for animations, and on
   web a screen in the background is not really frozen — React keeps committing while its canvas keeps
