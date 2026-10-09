@@ -106,7 +106,14 @@ export function BuildingArt({ id, plot, tier, level }: { id: BuildingId; plot: P
         </Group>
       );
     }
-    case 'houses': {
+    case 'houses':
+    case 'houses2':
+    case 'houses3':
+    case 'houses4':
+    case 'houses5':
+    case 'houses6':
+    case 'houses7':
+    case 'houses8': {
       // Cottages on the plot, one more every few levels, plaster and then stone as the houses grow.
       const count = Math.min(4, 1 + Math.floor(level / 4));
       const spots = count === 1 ? [[0.55, 0.55]] : [[0.1, 0.1], [1.05, 0.1], [0.1, 1.05], [1.05, 1.05]].slice(0, count);

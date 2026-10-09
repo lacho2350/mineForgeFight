@@ -33,8 +33,12 @@ game, and starts the 1-second simulation (`startSimulation()`).
   0…449 follow. The whole depth exists from the start as dark rock; **Dig Deeper** opens the next
   gallery (extends the lift, adds 12 station slots, +25 vein capacity). Cost: `100 + 60·(depth−1)^1.35` gold.
 - **Rock rule** (user requirement): tunnels/shafts never run side by side — at least one rock tile
-  between them; tunnels only meet end-on. The two columns beside the lift stay rock (tunnels may only
-  cross them sideways). Enforced by `checkDigStep` in `src/game/mineLayout.ts`.
+  between them; tunnels only meet end-on: a dig may run head-on into another tunnel and join it there
+  (the tile straight ahead may be dug, and diagonals beside it), but never into the side of the lift.
+  The two columns beside the lift stay rock (tunnels may only cross them sideways). Every gallery's rail
+  tunnel reaches two tiles past the lift on each side (`GALLERY_REACH`), so there's always a tile beyond
+  that rock to dig down from — a shaft dug down from one main tunnel joins the gallery below, and you can
+  carry on under the deepest one. Enforced by `checkDigStep` in `src/game/mineLayout.ts`.
 - **Deposits**: ~30% of tiles, in clusters of 1–15 tiles (5×5 cells, each grows one cluster inside
   its top-left 4×4 so clusters never touch). Types: coal, granite, copper, iron, gold, diamond (gold
   and diamonds commoner with depth), and the six newer ores that raise the army (`NEW_ORES`), each from a
@@ -45,13 +49,22 @@ game, and starts the 1-second simulation (`startSimulation()`).
   from tile position (hash), computed lazily and cached. Every gallery station's "ore column" tile is
   always a coal seam. Deposits **block digging**; a mined-out deposit becomes a hollow you can dig through.
 - **Peasants do every job** (`src/game/workforce.ts`, Stronghold-style). `population` = all peasants
-  (soldiers aren't counted). New ones arrive every 4 s while `population < beds` (the keep's hall `KEEP_BEDS` = 8, plus the houses). Jobs, in
+  (soldiers aren't counted). New ones arrive every 4 s while `population < beds` (the keep's hall `KEEP_BEDS` = 8, plus the houses).
+  **Workers' houses** (`src/game/houses.ts`): up to 8 (`HOUSE_IDS` — the first keeps the old `houses` id;
+  the rest unlock with the keep, `HOUSE_KEEP`), each placed and levelled on its own (2×2) and sleeping
+  `houseBeds(L)` = 4L + ⌊L²/2⌋; with the keep's 8 and the houses' techs the hold sleeps at most
+  `MAX_PEASANTS` = 200. Lists offer the next house only (`isShownBuilding`, like the forges); the houses'
+  tech branch follows the biggest house. Jobs, in
   order: miners (`sites` + `pendingSites`), cart pushers (one per cart on each worked level), building
   crews (`crewSize(level)` = 2 + ⌊L/5⌋ per construction job), then building staff in `STAFF_PRIORITY`
   order (houses first — without housekeepers only the keep's 8 beds are left, so a hold whose peasants are
   all under orders still grows back to 8 and staffs its houses). **Every building but the keep, the
   wall and the towers needs staff** (`UNSTAFFED`; `staffNeeded`: warehouse 2 + ⌊L/2⌋ haulers, gate
-  1 + ⌊L/10⌋, houses and all others 1 + ⌊L/5⌋); the rest idle at the campfire. `workforceOf(state)`
+  1 + ⌊L/10⌋, houses and all others 1 + ⌊L/5⌋); the rest idle at the campfire — and **go mining**
+  (`idleToTheMine`, end of each tick): while every building has its staff, one idle peasant a second takes
+  the next free face (`nextFreeSite`: a dug tile beside a deposit, coal first, then a gallery station),
+  listed in `autoMiners`; while any building is short of staff (recruits, a new crew) the latest of them
+  goes back each second. Miners the player placed are never moved. `workforceOf(state)`
   computes it; `freeHands` = staff + idle (what new orders and recruits can take — staff are pulled off
   buildings). A building short of staff works at `workedLevel` = level × staff/needed, with nobody at
   0: houses' beds, the gate's health (unmanned = an open gap) and trade bonus, foundry, research,
@@ -71,7 +84,7 @@ game, and starts the 1-second simulation (`startSimulation()`).
   30 tiles, ≤40 tiles long), charges for it, and reserves the miner until it's dug. Gallery station
   seams open the station (chamber + ladder shaft, which then stay dug — `openedStations`).
 - **Digging by hand**: Dig mode; drag from any tunnel end across rock. Path follows the finger, backs
-  up when retraced, stops red at the first invalid tile. Cost `3 + floor(row/10)` gold/tile, paid on
+  up when retraced, stops red at the first invalid tile (and quietly where it joins a tunnel). Cost `3 + floor(row/10)` gold/tile, paid on
   release; time `2 + 0.04·row` s/tile, one tile at a time (`digPlan`, `digProgress`).
 - **Hauling**: each level with miners has 1+ carts with red-shirted haulers (`carts[level]`, default 1,
   max one per miner; bought in the mine screen's Haulage section for coal + gold, ×1.6 per extra cart).
@@ -340,6 +353,7 @@ src/
     cityMap.ts             the stronghold's tile map: rings (raiders, traps, moat, wall), map sides,
                            footprints, fixed ground, placement checks, save-migration helpers
     traps.ts               trap kinds, costs, damage, belt placement checks, traps facing a side
+    houses.ts              the workers' houses: ids, keep levels, names, beds per level, the 200 cap
     save.ts                batched localStorage storage for the persisted store, flushSave()
     buildings.ts           stronghold buildings: ids, start levels, stats per level, costs, build time
     units.ts               army + raider stats/abilities, dwellings, recruit gold and growth
@@ -509,8 +523,10 @@ src/
   (no raid comes unless a test asks), `run(seconds)` ticks it, `build(levels)` places buildings like the
   player would. `raids-test` (sizing, kinds, siege-only units), `combat-test` (siege vs field, determinism),
   `items-test` (gear per unit, the relic's resources, mine depths), `store-test` (forge chain by cart, task
-  changes, gear deliveries, auto-resolve / orders / riding out) and `save-test` (v2→v3 map growth, the old
-  armory refund, the save guard) — the save tests load a fresh copy of the store over an in-memory
+  changes, gear deliveries, auto-resolve / orders / riding out), `mine-test` (galleries reach past the lift,
+  digging under a main tunnel and joining the gallery below, the rock rule), `houses-test` (beds add up, the
+  200 cap, houses offered in order), `miners-test` (idle peasants go mining and come back when buildings
+  need hands) and `save-test` (v2→v3 map growth, the old armory refund, the save guard, new houses on load) — the save tests load a fresh copy of the store over an in-memory
   `localStorage`, so they never touch a real save.
 - Web dev server: `npx expo start --web --port 8081` (`.claude/launch.json` has an `expo-web` config).
   **Never set `CI=1`** — Metro then stops watching files and serves stale lazy chunks.
@@ -530,6 +546,12 @@ src/
   `migrate` only if an old value would be wrong (not just missing). "Start a new game" (stronghold footer,
   two taps) calls `resetGame()`, which keeps `layoutVersion` counting up so layout caches can't go stale.
   Reloading the page now resumes the game; to test from scratch use the button or clear `localStorage`.
+  **Editing code while a game is open**: Fast Refresh re-runs changed modules, and re-running
+  `gameStore.ts` used to make a second, blank store that never loaded or ticked — the screen froze on it
+  (raid clock stuck at "RAID 1 6:00") while the real game ran on unseen. In development the running store
+  and its clock now live on `globalThis` (`mineforgeStore`, `mineforgeClock`) and are kept across a
+  refresh, and `loadGame` only loads once; but the kept store's actions are the code it was made with, so
+  **reload the page to run edited game logic**.
 - Fast logic tests without the UI: compile the store to CommonJS and drive it from Node, e.g.
   ```bash
   OUT=/tmp/sim && npx tsc src/game/gameStore.ts --ignoreConfig --outDir $OUT --rootDir src \

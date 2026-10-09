@@ -81,7 +81,7 @@ const startingStats = buildingStats(STARTING_BUILDINGS);
 
 const saveStorage = createSaveStorage<SavedState>();
 
-export const useGameStore = create<GameState>()(persist<GameState, [], [], SavedState>((set) => ({
+const createGameStore = () => create<GameState>()(persist<GameState, [], [], SavedState>((set) => ({
   elapsedSeconds: 0,
   depth: 1,
   gold: 120,
@@ -119,6 +119,7 @@ export const useGameStore = create<GameState>()(persist<GameState, [], [], Saved
   carts: {},
   sites: startingSites,
   pendingSites: [],
+  autoMiners: [],
   depositMined: {},
   openedStations: [stationKey(-1, 0), stationKey(-1, 1)],
   playerDug: [],
@@ -187,7 +188,8 @@ export const useGameStore = create<GameState>()(persist<GameState, [], [], Saved
     }
     const sites = state.sites.filter((site) => !(site.faceRow === row && site.faceColumn === column));
     if (sites.length === state.sites.length) return {};
-    return { sites, layoutVersion: state.layoutVersion + 1, notice: 'The miner left the deposit and went back to the campfire.' };
+    const autoMiners = state.autoMiners.filter((stand) => sites.some((site) => tileKey(site.row, site.column) === stand));
+    return { sites, autoMiners, layoutVersion: state.layoutVersion + 1, notice: 'The miner left the deposit and went back to the campfire.' };
   }),
 
   buyCart: (level) => set((state) => {
@@ -636,22 +638,31 @@ export const useGameStore = create<GameState>()(persist<GameState, [], [], Saved
   merge: (persisted, current) => mergeSave(persisted as Partial<SavedState> | undefined, current),
 }));
 
-/** Load the saved game (call once storage is ready, before the simulation starts). */
+// In development, Fast Refresh re-runs this module after an edit to the game logic. A store made then
+// would start blank — it never loads the save or ticks — and the screens froze on it while the running
+// game carried on unseen behind it (its writes are kept off the save, so nothing was lost). So the running
+// store and its clock are kept across a refresh: reload the app to run edited game logic. Tests load
+// fresh copies of the store on purpose, so they always get a new one.
+const running = globalThis as { mineforgeStore?: ReturnType<typeof createGameStore>; mineforgeClock?: ReturnType<typeof setInterval> };
+const keepAcrossRefresh = __DEV__ && typeof jest === 'undefined';
+
+export const useGameStore = (keepAcrossRefresh ? running.mineforgeStore : undefined) ?? createGameStore();
+if (keepAcrossRefresh) running.mineforgeStore = useGameStore;
+
+/** Load the saved game (call once storage is ready, before the simulation starts); only the first call loads. */
 export function loadGame() {
-  return useGameStore.persist.rehydrate();
+  return useGameStore.persist.hasHydrated() ? Promise.resolve() : useGameStore.persist.rehydrate();
 }
 
-let simulationTimer: ReturnType<typeof setInterval> | undefined;
-
 export function startSimulation() {
-  if (simulationTimer) return () => {};
+  if (running.mineforgeClock) return () => {};
 
-  simulationTimer = setInterval(() => {
+  running.mineforgeClock = setInterval(() => {
     useGameStore.getState().tick();
   }, FIXED_TICK_MS);
 
   return () => {
-    if (simulationTimer) clearInterval(simulationTimer);
-    simulationTimer = undefined;
+    if (running.mineforgeClock) clearInterval(running.mineforgeClock);
+    running.mineforgeClock = undefined;
   };
 }

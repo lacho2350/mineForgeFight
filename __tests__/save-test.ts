@@ -38,6 +38,10 @@ describe('loading older saves', () => {
     const state = store.useGameStore.getState();
     expect(state.placements.warehouse).toEqual({ x: 31, y: 34 });
     expect(state.placements.houses).toEqual({ x: 18, y: 35 });
+    // Houses added since are there, unbuilt.
+    expect(state.buildings.houses).toBe(2);
+    expect(state.buildings.houses2).toBe(0);
+    expect(state.buildings.houses8).toBe(0);
     // Traps keep their place in the belt on their own side.
     expect(state.traps).toEqual([{ kind: 'spikes', x: 3, y: 26 }, { kind: 'snare', x: 54, y: 36 }]);
     for (const trap of state.traps) expect(trapProblem(trap, state.traps.filter((other) => other !== trap))).toBeNull();

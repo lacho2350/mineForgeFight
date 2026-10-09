@@ -9,6 +9,7 @@ import { BUILDING_NAMES, haulWalk, isShownBuilding, orderedRocks, workforceOf } 
 import { roadCostText, trapBlocker, trapCostText, upgradeBlocker } from '../game/costs';
 import { useGameStore } from '../game/gameStore';
 import { BUILDING_IDS, BUILDING_INFO, MAX_BUILDING_LEVEL, buildingCost, buildingStats, type BuildingId } from '../game/buildings';
+import { HOUSE_IDS } from '../game/houses';
 import { DEFAULT_SPOTS, FOOTPRINTS, MAP_SIZE, SIDE_NAMES, coveredTiles, isPlaceable, nearestFreeSpot, placementProblem, sidesOf, type Spot } from '../game/cityMap';
 import { ROAD_INFO, ROAD_KINDS, haulFactor, roadProblem, roadsUnder, type RoadKind } from '../game/roads';
 import { CLEAR_CREW, rockAt, rockyTest, rocksLeft } from '../game/rocks';
@@ -83,7 +84,7 @@ export default function StrongholdScreen() {
 
   // Placement: start at the building's usual spot (or the nearest free one), move it with taps.
   const startPlacing = (id: BuildingId) => {
-    const preferred = DEFAULT_SPOTS[id] ?? { x: MAP_SIZE / 2, y: MAP_SIZE - 6 };
+    const preferred = DEFAULT_SPOTS[id] ?? { x: Math.floor(MAP_SIZE / 2), y: MAP_SIZE - 6 };
     const rocky = rockyTest(game.clearedRocks);
     const spot = placementProblem(id, preferred, game.placements, BUILDING_NAMES, rocky) ? nearestFreeSpot(id, preferred, game.placements, BUILDING_NAMES, rocky) : preferred;
     setPopup(null);
@@ -648,7 +649,7 @@ function Stockpiles({ game }: { game: GameState }) {
 
 function Menu({ game, workforce }: { game: GameState; workforce: Workforce }) {
   const beds = buildingStats(game.buildings, workforce.staff, game.techs).beds;
-  const unkept = workforce.staff.houses < workforce.needed.houses;
+  const unkept = HOUSE_IDS.some((id) => workforce.staff[id] < workforce.needed[id]);
   return (
     <>
       <View style={styles.block}>

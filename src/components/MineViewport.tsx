@@ -13,7 +13,7 @@ import type { CartLoad } from '../game/state';
 import { FIXED_TICK_MS } from '../game/gameStore';
 import type { LevelCarts } from '../game/haulage';
 import { RESOURCES, type Resource, type Stock } from '../game/resources';
-import { checkDigStep, depositRemaining, findDigParent, parseKey, tileKey, type MineLayout } from '../game/mineLayout';
+import { checkDigStep, depositRemaining, findDigParent, isDug, parseKey, tileKey, type MineLayout } from '../game/mineLayout';
 import MinePickaxe from './MinePickaxe';
 import MineSceneReadout from './MineSceneReadout';
 import type { DigOverlayState, MineSceneCanvasProps, MineView } from './MineSceneCanvas';
@@ -409,7 +409,7 @@ function CameraLayer({
 
 // Builds a tunnel path as the finger moves: one tile at a time from the end of an existing tunnel,
 // backing up when the finger returns over the path, and stopping at the first tile that breaks
-// a digging rule (shown red).
+// a digging rule (shown red) or where it runs into a tunnel and joins it.
 function useDigDrag(layout: MineLayout, digPlan: string[]) {
   const [drag, setDragState] = useState<Drag>(noDrag);
   const current = useRef<Drag>(noDrag);
@@ -446,6 +446,8 @@ function useDigDrag(layout: MineLayout, digPlan: string[]) {
         ? { row: at.row, column: at.column + Math.sign(target.column - at.column) }
         : { row: at.row + Math.sign(target.row - at.row), column: at.column };
       const nextKey = tileKey(next.row, next.column);
+      // The run has reached a tunnel it joins: it ends there (that's not a mistake).
+      if (planned.has(nextKey) || isDug(layout, next.row, next.column)) break;
       if (!checkDigStep(layout, planned, nextKey, tileKey(at.row, at.column)).ok) {
         invalid = nextKey;
         break;

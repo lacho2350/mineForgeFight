@@ -115,6 +115,8 @@ export type GameState = {
   sites: Site[];
   /** Miners on their way to a deposit whose tunnel is still being dug; they start when it's done. */
   pendingSites: Site[];
+  /** Stand tiles (`row,column`) of the miners the hold sent from the campfire itself (see `idleToTheMine`). */
+  autoMiners: string[];
   /** Units taken from each deposit so far, keyed by tile; a deposit is mined out at its total. */
   depositMined: Record<string, number>;
   /** Gallery stations that have been cut ("level:station"); their chamber and shaft stay dug. */

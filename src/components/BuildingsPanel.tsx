@@ -30,6 +30,7 @@ import {
 import { destroyRefund, upgradeBlocker } from '../game/costs';
 import { gearComing } from '../game/wagons';
 import { FORGE_IDS, FORGE_NAMES, isForge } from '../game/forges';
+import { isHouse } from '../game/houses';
 import { ITEM_INFO, UNIT_GEAR } from '../game/items';
 import type { Workforce } from '../game/workforce';
 import { RESOURCES, RESOURCE_INFO } from '../game/resources';
@@ -248,7 +249,7 @@ export function BuildingDetail({ game, workforce, id, bare = false, onChooseSpot
 
       <View style={styles.techs}>
         <SectionLabel>TECH TREE · UPGRADES FOR GOLD</SectionLabel>
-        <TechBranchView game={game} branch={isForge(id) ? 'forges' : id} showName={false} />
+        <TechBranchView game={game} branch={isForge(id) ? 'forges' : isHouse(id) ? 'houses' : id} showName={false} />
       </View>
     </View>
   );

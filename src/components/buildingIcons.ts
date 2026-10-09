@@ -1,12 +1,13 @@
 import type { BuildingId } from '../game/buildings';
 import { FORGE_IDS, type ForgeId } from '../game/forges';
+import { HOUSE_IDS, type HouseId } from '../game/houses';
 import type { RoadKind } from '../game/roads';
 import type { TrapKind } from '../game/traps';
 
 /** A small picture for each building, for the build palette and lists. */
 export const BUILDING_ICONS: Record<BuildingId, string> = {
   keep: '🏰',
-  houses: '🏠',
+  ...(Object.fromEntries(HOUSE_IDS.map((id) => [id, '🏠'])) as Record<HouseId, string>),
   warehouse: '📦',
   foundry: '🔥',
   research: '🔭',

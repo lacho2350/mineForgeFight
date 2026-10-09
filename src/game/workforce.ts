@@ -4,6 +4,7 @@
 // campfire. Recruiting a soldier takes a peasant out of the pool for good.
 import { BUILDING_IDS, staffNeeded, type BuildingId, type BuildingLevels } from './buildings';
 import { FORGE_IDS } from './forges';
+import { HOUSE_IDS } from './houses';
 
 export { PEASANT_ARRIVAL_SECONDS } from './buildings';
 
@@ -12,7 +13,7 @@ export { PEASANT_ARRIVAL_SECONDS } from './buildings';
  * without housekeepers only the keep's hall sleeps anyone, so newcomers soon stop.
  */
 export const STAFF_PRIORITY: BuildingId[] = [
-  'houses',
+  ...HOUSE_IDS,
   'warehouse',
   'foundry',
   'docks',

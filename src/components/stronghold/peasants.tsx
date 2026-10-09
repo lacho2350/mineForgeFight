@@ -4,6 +4,7 @@ import { Atlas, Group, Rect, Skia, useRSXformBuffer, type SkImage } from '@shopi
 import type { SharedValue } from 'react-native-reanimated';
 import type { Construction } from '../../game/state';
 import type { BuildingId } from '../../game/buildings';
+import { HOUSE_IDS } from '../../game/houses';
 import { FOOTPRINTS, MINE_SPOT, spotOf, type Placements } from '../../game/cityMap';
 import { walkBetween, type Roads, type Walk } from '../../game/roads';
 import type { ClearOrder } from '../../game/rocks';
@@ -76,7 +77,7 @@ const HAMMER = 2;
 type Spec = { mode: number; cell: number; route: number[]; times: number[]; speed: number; phase: number; x: number; y: number; load: boolean; carryBack: boolean };
 
 const MAX_WALKERS = 24;
-const STAFFED_SHOWN: BuildingId[] = ['houses', 'docks', 'gate', 'foundry', 'research', 'armory', 'stables', 'balloonWorks', 'monastery', 'barracks', 'guardhouse', 'archery', 'chapel', 'sanctum', 'griffinEyrie'];
+const STAFFED_SHOWN: BuildingId[] = [...HOUSE_IDS, 'docks', 'gate', 'foundry', 'research', 'armory', 'stables', 'balloonWorks', 'monastery', 'barracks', 'guardhouse', 'archery', 'chapel', 'sanctum', 'griffinEyrie'];
 
 function peasantSpecs(
   workforce: Workforce,

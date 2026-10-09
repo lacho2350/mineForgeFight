@@ -246,6 +246,9 @@ export function siteLevel(site: Site) {
   return levelOfRow(site.row).level;
 }
 
+/** How far every gallery runs each side of the lift before any station lengthens it. */
+const GALLERY_REACH = 2;
+
 let cached: MineLayout | null = null;
 
 export function buildMineLayout(input: {
@@ -272,8 +275,10 @@ export function buildMineLayout(input: {
   for (let row = MINE_SURFACE_ROWS; row <= lastTunnelRow(depth); row += 1) kinds.set(tileKey(row, MINE_SHAFT_COLUMN), 'lift');
 
   for (let level = -1; level < Math.min(depth, MINE_GALLERY_COUNT); level += 1) {
-    let left = MINE_SHAFT_COLUMN - 1;
-    let right = MINE_SHAFT_COLUMN + 1;
+    // Every gallery reaches two tiles past the lift on each side, so there is always a tile beyond the
+    // rock kept beside the lift to dig down from (or up to).
+    let left = MINE_SHAFT_COLUMN - GALLERY_REACH;
+    let right = MINE_SHAFT_COLUMN + GALLERY_REACH;
     for (const site of stationsByLevel.get(level) ?? []) {
       left = Math.min(left, site.column);
       right = Math.max(right, site.column);
@@ -440,9 +445,11 @@ export type DigCheck = { ok: true } | { ok: false; reason: string };
 
 /**
  * Whether `key` can be dug as the next step from `parentKey` (an existing or planned tile).
- * The rock rule: a new tunnel only meets other tunnels end-on, so apart from its parent no
- * neighbouring tile may be dug, except diagonals that belong to the parent's own tunnel.
- * Deposit tiles can't be dug at all; miners work them from a tunnel beside them.
+ * The rock rule: tunnels never run side by side; they only meet end-on. So apart from its parent,
+ * the only dug tile a new tile may touch is the one straight ahead — the tunnel runs into it and
+ * joins it there (but not into the side of the lift) — and the only diagonals it may touch belong
+ * to the parent's tunnel or the one it joins. Deposit tiles can't be dug at all; miners work them
+ * from a tunnel beside them.
  */
 export function checkDigStep(layout: MineLayout, planned: ReadonlySet<string>, key: string, parentKey: string): DigCheck {
   const { row, column } = parseKey(key);
@@ -464,10 +471,13 @@ export function checkDigStep(layout: MineLayout, planned: ReadonlySet<string>, k
   if (Math.abs(parent.row - row) + Math.abs(parent.column - column) !== 1 || !open(parent.row, parent.column)) {
     return { ok: false, reason: 'Dig from the end of a tunnel.' };
   }
+  const ahead = { row: 2 * row - parent.row, column: 2 * column - parent.column };
+  const joins = open(ahead.row, ahead.column) && layout.kinds.get(tileKey(ahead.row, ahead.column)) !== 'lift';
   for (const [dr, dc] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
     const r = row + dr;
     const c = column + dc;
     if (r === parent.row && c === parent.column) continue;
+    if (joins && r === ahead.row && c === ahead.column) continue;
     if (open(r, c)) return { ok: false, reason: 'Keep a tile of rock between tunnels.' };
   }
   for (const [dr, dc] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) {
@@ -475,7 +485,8 @@ export function checkDigStep(layout: MineLayout, planned: ReadonlySet<string>, k
     const c = column + dc;
     if (!open(r, c)) continue;
     const besideParent = Math.abs(r - parent.row) + Math.abs(c - parent.column) === 1;
-    if (!besideParent) return { ok: false, reason: 'Keep a tile of rock between tunnels.' };
+    const besideJoin = joins && Math.abs(r - ahead.row) + Math.abs(c - ahead.column) === 1;
+    if (!besideParent && !besideJoin) return { ok: false, reason: 'Keep a tile of rock between tunnels.' };
   }
   return { ok: true };
 }

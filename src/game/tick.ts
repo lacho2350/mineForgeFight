@@ -1,6 +1,6 @@
 import { cartEventsBetween, getCartRoutes } from './haulage';
 import { RESOURCE_INFO, emptyStock, type Resource } from './resources';
-import { BUILDING_INFO, DWELLING_UNIT, buildingStats, workedLevel, type BuildingId } from './buildings';
+import { BUILDING_IDS, BUILDING_INFO, DWELLING_UNIT, buildingStats, workedLevel, type BuildingId } from './buildings';
 import { ARMY_RECRUITING, ARMY_UNITS, MAX_MUSTERS_WAITING, MUSTER_SECONDS, unitGrowth, type ArmyUnit } from './units';
 import { createBattle, resolveBattle } from './combat';
 import { RAID_AUTO_AFTER, RAID_WARNING, raidKind, raidParty, raidSide, raidStrength } from './raids';
@@ -8,11 +8,12 @@ import { BERTHS, MAX_BARGES, bargeOrder, isWaiting, BARGE_SAIL } from './ship';
 import { ROCK_INFO, startingRock } from './rocks';
 import { ITEM_INFO, UNIT_GEAR, type ItemId } from './items';
 import { FORGE_IDS, FORGE_OUTPUT_CAP, addLoad, isForge, loadUnits, shelfMissing, type ForgeId, type ForgeTask, type Load } from './forges';
+import { isHouse } from './houses';
 import { gearComing, gearWanted, incomingTo, supplyLoad, wagonBackAt, wagonDropAt, type WagonJob } from './wagons';
 import { SIDE_NAMES } from './cityMap';
 import { haulFactor } from './roads';
 import { trapCounts, trapsFacing } from './traps';
-import { depositRemaining, depositStep, depositTotal, digTime, tileKey, parseKey, type Site } from './mineLayout';
+import { depositRemaining, depositStep, depositTotal, digTime, nextFreeSite, tileKey, parseKey, type Site } from './mineLayout';
 import { raidBattleKind, type CartLoad, type GameState } from './state';
 import {
   describeParty,
@@ -21,6 +22,7 @@ import {
   haulWalk,
   holdPowerOf,
   itemsCounted,
+  minerCrew,
   selectMineLayout,
   siteFactor,
   siteResource,
@@ -28,7 +30,7 @@ import {
   wagonLegs,
   workforceOf,
 } from './hold';
-import { buildingFields, roundCoal, settleBattle, transfer } from './updates';
+import { buildingFields, roundCoal, settleBattle, transfer, withSite } from './updates';
 
 // One second of the game: miners cut, carts and haulers move the goods, builders, smiths and carts work,
 // recruits muster, raids and barges come and go.
@@ -149,7 +151,7 @@ export function tickGame(state: GameState): Partial<GameState> {
       for (const job of finished) buildings[job.building] = job.level;
       const job = finished[0];
       notice = `${BUILDING_INFO[job.building].name} reached level ${String(job.level)}; the crew is back at the campfire.`;
-      if (job.building === 'houses') notice += ` The houses now sleep ${String(buildingStats(buildings, undefined, techs).beds)} peasants.`;
+      if (isHouse(job.building)) notice += ` The hold now sleeps ${String(buildingStats(buildings, undefined, techs).beds)} peasants.`;
     }
   }
   // The clearing crew works through the first order; when it's done its rocks are gone and their
@@ -401,7 +403,7 @@ export function tickGame(state: GameState): Partial<GameState> {
     notice = settled.notice;
   }
 
-  return {
+  const next: Partial<GameState> = {
     ...fields,
     population,
     construction,
@@ -436,4 +438,33 @@ export function tickGame(state: GameState): Partial<GameState> {
     ...raidFields,
     notice,
   };
+  return { ...next, ...idleToTheMine({ ...state, ...next }) };
+}
+
+/**
+ * Idle peasants go mining: once every building has its staff, a peasant from the campfire takes the next
+ * free face each second (`nextFreeSite`: a dug tile beside a deposit, coal first, then a gallery station).
+ * They come back when the hold needs hands — while any building is short of staff (after recruiting, or
+ * a new building's crew) the latest of them goes back to the campfire each second. Miners the player
+ * placed are never moved.
+ */
+export function idleToTheMine(state: GameState): Partial<GameState> {
+  const autoMiners = state.autoMiners.filter((stand) => state.sites.some((site) => tileKey(site.row, site.column) === stand));
+  const workforce = workforceOf(state);
+  const needed = BUILDING_IDS.reduce((sum, id) => sum + workforce.needed[id], 0);
+  if (workforce.staffTotal < needed && autoMiners.length > 0) {
+    const stand = autoMiners[autoMiners.length - 1];
+    return {
+      sites: state.sites.filter((site) => tileKey(site.row, site.column) !== stand),
+      autoMiners: autoMiners.slice(0, -1),
+      layoutVersion: state.layoutVersion + 1,
+    };
+  }
+  if (workforce.idle > 0) {
+    const site = nextFreeSite(selectMineLayout(state));
+    if (site && workforce.idle >= minerCrew(state, site)) {
+      return { ...withSite(state, site), autoMiners: [...autoMiners, tileKey(site.row, site.column)] };
+    }
+  }
+  return autoMiners.length === state.autoMiners.length ? {} : { autoMiners };
 }

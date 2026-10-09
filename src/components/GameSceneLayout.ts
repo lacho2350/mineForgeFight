@@ -4,6 +4,7 @@
 import type { BuildingId } from '../game/buildings';
 import { CASTLE, FOOTPRINTS, MAP_SIZE, MINE_SPOT, spotOf, type Placements } from '../game/cityMap';
 import { FORGE_IDS, type ForgeId } from '../game/forges';
+import { HOUSE_IDS, type HouseId } from '../game/houses';
 
 export { CAMPFIRE, CASTLE, DOCK_TILES, DOCKS_ROW, GATE_ROAD, GATE_TILES, HARBOUR, MAP_SIZE, PARADE, PLAZA, RIVER_ROWS, TOWER_SPOTS, WALL_TILES, zoneAt } from '../game/cityMap';
 
@@ -41,7 +42,7 @@ export type Plot = { x: number; y: number; w: number; d: number; /** Tallest it 
 
 const TALL: Record<BuildingId, number> = {
   keep: 120,
-  houses: 40,
+  ...(Object.fromEntries(HOUSE_IDS.map((id) => [id, 40])) as Record<HouseId, number>),
   warehouse: 50,
   foundry: 80,
   research: 72,

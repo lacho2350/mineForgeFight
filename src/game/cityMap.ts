@@ -7,6 +7,7 @@
 // and can be moved later. Roads are laid by the player (see roads.ts). Pure TS.
 import type { BuildingId } from './buildings';
 import { FORGE_IDS, type ForgeId } from './forges';
+import { HOUSE_IDS, type HouseId } from './houses';
 
 export const MAP_SIZE = 59;
 /** The map's middle tile (the gate, the harbour and the keep's axis). */
@@ -121,7 +122,7 @@ export type Placements = Partial<Record<BuildingId, Spot>>;
 /** Tiles each building covers (along x, along y). */
 export const FOOTPRINTS: Record<BuildingId, Footprint> = {
   keep: { w: 5, d: 5 },
-  houses: { w: 2, d: 2 },
+  ...(Object.fromEntries(HOUSE_IDS.map((id) => [id, { w: 2, d: 2 }])) as Record<HouseId, Footprint>),
   warehouse: { w: 3, d: 3 },
   foundry: { w: 3, d: 3 },
   research: { w: 3, d: 3 },
@@ -282,7 +283,7 @@ export function fillPlacements(
   let next = placements;
   for (const id of Object.keys(levels) as BuildingId[]) {
     if (!isPlaceable(id) || next[id] || (levels[id] <= 0 && !building.includes(id))) continue;
-    const preferred = DEFAULT_SPOTS[id] ?? { x: MAP_SIZE / 2, y: 36 };
+    const preferred = DEFAULT_SPOTS[id] ?? { x: Math.floor(MAP_SIZE / 2), y: 36 };
     const spot = placementProblem(id, preferred, next, names) ? nearestFreeSpot(id, preferred, next, names) : preferred;
     if (spot) next = { ...next, [id]: spot };
   }

@@ -2,6 +2,7 @@
 // what the next level costs and how long it takes to build. Pure data + maths (no React / Skia) so the
 // store and the screens share it.
 import { FORGE_IDS, FORGE_KEEP, FORGE_NAMES, forgeSpeedAt, isForge, type ForgeId } from './forges';
+import { HOUSE_IDS, HOUSE_KEEP, HOUSE_NAMES, MAX_PEASANTS, houseBeds, isHouse, type HouseId } from './houses';
 import { RESOURCES, type Resource } from './resources';
 import { MIN_BARGE_INTERVAL } from './ship';
 import { BASE_WAGON_LOAD, WAGON_SPEED } from './wagons';
@@ -10,7 +11,7 @@ import { ARMY_RECRUITING, ARMY_UNITS, MUSTER_SECONDS, UNIT_STATS, unitGrowth, ty
 
 export const BUILDING_IDS = [
   'keep',
-  'houses',
+  ...HOUSE_IDS,
   'warehouse',
   'foundry',
   'research',
@@ -43,7 +44,7 @@ export const MAX_BUILDING_LEVEL = 20;
 /** Levels at the start of a game; 0 means the plot is empty. */
 export const STARTING_BUILDINGS: BuildingLevels = {
   keep: 1,
-  houses: 1,
+  ...(Object.fromEntries(HOUSE_IDS.map((id) => [id, id === 'houses' ? 1 : 0])) as Record<HouseId, number>),
   warehouse: 1,
   foundry: 1,
   research: 0,
@@ -78,6 +79,7 @@ export const MOAT_KEEP_LEVEL = 10;
 export function requiredKeep(id: BuildingId) {
   if (id === 'moat') return MOAT_KEEP_LEVEL;
   if (isForge(id)) return FORGE_KEEP[id];
+  if (isHouse(id)) return HOUSE_KEEP[id];
   const unit = DWELLING_UNIT[id];
   // Stables also pull the surface wagons, so they can be built early; cavalry still wait for the keep.
   return unit && id !== 'stables' ? ARMY_RECRUITING[unit].requiresKeep : 1;
@@ -203,7 +205,7 @@ export function buildingStats(levels: BuildingLevels, staff?: Partial<Record<Bui
   const tech = techBonuses(techs);
   const worked = (id: BuildingId) => workedLevel(id, levels[id], staff ? (staff[id] ?? 0) : undefined);
   const foundry = worked('foundry');
-  const housed = worked('houses');
+  const housed = HOUSE_IDS.reduce((sum, id) => sum + houseBeds(worked(id)), 0);
   const barred = worked('gate');
   const docks = worked('docks');
   const research = worked('research');
@@ -217,8 +219,8 @@ export function buildingStats(levels: BuildingLevels, staff?: Partial<Record<Bui
     buildSites: 1 + Math.floor(keep / 5) + tech.buildSites,
     taxPerFiveSeconds: round2(keep * (1 + tech.tax)),
     // The keep's hall sleeps 8 whatever happens (so a hold whose peasants are all under orders can still
-    // grow and staff its houses); kept houses add the rest.
-    beds: Math.floor((KEEP_BEDS + (housed > 0 ? 4 * housed + Math.floor(housed ** 2 / 2) : 0)) * (1 + tech.beds)),
+    // grow and staff its houses); kept houses add the rest, up to MAX_PEASANTS.
+    beds: Math.min(MAX_PEASANTS, Math.floor((KEEP_BEDS + housed) * (1 + tech.beds))),
     minerRate: round1((0.5 + 0.2 * Math.max(0, foundry - 1)) * (1 + tech.minerRate)),
     mineCartCapacity,
     warehouseCapacity: roundTo(100 * 1.3 ** Math.max(0, warehouse - 1) * (1 + tech.warehouse), 10),
@@ -267,6 +269,9 @@ export function buildingEffects(id: BuildingId, level: number, techs: readonly T
     ? [{ label: `${UNIT_STATS[unit].plural} per ${String(MUSTER_SECONDS / 60)} min`, value: String(unitGrowth(unit, level, stats.growthBonus[unit])) }]
     : [];
   if (isForge(id)) return [{ label: 'Working speed', value: `×${String(stats.forgeSpeed[id])}` }];
+  if (isHouse(id)) {
+    return [{ label: `Peasants it sleeps (the hold: at most ${String(MAX_PEASANTS)})`, value: String(Math.floor(houseBeds(level) * (1 + techBonuses(techs).beds))) }];
+  }
   if (id === 'depot') {
     return [
       { label: 'Carts', value: String(stats.wagons) },
@@ -281,8 +286,6 @@ export function buildingEffects(id: BuildingId, level: number, techs: readonly T
         { label: 'Buildings under construction at once', value: String(stats.buildSites) },
         { label: 'Taxes', value: `${String(stats.taxPerFiveSeconds * 12)} gold / min` },
       ];
-    case 'houses':
-      return [{ label: 'Peasants housed (with the keep’s 8)', value: String(stats.beds) }];
     case 'warehouse':
       return [
         { label: 'Warehouse, each resource', value: stats.warehouseCapacity.toLocaleString() },
@@ -336,7 +339,10 @@ export function towerCount(level: number) {
 
 export const BUILDING_INFO: Record<BuildingId, { name: string; role: string }> = {
   keep: { name: 'Central Keep', role: 'Seat of the hold. Its level caps every other building, unlocks stronger units, adds builders and collects taxes. Its hall sleeps 8 peasants.' },
-  houses: { name: 'Workers’ Houses', role: 'Homes for peasants, kept by housekeepers: without them nobody sleeps here and only the keep’s hall (8 beds) is left. New peasants arrive at the campfire while there are free beds.' },
+  ...(Object.fromEntries(HOUSE_IDS.map((id) => [id, {
+    name: HOUSE_NAMES[id],
+    role: `Homes for peasants, kept by housekeepers: without them nobody sleeps here and only the keep’s hall (8 beds) is left. New peasants arrive at the campfire while there are free beds. Build up to ${String(HOUSE_IDS.length)} houses, as the keep grows; the hold sleeps at most ${String(MAX_PEASANTS)} peasants.`,
+  }])) as Record<HouseId, { name: string; role: string }>),
   warehouse: { name: 'Warehouses', role: 'Store more of each resource. Its haulers carry everything up from the mine.' },
   foundry: { name: 'Foundry', role: 'Forges better pickaxes and bigger mine carts.' },
   research: { name: 'Research Facility', role: 'Surveyors and engineers: faster, cheaper tunnelling, and deadlier traps.' },
@@ -371,7 +377,7 @@ const RESOURCE_BASE: Partial<Record<Resource, number>> = { coal: 25, granite: 30
 // Per building: treasury gold at level 1, and how much of each resource it uses (1 = the base amount).
 const COST_MIX: Record<BuildingId, { treasury: number; uses: Partial<Record<Resource, number>> }> = {
   keep: { treasury: 60, uses: { coal: 1, granite: 1.5, copper: 0.5, iron: 1, gold: 0.8, diamond: 1 } },
-  houses: { treasury: 30, uses: { coal: 0.6, granite: 0.8, copper: 0.3, iron: 0.3 } },
+  ...(Object.fromEntries(HOUSE_IDS.map((id) => [id, { treasury: 30, uses: { coal: 0.6, granite: 0.8, copper: 0.3, iron: 0.3 } }])) as Record<HouseId, { treasury: number; uses: Partial<Record<Resource, number>> }>),
   warehouse: { treasury: 30, uses: { coal: 1, granite: 1, copper: 0.3, iron: 0.4 } },
   foundry: { treasury: 45, uses: { coal: 1.2, granite: 0.8, copper: 0.6, iron: 1, gold: 0.5, diamond: 0.8 } },
   research: { treasury: 50, uses: { coal: 0.8, granite: 0.6, copper: 1.2, iron: 0.6, gold: 1, diamond: 1 } },
