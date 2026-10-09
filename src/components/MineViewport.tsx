@@ -17,7 +17,7 @@ import { checkDigStep, depositRemaining, findDigParent, isDug, parseKey, tileKey
 import MinePickaxe from './MinePickaxe';
 import MineSceneReadout from './MineSceneReadout';
 import type { DigOverlayState, MineSceneCanvasProps, MineView } from './MineSceneCanvas';
-import { EXIT_PILE_STEPS, MINER_PILE_STEPS } from './MineHaulerSteps';
+import { EXIT_PILE_STEPS, MINER_PILE_STEPS, binAt } from './MineHaulerSteps';
 import { MINE_MAP_WIDTH, MINE_SHAFT_X, MINE_TILE_SIZE } from './MineMapLayout';
 
 const T = MINE_TILE_SIZE;
@@ -54,6 +54,8 @@ export type MineSceneProps = {
   /** The tile the player tapped, outlined on the map. */
   selectedKey: string | null;
   onSelectTile: (key: string) => void;
+  /** Tap on a stockpile bin (at the mine exit, or beside a miner): show that resource's stock. */
+  onSelectBin: (resource: Resource) => void;
   /** Double tap on a deposit: put an idle miner to work on it. */
   onAssignTile: (key: string) => void;
   /** The page's gesture-handler scroll view; gestures on the map take priority over it. */
@@ -93,6 +95,7 @@ export default function MineViewport({
   depositMined,
   selectedKey,
   onSelectTile,
+  onSelectBin,
   onAssignTile,
   pageScrollRef,
   renderCanvas,
@@ -205,11 +208,15 @@ export default function MineViewport({
     .onFinalize((_event, success) => {
       scheduleOnRN(finishDrag, success);
     });
-  // Outside Dig mode, a tap selects the tile under the finger and a double tap assigns an idle
-  // miner to the deposit there. The single tap waits for the double tap to fail, so a double tap
-  // never also counts as a selection toggle.
+  // Outside Dig mode, a tap on a bin shows its resource's stock, any other tap selects the tile under the
+  // finger, and a double tap assigns an idle miner to the deposit there. The single tap waits for the
+  // double tap to fail, so a double tap never also counts as a selection toggle.
   const tileAt = (mapX: number, mapY: number) => tileKey(Math.floor(mapY / T), Math.floor(mapX / T));
-  const selectAt = (mapX: number, mapY: number) => onSelectTile(tileAt(mapX, mapY));
+  const selectAt = (mapX: number, mapY: number) => {
+    const bin = binAt(layout.sites, mapX, mapY);
+    if (bin) onSelectBin(bin);
+    else onSelectTile(tileAt(mapX, mapY));
+  };
   const assignAt = (mapX: number, mapY: number) => onAssignTile(tileAt(mapX, mapY));
   const doubleTap = Gesture.Tap()
     .enabled(!digMode)

@@ -1,6 +1,8 @@
 // Loading a save: older saves are migrated (the map grew, old armory orders are paid back) and laid over a
 // fresh game, so new state always has a default.
-import { RESOURCES, emptyStock, type Resource } from './resources';
+import { RESOURCES, STARTING_WOOD, emptyStock, type Resource } from './resources';
+import { cleanForest } from './forest';
+import { STARTING_APPLES } from './farms';
 import { BUILDING_IDS, crewSize, type BuildingId } from './buildings';
 import { ARMY_RECRUITING, ARMY_UNITS, emptyArmy, type ArmyUnit } from './units';
 import { RAID_AUTO_AFTER, partyValue, raidParty, raidStrength } from './raids';
@@ -102,6 +104,10 @@ export function mergeSave(saved: Partial<SavedState> | undefined, fresh: GameSta
     }
   }
   const warehouse = stock('warehouse');
+  // Saves from before wood: the same start as a new game.
+  if (!('wood' in (saved.warehouse ?? {}))) warehouse.wood = STARTING_WOOD;
+  // Saves from before food: a new game's apples, to last until the first farms are up.
+  if (!('apples' in (saved.warehouse ?? {}))) warehouse.apples = STARTING_APPLES;
   // Orders from when the armory made all the gear itself: what wasn't made yet is paid back.
   const legacyQueue = (saved as { craftQueue?: LegacyCraftJob[] }).craftQueue ?? [];
   for (const job of legacyQueue) {
@@ -131,6 +137,8 @@ export function mergeSave(saved: Partial<SavedState> | undefined, fresh: GameSta
     mineExit: stock('mineExit'),
     mineStock: stock('mineStock'),
     warehouse,
+    // The forest as it was left; a save from before the forest (or a damaged one) gets a new one.
+    forest: cleanForest(saved.forest) ?? fresh.forest,
     army: saved.army ? { ...emptyArmy(), ...saved.army } : fresh.army,
     recruits: saved.recruits ? { ...emptyArmy(), ...saved.recruits } : fresh.recruits,
     ...buildingFields(buildings, undefined, techs, haulFactor(haulWalk({ placements, roads, clearedRocks }))),

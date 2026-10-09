@@ -10,6 +10,7 @@ import { CLEAR_CREW, type ClearOrder } from './rocks';
 import { ITEM_INFO, UNIT_GEAR, type ItemId } from './items';
 import { FORGE_IDS, FORGE_OUTPUT_CAP, emptyLoad, isForge, loadUnits, missingInputs, shelfMissing, type ForgeId, type Load } from './forges';
 import { HOUSE_IDS, isHouse } from './houses';
+import { FARM_SERIES, type FarmId } from './farms';
 import { itemsInTransit, wagonBackAt, wagonDropAt, wagonStops, type WagonJob } from './wagons';
 import { FOOTPRINTS, MINE_SPOT, RAID_SIDES, spotOf, type Footprint, type Placements, type Spot } from './cityMap';
 import { buildFactor, walkBetween, type Walk } from './roads';
@@ -163,9 +164,9 @@ export function loadText(load: Load) {
 export const forgesMaking = (state: Pick<GameState, 'buildings' | 'forgeTasks'>, item: ItemId) =>
   FORGE_IDS.filter((forge) => state.buildings[forge] > 0 && state.forgeTasks[forge]?.item === item);
 
-/** Lists show only the next forge or house to build (each kind is built in order). */
+/** Lists show only the next forge, house or farm of a kind to build (each kind is built in order). */
 export function isShownBuilding(state: Pick<GameState, 'buildings' | 'construction'>, id: BuildingId) {
-  const series: readonly BuildingId[] | null = isForge(id) ? FORGE_IDS : isHouse(id) ? HOUSE_IDS : null;
+  const series: readonly BuildingId[] | null = isForge(id) ? FORGE_IDS : isHouse(id) ? HOUSE_IDS : (FARM_SERIES.find((kind) => kind.includes(id as FarmId)) ?? null);
   if (!series) return true;
   const started = (other: BuildingId) => state.buildings[other] > 0 || state.construction.some((job) => job.building === other);
   return started(id) || series.find((other) => !started(other)) === id;

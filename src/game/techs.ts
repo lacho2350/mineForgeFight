@@ -35,6 +35,8 @@ export type TechBonuses = {
   forgeSpeed: number;
   // The depot's carts: faster (0.25 = +25%).
   wagonSpeed: number;
+  // The woodcutters: more wood (0.3 = +30%).
+  wood: number;
   // Discounts, added up: 0.2 = 20% cheaper.
   digCost: number;
   depthCost: number;
@@ -87,6 +89,7 @@ export const TECH_IDS = [
   'shelving', 'handcarts', 'cellars',
   'temperedSteel', 'forgedBlades', 'blastFurnace',
   'greasedAxles', 'biggerWagons', 'draftHorses',
+  'sharpAxes', 'oxSledges', 'sawpits',
   'bellows', 'masterSmiths', 'waterHammers',
   'library', 'siegeEngineers', 'alchemy',
   // Defence
@@ -136,6 +139,9 @@ export const TECHS: Record<TechId, Tech> = {
   greasedAxles: { branch: 'depot', tier: 1, name: 'Greased axles', effect: 'Carts go 25% faster.', gold: 150, requires: [], bonus: { wagonSpeed: 0.25 } },
   biggerWagons: { branch: 'depot', tier: 2, name: 'Bigger wagons', effect: 'Every cart carries 6 more.', gold: 500, requires: ['greasedAxles'], bonus: { wagonLoad: 6 } },
   draftHorses: { branch: 'depot', tier: 3, name: 'Draft horses', effect: 'Carts go 50% faster again, and the depot gets 2 more.', gold: 1500, requires: ['biggerWagons', 'studFarm'], bonus: { wagonSpeed: 0.5, wagonCount: 2 } },
+  sharpAxes: { branch: 'woodcutter', tier: 1, name: 'Sharp axes', effect: 'Woodcutters cut 30% more.', gold: 120, requires: [], bonus: { wood: 0.3 } },
+  oxSledges: { branch: 'woodcutter', tier: 2, name: 'Ox sledges', effect: 'Logs come home 50% faster.', gold: 450, requires: ['sharpAxes'], bonus: { wood: 0.5 } },
+  sawpits: { branch: 'woodcutter', tier: 3, name: 'Sawpits', effect: 'Every log goes further: woodcutters bring in 70% more again.', gold: 1500, requires: ['oxSledges', 'shelving'], bonus: { wood: 0.7 } },
   bellows: { branch: 'forges', tier: 1, name: 'Bellows', effect: 'Every forge works 20% faster.', gold: 150, requires: [], bonus: { forgeSpeed: 0.2 } },
   masterSmiths: { branch: 'forges', tier: 2, name: 'Master smiths', effect: 'Every forge works 30% faster again.', gold: 600, requires: ['bellows'], bonus: { forgeSpeed: 0.3 } },
   waterHammers: { branch: 'forges', tier: 3, name: 'Water hammers', effect: 'Every forge works 50% faster again.', gold: 1800, requires: ['masterSmiths', 'temperedSteel'], bonus: { forgeSpeed: 0.5 } },
@@ -217,6 +223,7 @@ export const TECH_BRANCHES: TechBranch[] = [
   'research',
   'armory',
   'depot',
+  'woodcutter',
   'forges',
   'wall',
   'towers',
@@ -245,7 +252,7 @@ export const isTechId = (id: unknown): id is TechId => typeof id === 'string' &&
 export function techBonuses(owned: readonly TechId[] = []): TechBonuses {
   const total: TechBonuses = {
     minerRate: 0, mineStock: 0, digSpeed: 0, tax: 0, buildSpeed: 0, beds: 0, arrival: 0, warehouse: 0, haul: 0,
-    trapPower: 0, trade: 0, wallHp: 0, gateHp: 0, towerDamage: 0, forgeSpeed: 0, wagonSpeed: 0, wagonLoad: 0, wagonCount: 0,
+    trapPower: 0, trade: 0, wallHp: 0, gateHp: 0, towerDamage: 0, forgeSpeed: 0, wagonSpeed: 0, wood: 0, wagonLoad: 0, wagonCount: 0,
     digCost: 0, depthCost: 0, cartCost: 0, techCost: 0, shipCycle: 0, shipHold: 0, moatDamage: 0,
     veinCapacity: 0, cartLoad: 0, buildSites: 0, attack: 0, defence: 0, towerShots: 0, wallOil: 0, drawbridge: 0,
     growth: {},

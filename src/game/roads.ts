@@ -237,6 +237,19 @@ export function walkBetween(from: Spot & Footprint, to: Spot & Footprint, placem
   return walk;
 }
 
+/** A walk carried on past its end, in straight legs over open ground (off the map, where there are no tiles). */
+export function walkOn(walk: Walk, points: number[][]): Walk {
+  const all = [...walk.points];
+  const times = [...walk.times];
+  for (const point of points) {
+    const [px, py] = all[all.length - 1];
+    times.push(times[times.length - 1] + Math.hypot(point[0] - px, point[1] - py) / GROUND_SPEED);
+    all.push(point);
+  }
+  const time = times[times.length - 1];
+  return { time: Math.round(time * 100) / 100, points: all, times };
+}
+
 // ——— What walking does ———
 
 /** Seconds of walking between the mine and the warehouse that hauling is balanced for. */

@@ -5,6 +5,7 @@ import type { BuildingId } from '../game/buildings';
 import { CASTLE, FOOTPRINTS, MAP_SIZE, MINE_SPOT, spotOf, type Placements } from '../game/cityMap';
 import { FORGE_IDS, type ForgeId } from '../game/forges';
 import { HOUSE_IDS, type HouseId } from '../game/houses';
+import { FISHERY_IDS, ORCHARD_IDS, PASTURE_IDS, type FisheryId, type OrchardId, type PastureId } from '../game/farms';
 
 export { CAMPFIRE, CASTLE, DOCK_TILES, DOCKS_ROW, GATE_ROAD, GATE_TILES, HARBOUR, MAP_SIZE, PARADE, PLAZA, RIVER_ROWS, TOWER_SPOTS, WALL_TILES, zoneAt } from '../game/cityMap';
 
@@ -47,6 +48,11 @@ const TALL: Record<BuildingId, number> = {
   foundry: 80,
   research: 72,
   armory: 50,
+  woodcutter: 34,
+  granary: 44,
+  ...(Object.fromEntries(ORCHARD_IDS.map((id) => [id, 22])) as Record<OrchardId, number>),
+  ...(Object.fromEntries(FISHERY_IDS.map((id) => [id, 26])) as Record<FisheryId, number>),
+  ...(Object.fromEntries(PASTURE_IDS.map((id) => [id, 14])) as Record<PastureId, number>),
   depot: 40,
   ...(Object.fromEntries(FORGE_IDS.map((id) => [id, 48])) as Record<ForgeId, number>),
   wall: 44,

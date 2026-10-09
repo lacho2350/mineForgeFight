@@ -3,16 +3,15 @@ import { useDerivedValue, type SharedValue } from 'react-native-reanimated';
 import { CART_HEIGHT, CART_WIDTH, cartPose, type CartRoute } from '../game/haulage';
 import type { CartLoad } from '../game/state';
 import { depositAt, type Site } from '../game/mineLayout';
-import { RESOURCES, RESOURCE_INFO, type Resource } from '../game/resources';
+import { MINE_RESOURCES, RESOURCES, RESOURCE_INFO, type Resource } from '../game/resources';
 import { MINE_EXIT_BIN_WIDTH, MINE_GROUND_Y, MINE_TILE_SIZE, getExitBinX } from './MineMapLayout';
-import { EXIT_PILE_STEPS, MINER_PILE_STEPS } from './MineHaulerSteps';
+import { EXIT_BIN_HEIGHT, EXIT_PILE_STEPS, HEAP_RISE, MINER_BIN_HEIGHT, MINER_BIN_WIDTH, MINER_PILE_STEPS, minerBinX } from './MineHaulerSteps';
 
 const T = MINE_TILE_SIZE;
 // Hauler sprite: 8×10 pixels at 4px, feet at y = WORKER_HEIGHT.
 const WORKER_PIXEL = 4;
 const WORKER_WIDTH = 8 * WORKER_PIXEL;
 const WORKER_HEIGHT = 10 * WORKER_PIXEL;
-const MINER_BIN_WIDTH = 20;
 
 const colors = {
   wood: '#7c4d2a',
@@ -64,33 +63,70 @@ type HaulerPictures = {
   /** Load heaped on the cart, per resource. */
   cartLoads: Record<Resource, SkPicture>;
   worker: SkPicture;
-  /** Miner bins and mine exit bins, per resource and heap step. */
-  minerBins: Record<Resource, SkPicture[]>;
-  exitBins: Record<Resource, SkPicture[]>;
+  /** Miner bins and mine exit bins, per resource: the bin behind the heap, a full heap, and the front plank. */
+  minerBins: Record<Resource, BinPictures>;
+  exitBins: Record<Resource, BinPictures>;
 };
+type BinPictures = { back: SkPicture; heap: SkPicture; front: SkPicture };
 
 const byResource = <T,>(make: (resource: Resource) => T) =>
   Object.fromEntries(RESOURCES.map((resource) => [resource, make(resource)])) as Record<Resource, T>;
 
-// A wooden stockpile bin, origin at its bottom-left on the floor, with a heap of `fill` (0–1) inside.
-function drawBin(canvas: SkCanvas, resource: Resource, width: number, height: number, fill: number, seed: number) {
+// A wooden stockpile bin, origin at its bottom-left on the floor, in three layers: the bin behind, a full
+// heap (rows of lumps narrowing toward the top, rising above the rim), and the front plank over the heap's
+// base, with a stripe in the resource's colour so the bin reads even when empty. A part-full heap is the
+// full one cut off at its height (`Bin`), so it rises and sinks smoothly with the stock.
+function drawBinBack(canvas: SkCanvas, width: number, height: number) {
   rect(canvas, 0, -height, 3, height, colors.woodDark);
   rect(canvas, width - 3, -height, 3, height, colors.woodDark);
   rect(canvas, 0, -3, width, 3, colors.woodDark);
-  // Heap: rows of lumps, narrowing toward the top, rising above the rim when nearly full.
-  const heapHeight = Math.round((height + 8) * fill);
-  for (let y = 0; y < heapHeight; y += 5) {
-    const inset = Math.round((y / (height + 8)) * width * 0.35);
+}
+
+function drawHeap(canvas: SkCanvas, resource: Resource, width: number, height: number, seed: number) {
+  for (let y = 0; y < height + HEAP_RISE; y += 5) {
+    const inset = Math.round((y / (height + HEAP_RISE)) * width * 0.35);
     for (let x = 3 + inset; x < width - 3 - inset; x += 6) {
       const jitter = ((x * 7 + y * 13 + seed) % 3) - 1;
       lump(canvas, resource, x, -3 - y - 6 + jitter, 6 + ((x + y + seed) % 2));
     }
   }
-  // Front plank drawn over the heap's base, with a stripe in the resource's colour so the bin
-  // reads even when empty.
+}
+
+function drawBinFront(canvas: SkCanvas, resource: Resource, width: number, height: number) {
   rect(canvas, 0, -Math.min(8, height), width, 4, colors.wood);
   rect(canvas, 0, -Math.min(8, height) + 4, width, 1, colors.woodDark);
   rect(canvas, 3, -Math.min(8, height) + 1, width - 6, 2, RESOURCE_INFO[resource].tint);
+}
+
+function binPictures(resource: Resource, width: number, height: number, seed: number, sign: boolean): BinPictures {
+  return {
+    back: createPicture((canvas) => {
+      drawBinBack(canvas, width, height);
+      if (!sign) return;
+      // A small sign showing which resource the bin holds.
+      rect(canvas, width / 2 - 1, -40, 3, 18, colors.woodDark);
+      rect(canvas, width / 2 - 9, -46, 19, 10, '#e3c38a');
+      lump(canvas, resource, width / 2 - 4, -45, 8);
+    }),
+    heap: createPicture((canvas) => drawHeap(canvas, resource, width, height, seed)),
+    front: createPicture((canvas) => drawBinFront(canvas, resource, width, height)),
+  };
+}
+
+// A bin with its heap shown up to `fill` (0–1) of a full one.
+function Bin({ pictures, width, height, fill }: { pictures: BinPictures; width: number; height: number; fill: number }) {
+  const heapHeight = (height + HEAP_RISE) * Math.max(0, Math.min(1, fill));
+  return (
+    <Group>
+      <Picture picture={pictures.back} />
+      {heapHeight > 0 && (
+        <Group clip={Skia.XYWHRect(0, -3 - heapHeight - 4, width, heapHeight + 8)}>
+          <Picture picture={pictures.heap} />
+        </Group>
+      )}
+      <Picture picture={pictures.front} />
+    </Group>
+  );
 }
 
 let pictures: HaulerPictures | null = null;
@@ -124,22 +160,8 @@ function getPictures(): HaulerPictures {
         });
       });
     }),
-    minerBins: byResource((resource) =>
-      Array.from({ length: MINER_PILE_STEPS + 1 }, (_, step) =>
-        createPicture((canvas) => drawBin(canvas, resource, MINER_BIN_WIDTH, 12, step / MINER_PILE_STEPS, 1)),
-      ),
-    ),
-    exitBins: byResource((resource) =>
-      Array.from({ length: EXIT_PILE_STEPS + 1 }, (_, step) =>
-        createPicture((canvas) => {
-          drawBin(canvas, resource, MINE_EXIT_BIN_WIDTH, 22, step / EXIT_PILE_STEPS, 2);
-          // A small sign showing which resource the bin holds.
-          rect(canvas, MINE_EXIT_BIN_WIDTH / 2 - 1, -40, 3, 18, colors.woodDark);
-          rect(canvas, MINE_EXIT_BIN_WIDTH / 2 - 9, -46, 19, 10, '#e3c38a');
-          lump(canvas, resource, MINE_EXIT_BIN_WIDTH / 2 - 4, -45, 8);
-        }),
-      ),
-    ),
+    minerBins: byResource((resource) => binPictures(resource, MINER_BIN_WIDTH, MINER_BIN_HEIGHT, 1, false)),
+    exitBins: byResource((resource) => binPictures(resource, MINE_EXIT_BIN_WIDTH, EXIT_BIN_HEIGHT, 2, true)),
   };
   return pictures;
 }
@@ -183,23 +205,20 @@ export function MinerStockpiles({ sites, steps }: { sites: Site[]; steps: Record
 
   return sites.map((site) => {
     const resource = depositAt(site.faceRow, site.faceColumn) ?? 'coal';
-    const bin = minerBins[resource][Math.max(0, Math.min(MINER_PILE_STEPS, steps[resource]))];
-    const faceOnLeft = site.faceColumn < site.column;
-    const x = site.column * T + (faceOnLeft ? T - MINER_BIN_WIDTH - 4 : 4);
     return (
-      <Group key={`stockpile-${String(site.row)}-${String(site.column)}`} transform={[{ translateX: x }, { translateY: site.row * T + T }]}>
-        <Picture picture={bin} />
+      <Group key={`stockpile-${String(site.row)}-${String(site.column)}`} transform={[{ translateX: minerBinX(site) }, { translateY: site.row * T + T }]}>
+        <Bin pictures={minerBins[resource]} width={MINER_BIN_WIDTH} height={MINER_BIN_HEIGHT} fill={steps[resource] / MINER_PILE_STEPS} />
       </Group>
     );
   });
 }
 
-// The mine exit stockpiles on the surface: one bin per resource, where carts tip their loads.
+// The mine exit stockpiles on the surface: one bin per mined resource, where carts tip their loads.
 export function ExitStockpiles({ steps }: { steps: Record<Resource, number> }) {
   const { exitBins } = getPictures();
-  return RESOURCES.map((resource, index) => (
+  return MINE_RESOURCES.map((resource, index) => (
     <Group key={`exit-${resource}`} transform={[{ translateX: getExitBinX(index) }, { translateY: MINE_GROUND_Y }]}>
-      <Picture picture={exitBins[resource][Math.max(0, Math.min(EXIT_PILE_STEPS, steps[resource]))]} />
+      <Bin pictures={exitBins[resource]} width={MINE_EXIT_BIN_WIDTH} height={EXIT_BIN_HEIGHT} fill={steps[resource] / EXIT_PILE_STEPS} />
     </Group>
   ));
 }

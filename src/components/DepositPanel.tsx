@@ -1,4 +1,5 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { TUNNEL_WOOD } from '../game/costs';
 import type { DepositInfo } from '../game/mineLayout';
 import { RESOURCE_INFO } from '../game/resources';
 import { GameButton, SectionLabel } from './GameUI';
@@ -11,6 +12,7 @@ export default function DepositPanel({
   info,
   idle,
   gold,
+  wood,
   pending,
   route,
   onAssign,
@@ -20,6 +22,8 @@ export default function DepositPanel({
   info: DepositInfo;
   idle: number;
   gold: number;
+  /** Wood in the warehouse, for the tunnel's pit props. */
+  wood: number;
   /** A miner is reserved for this deposit and waiting for its tunnel. */
   pending: boolean;
   /** For a deposit with nothing dug beside it: the tunnel that would be dug to reach it. */
@@ -38,7 +42,7 @@ export default function DepositPanel({
       ? `${String(idle)} free peasant${idle === 1 ? '' : 's'} can mine. Tip: double-tap a deposit to assign straight away.`
       : 'No free peasants: wait for newcomers, stop a building, or release a miner.',
     unreachable: route
-      ? `Nothing dug beside it yet. Diggers can cut a ${String(route.tiles)}-tile tunnel to it for ${String(route.cost)} gold, then a miner starts. Double-tap does the same.`
+      ? `Nothing dug beside it yet. Diggers can cut a ${String(route.tiles)}-tile tunnel to it for ${String(route.cost)} gold and ${String(route.tiles * TUNNEL_WOOD)} wood, then a miner starts. Double-tap does the same.`
       : 'No legal tunnel reaches it from nearby. Dig closer to it first.',
     depleted: 'Mined out. Nothing left to dig here.',
     unminable: 'Miners can only work coal for now. Dig around it.',
@@ -76,9 +80,9 @@ export default function DepositPanel({
       {!pending && info.status === 'unreachable' && route && (
         <GameButton
           label="DIG & ASSIGN"
-          detail={`${String(route.tiles)} tiles · ${String(route.cost)} gold · ${String(idle)} free`}
+          detail={`${String(route.tiles)} tiles · ${String(route.cost)} gold · ${String(route.tiles * TUNNEL_WOOD)} wood · ${String(idle)} free`}
           onPress={onAssign}
-          disabled={idle <= 0 || gold < route.cost}
+          disabled={idle <= 0 || gold < route.cost || wood < route.tiles * TUNNEL_WOOD}
         />
       )}
       {info.status === 'available' && (

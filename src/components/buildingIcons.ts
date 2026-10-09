@@ -1,6 +1,7 @@
 import type { BuildingId } from '../game/buildings';
 import { FORGE_IDS, type ForgeId } from '../game/forges';
 import { HOUSE_IDS, type HouseId } from '../game/houses';
+import { FISHERY_IDS, ORCHARD_IDS, PASTURE_IDS, type FisheryId, type OrchardId, type PastureId } from '../game/farms';
 import type { RoadKind } from '../game/roads';
 import type { TrapKind } from '../game/traps';
 
@@ -12,6 +13,11 @@ export const BUILDING_ICONS: Record<BuildingId, string> = {
   foundry: '🔥',
   research: '🔭',
   armory: '🛡️',
+  woodcutter: '🪓',
+  granary: '🌾',
+  ...(Object.fromEntries(ORCHARD_IDS.map((id) => [id, '🍎'])) as Record<OrchardId, string>),
+  ...(Object.fromEntries(FISHERY_IDS.map((id) => [id, '🐟'])) as Record<FisheryId, string>),
+  ...(Object.fromEntries(PASTURE_IDS.map((id) => [id, '🐑'])) as Record<PastureId, string>),
   depot: '🛒',
   ...(Object.fromEntries(FORGE_IDS.map((id) => [id, '⚒️'])) as Record<ForgeId, string>),
   wall: '🧱',

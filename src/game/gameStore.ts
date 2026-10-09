@@ -2,7 +2,9 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { MINE_GALLERY_COUNT, MINE_STATIONS } from '../components/MineMapLayout';
 import { cartsOnLevel } from './haulage';
-import { RESOURCES, RESOURCE_INFO, emptyStock } from './resources';
+import { RESOURCES, RESOURCE_INFO, STARTING_WOOD, emptyStock } from './resources';
+import { startingForest } from './forest';
+import { STARTING_APPLES } from './farms';
 import { BUILDING_INFO, DWELLING_UNIT, STARTING_BUILDINGS, buildingCost, buildingStats, staffNeeded } from './buildings';
 import { ARMY_RECRUITING, UNIT_STATS, emptyArmy } from './units';
 import { act, resolveBattle, stepAI } from './combat';
@@ -44,6 +46,7 @@ import {
   workforceOf,
 } from './hold';
 import {
+  TUNNEL_WOOD,
   bargeBlocker,
   canAfford,
   canAffordBuild,
@@ -105,7 +108,7 @@ const createGameStore = () => create<GameState>()(persist<GameState, [], [], Sav
   vein: emptyStock(),
   mineExit: emptyStock(),
   mineStock: emptyStock(),
-  warehouse: { ...emptyStock(), coal: 16 },
+  warehouse: { ...emptyStock(), coal: 16, wood: STARTING_WOOD, apples: STARTING_APPLES },
   veinCapacity: 50,
   mineExitCapacity: startingStats.mineCapacity,
   mineCapacity: startingStats.mineCapacity,
@@ -120,6 +123,10 @@ const createGameStore = () => create<GameState>()(persist<GameState, [], [], Sav
   sites: startingSites,
   pendingSites: [],
   autoMiners: [],
+  forest: startingForest(),
+  forestSerial: 0,
+  flocks: {},
+  hungry: false,
   depositMined: {},
   openedStations: [stationKey(-1, 0), stationKey(-1, 1)],
   playerDug: [],
@@ -160,16 +167,19 @@ const createGameStore = () => create<GameState>()(persist<GameState, [], [], Sav
       const route = findDigRoute(layout, new Set(state.digPlan), standingTargets(layout, key));
       if (!route) return { notice: 'There’s no way to tunnel to that deposit from here.' };
       const cost = tunnelCost(state, route);
+      const wood = route.length * TUNNEL_WOOD;
       if (state.gold < cost) return { notice: `Tunnelling to that deposit costs ${String(cost)} gold (${String(route.length)} tiles).` };
+      if (state.warehouse.wood < wood) return { notice: `Tunnelling to that deposit takes ${String(wood)} wood for pit props: build a Woodcutter’s Hut.` };
       const stand = parseKey(route[route.length - 1]);
       const pending: Site = { row: stand.row, column: stand.column, faceRow: info.row, faceColumn: info.column, kind: 'deposit' };
       const crew = minerCrew(state, pending);
       if (free < crew) return { notice: 'The first miner on a level needs a cart pusher too: 2 free peasants.' };
       return {
         gold: state.gold - cost,
+        warehouse: { ...state.warehouse, wood: roundCoal(state.warehouse.wood - wood) },
         digPlan: [...state.digPlan, ...route],
         pendingSites: [...state.pendingSites, pending],
-        notice: `Digging ${String(route.length)} tile${route.length === 1 ? '' : 's'} to the ${RESOURCE_INFO[info.deposit ?? 'coal'].deposit.toLowerCase()} for ${String(cost)} gold. A miner will start when it’s through.`,
+        notice: `Digging ${String(route.length)} tile${route.length === 1 ? '' : 's'} to the ${RESOURCE_INFO[info.deposit ?? 'coal'].deposit.toLowerCase()} for ${String(cost)} gold and ${String(wood)} wood. A miner will start when it’s through.`,
       };
     }
     if (free < minerCrew(state, info.standing)) return { notice: 'The first miner on a level needs a cart pusher too: 2 free peasants.' };
@@ -592,6 +602,7 @@ const createGameStore = () => create<GameState>()(persist<GameState, [], [], Sav
     const planned = new Set(state.digPlan);
     const accepted: string[] = [];
     let gold = state.gold;
+    let wood = state.warehouse.wood;
     let reason = '';
     for (const [index, key] of keys.entries()) {
       const parent = index === 0 ? findDigParent(layout, planned, key) : keys[index - 1];
@@ -605,7 +616,12 @@ const createGameStore = () => create<GameState>()(persist<GameState, [], [], Sav
         reason = 'Not enough gold for the rest of the tunnel.';
         break;
       }
+      if (wood < TUNNEL_WOOD) {
+        reason = 'Not enough wood for pit props: build a Woodcutter’s Hut.';
+        break;
+      }
       gold -= cost;
+      wood = roundCoal(wood - TUNNEL_WOOD);
       planned.add(key);
       accepted.push(key);
     }
@@ -613,8 +629,9 @@ const createGameStore = () => create<GameState>()(persist<GameState, [], [], Sav
     const spent = state.gold - gold;
     return {
       gold,
+      warehouse: { ...state.warehouse, wood },
       digPlan: [...state.digPlan, ...accepted],
-      notice: `Ordered ${String(accepted.length)} tile${accepted.length === 1 ? '' : 's'} dug for ${String(spent)} gold.${reason ? ` ${reason}` : ''}`,
+      notice: `Ordered ${String(accepted.length)} tile${accepted.length === 1 ? '' : 's'} dug for ${String(spent)} gold and ${String(accepted.length * TUNNEL_WOOD)} wood.${reason ? ` ${reason}` : ''}`,
     };
   }),
 }), {
@@ -645,8 +662,31 @@ const createGameStore = () => create<GameState>()(persist<GameState, [], [], Sav
 // fresh copies of the store on purpose, so they always get a new one.
 const running = globalThis as { mineforgeStore?: ReturnType<typeof createGameStore>; mineforgeClock?: ReturnType<typeof setInterval> };
 const keepAcrossRefresh = __DEV__ && typeof jest === 'undefined';
+/** Records keyed by fixed ids (every building, resource, unit, item): a refresh may add entries to them. */
+const FIXED_RECORDS = ['buildings', 'warehouse', 'vein', 'mineExit', 'mineStock', 'army', 'recruits', 'items'];
 
-export const useGameStore = (keepAcrossRefresh ? running.mineforgeStore : undefined) ?? createGameStore();
+const kept = keepAcrossRefresh ? running.mineforgeStore : undefined;
+export const useGameStore = kept ?? createGameStore();
+if (kept) {
+  // A refresh that added state (a new feature) hands the kept store the new fields' starting values — and
+  // new entries in the records keyed by fixed ids (a new building, resource, unit or item) — so screens
+  // built for them don't break on it; its actions stay the ones it was made with.
+  const fresh = createGameStore().getInitialState() as unknown as Record<string, unknown>;
+  const current = kept.getState() as unknown as Record<string, unknown>;
+  const added: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(fresh)) {
+    if (typeof value === 'function') continue;
+    if (!(key in current)) {
+      added[key] = value;
+      continue;
+    }
+    if (!FIXED_RECORDS.includes(key)) continue;
+    const now = current[key] as Record<string, unknown>;
+    const missing = Object.entries(value as Record<string, unknown>).filter(([entry]) => !(entry in now));
+    if (missing.length > 0) added[key] = { ...Object.fromEntries(missing), ...now };
+  }
+  if (Object.keys(added).length > 0) kept.setState(added as Partial<GameState>);
+}
 if (keepAcrossRefresh) running.mineforgeStore = useGameStore;
 
 /** Load the saved game (call once storage is ready, before the simulation starts); only the first call loads. */

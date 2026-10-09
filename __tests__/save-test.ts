@@ -38,6 +38,11 @@ describe('loading older saves', () => {
     const state = store.useGameStore.getState();
     expect(state.placements.warehouse).toEqual({ x: 31, y: 34 });
     expect(state.placements.houses).toEqual({ x: 18, y: 35 });
+    // Saves from before wood get a new game's wood.
+    expect(state.warehouse.wood).toBe(30);
+    // … and a new game's apples, and no hunger.
+    expect(state.warehouse.apples).toBe(150);
+    expect(state.hungry).toBe(false);
     // Houses added since are there, unbuilt.
     expect(state.buildings.houses).toBe(2);
     expect(state.buildings.houses2).toBe(0);

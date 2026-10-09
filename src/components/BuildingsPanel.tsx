@@ -31,6 +31,7 @@ import { destroyRefund, upgradeBlocker } from '../game/costs';
 import { gearComing } from '../game/wagons';
 import { FORGE_IDS, FORGE_NAMES, isForge } from '../game/forges';
 import { isHouse } from '../game/houses';
+import { techsOf } from '../game/techs';
 import { ITEM_INFO, UNIT_GEAR } from '../game/items';
 import type { Workforce } from '../game/workforce';
 import { RESOURCES, RESOURCE_INFO } from '../game/resources';
@@ -145,6 +146,7 @@ export function BuildingDetail({ game, workforce, id, bare = false, onChooseSpot
   const job = construction.find((item) => item.building === id);
   const maxed = level >= MAX_BUILDING_LEVEL;
   const next = level + 1;
+  const branch = isForge(id) ? 'forges' : isHouse(id) ? 'houses' : id;
   const now = buildingEffects(id, level, game.techs);
   const after = maxed ? null : buildingEffects(id, next, game.techs);
   const cost = maxed ? null : buildingCost(id, next);
@@ -247,10 +249,12 @@ export function BuildingDetail({ game, workforce, id, bare = false, onChooseSpot
       )}
       {id !== 'keep' && (level > 0 || job) && <DestroyButton game={game} id={id} onDestroyed={onDestroyed} />}
 
-      <View style={styles.techs}>
-        <SectionLabel>TECH TREE · UPGRADES FOR GOLD</SectionLabel>
-        <TechBranchView game={game} branch={isForge(id) ? 'forges' : isHouse(id) ? 'houses' : id} showName={false} />
-      </View>
+      {techsOf(branch).length > 0 && (
+        <View style={styles.techs}>
+          <SectionLabel>TECH TREE · UPGRADES FOR GOLD</SectionLabel>
+          <TechBranchView game={game} branch={branch} showName={false} />
+        </View>
+      )}
     </View>
   );
 }

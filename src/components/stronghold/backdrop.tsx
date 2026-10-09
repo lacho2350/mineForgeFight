@@ -1,9 +1,10 @@
 // The backdrop: sky, mountains all round, the river running on through them, and the woods on the land
 // round the map.
-import { memo } from 'react';
+import { memo, useMemo } from 'react';
 import { Group, LinearGradient, Path, vec } from '@shopify/react-native-skia';
 import { GATE_ROAD, MAP_SIZE, RIVER_ROWS, SCENE_WIDTH as sceneWidth, iso } from '../GameSceneLayout';
-import { parseSvg } from '../skiaPaths';
+import { MOUNTAIN_FOOT, forestHash, parseSpot, type ForestSide, type ForestSpot } from '../../game/forest';
+import { parseSvg, useSvgPaths } from '../skiaPaths';
 import { ROAD_COLORS, poly, type P } from './shapes';
 
 type Side = 'backLeft' | 'backRight' | 'frontLeft' | 'frontRight';
@@ -86,22 +87,26 @@ function woodsPaths(trees: [number, number, number][], boulders: [number, number
     stone.light.push(rock.light);
     stone.dark.push(rock.dark);
   }
+  const sorted = [...trees].sort((a, b) => a[0] + a[1] - b[0] - b[1]);
+  return {
+    ...treePaths(sorted.map(([x, y, size]) => ({ ...iso(x, y), size }))),
+    stone: { light: stone.light.join(' '), dark: stone.dark.join(' '), shadow: stone.shadow.join(' ') },
+  };
+}
+
+// Trees standing on screen points (in drawing order): trunks, then three shades of crown.
+function treePaths(bases: (P & { size: number })[]) {
   const trunks: string[] = [];
   const crowns: string[][] = [[], [], []];
   const circle = (cx: number, cy: number, r: number) =>
     `M ${(cx - r).toFixed(1)} ${cy.toFixed(1)} a ${r.toFixed(1)} ${r.toFixed(1)} 0 1 0 ${(2 * r).toFixed(1)} 0 a ${r.toFixed(1)} ${r.toFixed(1)} 0 1 0 ${(-2 * r).toFixed(1)} 0 Z`;
-  for (const [x, y, size] of [...trees].sort((a, b) => a[0] + a[1] - b[0] - b[1])) {
-    const base = iso(x, y);
-    trunks.push(`M ${(base.x - 1).toFixed(1)} ${(base.y - 8 * size).toFixed(1)} h 2 v ${(8 * size).toFixed(1)} h -2 Z`);
-    crowns[0].push(circle(base.x, base.y - 12 * size, 6 * size));
-    crowns[1].push(circle(base.x - 3 * size, base.y - 9 * size, 4.5 * size));
-    crowns[2].push(circle(base.x + 3 * size, base.y - 10 * size, 4 * size));
+  for (const { x, y, size } of bases) {
+    trunks.push(`M ${(x - 1).toFixed(1)} ${(y - 8 * size).toFixed(1)} h 2 v ${(8 * size).toFixed(1)} h -2 Z`);
+    crowns[0].push(circle(x, y - 12 * size, 6 * size));
+    crowns[1].push(circle(x - 3 * size, y - 9 * size, 4.5 * size));
+    crowns[2].push(circle(x + 3 * size, y - 10 * size, 4 * size));
   }
-  return {
-    trunks: trunks.join(' '),
-    crowns: crowns.map((parts) => parts.join(' ')),
-    stone: { light: stone.light.join(' '), dark: stone.dark.join(' '), shadow: stone.shadow.join(' ') },
-  };
+  return { trunks: trunks.join(' '), crowns: crowns.map((parts) => parts.join(' ')) };
 }
 
 // The woods on the land round the map, carrying on the raiders' woods on its edge ring, with boulders
@@ -136,14 +141,17 @@ const BACKDROP = (() => {
     seed = (Math.imul(seed, 1103515245) + 12345) | 0;
     return ((seed >>> 8) & 0xffff) / 0xffff;
   };
+  const nearPeaks: Record<ForestSide, Peak[]> = { frontLeft: [], frontRight: [] };
   const ranges = RANGES.map((range) => {
     const light: string[] = [];
     const dark: string[] = [];
     const snow: string[] = [];
-    const peakAt = (base: P) => {
+    const peakAt = (base: P, side: Side) => {
       const h = range.low + random() * (range.high - range.low);
       const w = h * (1 + random() * 0.4);
-      const { light: lit, dark: shaded, top, left, right, front } = crag(base, w, h, 0, (random() - 0.5) * 0.3);
+      const lean = (random() - 0.5) * 0.3;
+      if (range.d === MOUNTAIN_FOOT && (side === 'frontLeft' || side === 'frontRight')) nearPeaks[side].push({ base, w, h, lean });
+      const { light: lit, dark: shaded, top, left, right, front } = crag(base, w, h, 0, lean);
       light.push(lit);
       dark.push(shaded);
       if (h > range.snowAbove) {
@@ -153,10 +161,11 @@ const BACKDROP = (() => {
     };
     for (const side of range.sides) {
       for (let t = -range.d - 4; t <= MAP_SIZE + range.d + 4; t += range.step * (0.8 + random() * 0.4)) {
-        if (!inGap(side, range.d, t)) peakAt(rangeFoot(side, range.d + random() * 0.8, t));
+        if (!inGap(side, range.d, t)) peakAt(rangeFoot(side, range.d + random() * 0.8, t), side);
       }
     }
-    return { key: `${range.sides.join()}-${String(range.d)}`, light: light.join(' '), dark: dark.join(' '), snow: snow.join(' '), lightColor: range.light, darkColor: range.dark, front: range.sides.includes('frontLeft') };
+    const front = range.sides.includes('frontLeft');
+    return { key: `${range.sides.join()}-${String(range.d)}`, light: light.join(' '), dark: dark.join(' '), snow: snow.join(' '), lightColor: range.light, darkColor: range.dark, front, near: front && range.d === MOUNTAIN_FOOT };
   });
   // The sky: everything above the farthest back range's foot line (and far out to either side).
   const far = RANGES[0].d;
@@ -184,12 +193,13 @@ const BACKDROP = (() => {
   }).join(' ');
   // The gate road on out through the pass.
   const road = poly([iso(GATE_ROAD.x, MAP_SIZE), iso(GATE_ROAD.x + GATE_ROAD.w, MAP_SIZE), iso(GATE_ROAD.x + GATE_ROAD.w, MAP_SIZE + 14), iso(GATE_ROAD.x, MAP_SIZE + 14)]);
-  return { ranges, sky, skyTop: apex.y - 200, skyLow: right.y, river, ripples, road };
+  return { ranges, nearPeaks, sky, skyTop: apex.y - 200, skyLow: right.y, river, ripples, road };
 })();
 
 // Drawn live, a handful of paths, so cheap to draw every frame: the back part (sky, river, road, the
-// far ranges and the woods behind the map) under the castle image; the front part (the woods and ranges
-// in front of the near sides, which may hide the map's edge) over it.
+// far ranges and the woods behind the map) under the castle image; the front part (the woods in front of
+// the near sides and the near mountains, which may hide the map's edge) over it; then the forest on those
+// mountains (ForestTrees), and last the far front range (`frontFar`) over them all.
 // The backdrop's geometry never changes: parsed once, on first use, and kept.
 let backdropPaths: ReturnType<typeof buildBackdropPaths> | null = null;
 function buildBackdropPaths() {
@@ -208,7 +218,7 @@ function buildBackdropPaths() {
   };
 }
 
-export const Backdrop = memo(function Backdrop({ part }: { part: 'back' | 'front' }) {
+export const Backdrop = memo(function Backdrop({ part }: { part: 'back' | 'front' | 'frontFar' }) {
   const paths = (backdropPaths ??= buildBackdropPaths());
   const range = (r: (typeof paths.ranges)[number]) => (
     <Group key={r.key}>
@@ -217,6 +227,7 @@ export const Backdrop = memo(function Backdrop({ part }: { part: 'back' | 'front
       {r.snow && <Path path={r.snow} color="#eef2f3" />}
     </Group>
   );
+  if (part === 'frontFar') return <Group>{paths.ranges.filter((r) => r.front && !r.near).map(range)}</Group>;
   const woods = paths.woods[part];
   const trees = (
     <Group>
@@ -231,7 +242,7 @@ export const Backdrop = memo(function Backdrop({ part }: { part: 'back' | 'front
     return (
       <Group>
         {trees}
-        {paths.ranges.filter((r) => r.front).map(range)}
+        {paths.ranges.filter((r) => r.near).map(range)}
       </Group>
     );
   }
@@ -245,6 +256,56 @@ export const Backdrop = memo(function Backdrop({ part }: { part: 'back' | 'front
       <Path path={paths.road} color={ROAD_COLORS.dirt.fill} />
       {paths.ranges.filter((r) => !r.front).map(range)}
       {trees}
+    </Group>
+  );
+});
+
+type Peak = { base: P; w: number; h: number; lean: number };
+
+// Where a forest stand's tree stands on the near mountains: a point `offset` (0–1) along its spot, on the
+// slope above the range's foot — low, middle or high by the stand's band — under the mountains' top edge
+// there (the highest of the peaks' outlines). Null where there's no mountain to stand on.
+function slopePoint(spot: ForestSpot, offset: number): P | null {
+  const foot = rangeFoot(spot.side, MOUNTAIN_FOOT + 0.4, spot.along + offset);
+  let surface = foot.y;
+  for (const { base, w, h, lean } of BACKDROP.nearPeaks[spot.side]) {
+    const left = base.x - w;
+    const right = base.x + w;
+    const top = base.x + w * lean;
+    if (foot.x <= left || foot.x >= right) continue;
+    const rise = foot.x <= top ? (foot.x - left) / (top - left) : (right - foot.x) / (right - top);
+    surface = Math.min(surface, base.y - h * rise);
+  }
+  const height = foot.y - surface;
+  if (height < 14) return null;
+  return { x: foot.x, y: foot.y - height * (0.16 + 0.2 * spot.band) };
+}
+
+// The forest on the near mountains (game/forest.ts): up to three trees on each stand, fewer as the
+// woodcutters cut it down. `look` ("key=trees;…") changes only when a tree falls or a stand grows back.
+export const ForestTrees = memo(function ForestTrees({ look }: { look: string }) {
+  const svgs = useMemo(() => {
+    const bases: (P & { size: number })[] = [];
+    for (const stand of look ? look.split(';') : []) {
+      const [key, count] = stand.split('=');
+      const spot = parseSpot(key);
+      if (!spot) continue;
+      for (let i = 0; i < Number(count); i++) {
+        const h = forestHash(spot.along, spot.band * 3 + i, spot.side === 'frontLeft' ? 5 : 6);
+        const at = slopePoint(spot, 0.15 + (h % 8) / 10);
+        if (at) bases.push({ x: at.x + ((h >>> 5) % 7) - 3, y: at.y + ((h >>> 9) % 5) - 2, size: 0.75 + ((h >>> 12) % 4) / 10 });
+      }
+    }
+    const paths = treePaths(bases.sort((a, b) => a.y - b.y));
+    return [paths.trunks, ...paths.crowns];
+  }, [look]);
+  const paths = useSvgPaths(svgs);
+  return (
+    <Group>
+      <Path path={paths[0]} color={TRUNK} />
+      {CROWNS.map((color, index) => (
+        <Path key={color} path={paths[index + 1]} color={color} />
+      ))}
     </Group>
   );
 });

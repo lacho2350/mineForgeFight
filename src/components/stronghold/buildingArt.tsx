@@ -4,7 +4,7 @@ import { memo } from 'react';
 import { Circle, Group, Line, Path, Rect, vec } from '@shopify/react-native-skia';
 import type { BuildingId } from '../../game/buildings';
 import { ARMY_UNITS } from '../../game/units';
-import { CAMPFIRE, MINE_PLOT, PARADE, iso, type Plot } from '../GameSceneLayout';
+import { CAMPFIRE, MINE_PLOT, PARADE, RIVER_ROWS, iso, type Plot } from '../GameSceneLayout';
 import { spritePixels } from '../unitSprites';
 import { svgPath } from '../skiaPaths';
 import {
@@ -26,7 +26,11 @@ import {
   fortMat,
   matOf,
   poly,
+  type Mat,
 } from './shapes';
+
+// Cut logs, end grain on top.
+const LOGS: Mat = { left: '#8a5a2e', right: '#6b4422', top: '#c9955c', roof: '#8a5a2e', roofDark: '#553519' };
 
 export function BuildingArt({ id, plot, tier, level }: { id: BuildingId; plot: Plot; tier: number; level: number }) {
   const m = matOf(tier);
@@ -381,6 +385,117 @@ export function BuildingArt({ id, plot, tier, level }: { id: BuildingId; plot: P
               </Group>
             );
           })}
+        </Group>
+      );
+    }
+    case 'granary': {
+      // A tall barn on a stone footing, its loft door open, a few sacks at the foot.
+      const h = 16 + 3 * tier;
+      return (
+        <Group>
+          <Box x={x + 0.2} y={y + 0.2} w={w - 0.4} d={d - 0.5} h={5} m={STONE} />
+          <Box x={x + 0.2} y={y + 0.2} w={w - 0.4} d={d - 0.5} h={h - 5} z={5} m={tier >= 3 ? m : MATS[0]} />
+          <Gable x={x + 0.12} y={y + 0.12} w={w - 0.24} d={d - 0.34} z={h} rise={12} m={tier >= 2 ? m : MATS[0]} along="y" />
+          <LeftFace x={x + 0.2} yFront={y + d - 0.3} u0={0.55} u1={0.95} v0={h - 9} v1={h - 3} color={DARK} />
+          {[0.35, 0.75, 1.15].map((u) => {
+            const at = iso(x + u, y + d - 0.12);
+            return <Circle key={u} cx={at.x} cy={at.y - 2} r={2.4} color="#d8c48a" />;
+          })}
+        </Group>
+      );
+    }
+    case 'orchard1':
+    case 'orchard2':
+    case 'orchard3':
+    case 'orchard4':
+    case 'orchard5':
+    case 'orchard6':
+    case 'orchard7':
+    case 'orchard8': {
+      // Rows of apple trees, red with fruit, behind a low hedge of posts.
+      const rows = [0.55, 1.5, 2.45];
+      return (
+        <Group>
+          {rows.flatMap((ty) =>
+            rows.map((tx) => {
+              const at = iso(x + tx, y + ty);
+              const r = 4.5 + tier;
+              return (
+                <Group key={`${String(tx)}-${String(ty)}`}>
+                  <Rect x={at.x - 1} y={at.y - 7} width={2} height={7} color="#5e4630" />
+                  <Circle cx={at.x} cy={at.y - 9 - tier} r={r} color="#4f7a36" />
+                  <Circle cx={at.x - r * 0.45} cy={at.y - 9 - tier} r={1.2} color="#c0392b" />
+                  <Circle cx={at.x + r * 0.4} cy={at.y - 11 - tier} r={1.2} color="#c0392b" />
+                  <Circle cx={at.x + r * 0.1} cy={at.y - 7 - tier} r={1.2} color="#c0392b" />
+                </Group>
+              );
+            }),
+          )}
+        </Group>
+      );
+    }
+    case 'fishery1':
+    case 'fishery2':
+    case 'fishery3':
+    case 'fishery4':
+    case 'fishery5':
+    case 'fishery6':
+    case 'fishery7':
+    case 'fishery8': {
+      // A shack on stilts at the water's edge, a jetty out over the river, a rack of drying fish.
+      const h = 7 + 2 * tier;
+      // The jetty runs from the hut out over the river, whichever row of the bank the hut stands on.
+      const jetty = [iso(x + 0.35, RIVER_ROWS - 0.9), iso(x + 0.65, RIVER_ROWS - 0.9), iso(x + 0.65, y + 0.2), iso(x + 0.35, y + 0.2)];
+      return (
+        <Group>
+          <Path path={svgPath(poly(jetty))} color="#8a6440" />
+          <Box x={x + 0.15} y={y + 0.2} w={0.7} d={0.65} h={h} z={3} m={MATS[0]} />
+          <Gable x={x + 0.1} y={y + 0.15} w={0.8} d={0.75} z={h + 3} rise={5} m={tier >= 2 ? m : MATS[0]} />
+          {[0.2, 0.5, 0.8].map((u) => {
+            const at = iso(x + u, y + 0.95);
+            return <Rect key={u} x={at.x - 0.6} y={at.y - 6} width={1.2} height={4} color="#9fb2bc" />;
+          })}
+        </Group>
+      );
+    }
+    case 'pasture1':
+    case 'pasture2':
+    case 'pasture3':
+    case 'pasture4':
+    case 'pasture5':
+    case 'pasture6':
+    case 'pasture7':
+    case 'pasture8': {
+      // Grazing on the raiders' ground: a fence of posts round the field and the shepherd's shed. The
+      // sheep themselves are live (their flock changes).
+      const posts: [number, number][] = [];
+      for (let i = 0; i <= 6; i++) {
+        posts.push([x + (i * w) / 6, y], [x + (i * w) / 6, y + d], [x, y + (i * d) / 6], [x + w, y + (i * d) / 6]);
+      }
+      return (
+        <Group>
+          {posts.map(([px, py], index) => {
+            const at = iso(px, py);
+            return <Rect key={index} x={at.x - 0.7} y={at.y - 4} width={1.4} height={4} color="#6e5236" />;
+          })}
+          <Box x={x + 0.2} y={y + 0.2} w={0.8} d={0.8} h={6 + tier} m={MATS[0]} />
+          <Gable x={x + 0.15} y={y + 0.15} w={0.9} d={0.9} z={6 + tier} rise={5} m={tier >= 2 ? m : MATS[0]} />
+        </Group>
+      );
+    }
+    case 'woodcutter': {
+      // A log cabin (later roofed in its tier's tiles or slate), the log stack beside it growing with the
+      // hut, and a chopping block in front.
+      const h = 9 + 2 * tier;
+      return (
+        <Group>
+          <Box x={x + 0.15} y={y + 0.15} w={1.1} d={1.25} h={h} m={MATS[0]} />
+          <Gable x={x + 0.08} y={y + 0.08} w={1.24} d={1.39} z={h} rise={7} m={tier >= 2 ? m : MATS[0]} along="y" />
+          <LeftFace x={x + 0.15} yFront={y + 1.4} u0={0.4} u1={0.7} v0={0} v1={h - 3} color={DARK} />
+          {Array.from({ length: 1 + tier }, (_, row) => (
+            <Box key={row} x={x + 1.4} y={y + 0.25} w={0.45} d={1.3} h={3} z={row * 3} m={LOGS} />
+          ))}
+          <Box x={x + 0.55} y={y + 1.6} w={0.22} d={0.22} h={4} m={LOGS} />
         </Group>
       );
     }

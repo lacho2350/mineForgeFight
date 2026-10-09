@@ -5,15 +5,15 @@ import { Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-na
 import { ScrollView } from 'react-native-gesture-handler';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { freeHands, haulWalk, selectMineLayout, workforceOf } from '../game/hold';
-import { getDepthCost, tileDigCost, tunnelCost } from '../game/costs';
+import { TUNNEL_WOOD, getDepthCost, tileDigCost, tunnelCost } from '../game/costs';
 import { MAX_DEPTH, MINE_STATIONS_PER_GALLERY, VEIN_CAPACITY_PER_DEPTH, useGameStore } from '../game/gameStore';
 import { haulFactor } from '../game/roads';
 import { buildingStats } from '../game/buildings';
 import { findDigRoute, getDepositInfo, standingTargets, tileKey } from '../game/mineLayout';
 import DepositPanel from '../components/DepositPanel';
 import HaulagePanel from '../components/HaulagePanel';
-import StockpileTable from '../components/StockpileTable';
-import { stockTotal } from '../game/resources';
+import BinPanel from '../components/BinPanel';
+import { stockTotal, type Resource } from '../game/resources';
 import { MINE_TILE_SIZE } from '../components/MineMapLayout';
 import MineScene from '../components/MineScene';
 import { GameButton, LiveSignal, SectionLabel } from '../components/GameUI';
@@ -27,6 +27,8 @@ export default function MineScreen() {
   const layout = selectMineLayout(game);
   const [digMode, setDigMode] = useState(false);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  // The resource whose bin was tapped (one panel at a time: a bin or a tile).
+  const [selectedBin, setSelectedBin] = useState<Resource | null>(null);
   // Deposit amounts change every tick; the cached layout only refreshes on redraw, so use live ones.
   const selected = selectedKey ? getDepositInfo({ ...layout, depositMined: game.depositMined }, selectedKey) : null;
   const selectedPending = !!selectedKey && game.pendingSites.some((site) => tileKey(site.faceRow, site.faceColumn) === selectedKey);
@@ -86,10 +88,10 @@ export default function MineScreen() {
             </Pressable>
             <Text style={styles.digHint}>
               {digMode
-                ? `Drag from a tunnel across rock · from ${String(tileDigCost(game, 0))} gold per tile · two fingers, right-drag or arrow keys to move`
+                ? `Drag from a tunnel across rock · from ${String(tileDigCost(game, 0))} gold and ${String(TUNNEL_WOOD)} wood per tile (${String(Math.floor(game.warehouse.wood))} wood) · two fingers, right-drag or arrow keys to move`
                 : game.digPlan.length > 0
                   ? `${String(game.digPlan.length)} tile${game.digPlan.length === 1 ? '' : 's'} left to dig`
-                  : 'Drag, arrow keys or WASD to move · pinch, wheel or +/− to zoom · tap a deposit for details · double-tap to assign a miner.'}
+                  : 'Drag, arrow keys or WASD to move · pinch, wheel or +/− to zoom · tap a deposit or a bin for details · double-tap to assign a miner.'}
             </Text>
           </View>
 
@@ -112,8 +114,16 @@ export default function MineScreen() {
                 pageScrollRef={pageScrollRef}
                 depositMined={game.depositMined}
                 selectedKey={selectedKey}
-                onSelectTile={(key) => setSelectedKey((current) => (current === key ? null : key))}
+                onSelectTile={(key) => {
+                  setSelectedBin(null);
+                  setSelectedKey((current) => (current === key ? null : key));
+                }}
+                onSelectBin={(resource) => {
+                  setSelectedKey(null);
+                  setSelectedBin((current) => (current === resource ? null : resource));
+                }}
                 onAssignTile={(key) => {
+                  setSelectedBin(null);
                   setSelectedKey(key);
                   game.assignMiner(key);
                 }}
@@ -126,6 +136,7 @@ export default function MineScreen() {
               info={selected}
               idle={freeHands(game)}
               gold={game.gold}
+              wood={game.warehouse.wood}
               pending={selectedPending}
               route={selectedRoute}
               onAssign={() => game.assignMiner(selected.key)}
@@ -134,17 +145,18 @@ export default function MineScreen() {
             />
           )}
 
-          <View style={styles.stockpiles}>
-            <SectionLabel>STOCKPILES</SectionLabel>
-            <StockpileTable
+          {selectedBin && (
+            <BinPanel
+              resource={selectedBin}
               stages={[
-                { label: 'MINERS', stock: game.vein, capacity: game.veinCapacity },
-                { label: 'MINE EXIT', stock: game.mineExit, capacity: game.mineExitCapacity },
-                { label: 'MINE', stock: game.mineStock, capacity: game.mineCapacity },
-                { label: 'WAREHOUSE', stock: game.warehouse, capacity: game.warehouseCapacity },
+                { label: 'MINERS’ BINS', amount: game.vein[selectedBin], capacity: game.veinCapacity },
+                { label: 'MINE EXIT', amount: game.mineExit[selectedBin], capacity: game.mineExitCapacity },
+                { label: 'MINE STOCKPILE', amount: game.mineStock[selectedBin], capacity: game.mineCapacity },
+                { label: 'WAREHOUSE', amount: game.warehouse[selectedBin], capacity: game.warehouseCapacity },
               ]}
+              onClose={() => setSelectedBin(null)}
             />
-          </View>
+          )}
 
           <View style={styles.logisticsSection}>
             <View style={styles.sectionHeading}><View><SectionLabel>HAULING CHAIN</SectionLabel><Text style={styles.mineSubheading}>Every resource keeps moving while you build.</Text></View><Text style={styles.tickLabel}>1 SEC / TICK</Text></View>
@@ -228,7 +240,6 @@ const styles = StyleSheet.create({
   digHint: { flex: 1, color: '#9da28d', fontFamily: 'monospace', fontSize: 9 },
   sceneCaption: { position: 'absolute', left: 8, top: 8, flexDirection: 'row', alignItems: 'center', gap: 7, paddingVertical: 5, paddingHorizontal: 8, backgroundColor: 'rgba(25, 31, 27, 0.9)' },
   captionText: { color: '#e7dfc6', fontFamily: 'monospace', fontSize: 8 },
-  stockpiles: { gap: 10, paddingVertical: 16, borderBottomWidth: 1, borderColor: '#353b32' },
   logisticsSection: { paddingTop: 22 },
   sectionHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 9 },
   tickLabel: { color: '#7f8776', fontFamily: 'monospace', fontSize: 8 },

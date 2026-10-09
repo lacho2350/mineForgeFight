@@ -10,6 +10,8 @@ import { roadCostText, trapBlocker, trapCostText, upgradeBlocker } from '../game
 import { useGameStore } from '../game/gameStore';
 import { BUILDING_IDS, BUILDING_INFO, MAX_BUILDING_LEVEL, buildingCost, buildingStats, type BuildingId } from '../game/buildings';
 import { HOUSE_IDS } from '../game/houses';
+import { fellingStand, forestWood } from '../game/forest';
+import { FOODS } from '../game/farms';
 import { DEFAULT_SPOTS, FOOTPRINTS, MAP_SIZE, SIDE_NAMES, coveredTiles, isPlaceable, nearestFreeSpot, placementProblem, sidesOf, type Spot } from '../game/cityMap';
 import { ROAD_INFO, ROAD_KINDS, haulFactor, roadProblem, roadsUnder, type RoadKind } from '../game/roads';
 import { CLEAR_CREW, rockAt, rockyTest, rocksLeft } from '../game/rocks';
@@ -252,6 +254,7 @@ export default function StrongholdScreen() {
           />
           {popup.id === 'keep' && <DefenceSummary game={game} workforce={workforce} />}
           {popup.id === 'warehouse' && <Stockpiles game={game} />}
+          {popup.id === 'woodcutter' && <ForestStatus game={game} />}
           {popup.id === 'docks' && <BargesPanel game={game} />}
           {popup.id === 'armory' && <GearStore game={game} />}
           {isForge(popup.id) && <ForgePanel game={game} forge={popup.id} />}
@@ -311,6 +314,7 @@ function Hud({ game, workforce }: { game: GameState; workforce: Workforce }) {
       <View style={styles.hudRow}>
         <Stat label="GOLD" value={Math.floor(game.gold).toLocaleString()} tone="#e5a565" />
         <Stat label={`PEASANTS · ${String(workforce.idle)} IDLE`} value={`${String(game.population)}/${String(beds)}`} tone="#c0cd83" />
+        <Stat label={game.hungry ? 'FOOD · HUNGRY' : 'FOOD'} value={Math.floor(FOODS.reduce((sum, food) => sum + game.warehouse[food], 0)).toLocaleString()} tone={game.hungry ? '#e08a72' : '#d6bb79'} />
         {raidIn !== null && <Stat label={`RAID ${String(game.raidsFought + 1)}`} value={clock(raidIn)} tone="#e08a72" />}
       </View>
     </View>
@@ -618,6 +622,23 @@ function TrapSheet({ game, x, y, onClose }: { game: GameState; x: number; y: num
 }
 
 // ——— Pop-up contents ———
+
+// The forest beyond the gate the woodcutters fell (see game/forest.ts).
+function ForestStatus({ game }: { game: GameState }) {
+  const stand = fellingStand(game.forest);
+  const left = stand ? Math.floor(game.forest[stand] ?? 0) : 0;
+  return (
+    <View style={styles.block}>
+      <View style={styles.blockHeader}>
+        <SectionLabel>THE FOREST</SectionLabel>
+        <Text style={styles.note}>{Math.floor(game.warehouse.wood).toLocaleString()} / {game.warehouseCapacity.toLocaleString()} WOOD IN THE WAREHOUSE</Text>
+      </View>
+      <Text style={styles.note}>
+        {Object.keys(game.forest).length.toLocaleString()} STANDS ON THE MOUNTAINS · {Math.floor(forestWood(game.forest)).toLocaleString()} WOOD STANDING · FELLING ONE WITH {left.toLocaleString()} LEFT · EVERY STAND CUT DOWN GROWS BACK ELSEWHERE
+      </Text>
+    </View>
+  );
+}
 
 function Stockpiles({ game }: { game: GameState }) {
   const walk = haulWalk(game);

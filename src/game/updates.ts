@@ -1,10 +1,12 @@
 // Changes to the state shared by the store's actions and the tick: settling a battle, returning goods,
 // starting a building, moving stock.
 import { RESOURCES, type Resource, type Stock } from './resources';
+import { FOOTPRINTS, sideOf, type MapSide } from './cityMap';
+import { FISHERY_IDS, LOST_RAID_SHEEP_TAKEN, PASTURE_IDS, RAID_SHEEP_TAKEN } from './farms';
 import { BUILDING_INFO, buildingCost, buildingStats, buildingTime, crewSize, type BuildingId, type BuildingLevels } from './buildings';
 import { ARMY_UNITS } from './units';
 import { battleOutcome, raiderStrength, type Battle } from './combat';
-import { FIELD_BOUNTY, FIELD_PLUNDER_SHARE, PLUNDER_SHARE, RAID_INTERVAL, raidBounty } from './raids';
+import { FIELD_BOUNTY, FIELD_PLUNDER_SHARE, PLUNDER_SHARE, RAID_INTERVAL, raidBounty, raidSide } from './raids';
 import { BARGE_SAIL, type Barge } from './ship';
 import { ITEM_INFO, type ItemId, type ItemStock } from './items';
 import { FORGE_NAMES, addLoad, isForge, type ForgeTask, type ForgeTasks } from './forges';
@@ -67,7 +69,7 @@ export function undoWagonTrip(
   return 'in the store';
 }
 
-type SettleState = Pick<GameState, 'gold' | 'warehouse' | 'army' | 'battleArmy' | 'elapsedSeconds' | 'raid' | 'raidsFought' | 'raidsLostInARow'>;
+type SettleState = Pick<GameState, 'gold' | 'warehouse' | 'army' | 'battleArmy' | 'elapsedSeconds' | 'raid' | 'raidsFought' | 'raidsLostInARow' | 'buildings' | 'placements' | 'flocks'>;
 
 // A battle just ended: survivors rejoin the army, and the bounty is paid or the plunder taken.
 export function settleBattle(state: SettleState, battle: Battle) {
@@ -91,7 +93,7 @@ export function settleBattle(state: SettleState, battle: Battle) {
   if (report.outcome === 'won') {
     report.bounty = Math.round(raidBounty(raiderStrength(battle)) * (field ? FIELD_BOUNTY : 1));
     gold += report.bounty;
-    notice = `Raid ${String(number)} beaten${field ? ' in the field' : ''}! The raiders' bounty: ${String(report.bounty)} gold.`;
+    notice = `Raid ${String(number)} won: +${String(report.bounty)} gold.`;
   } else if (report.outcome === 'lost') {
     const taken: Partial<Stock> = {};
     warehouse = { ...warehouse };
@@ -104,15 +106,20 @@ export function settleBattle(state: SettleState, battle: Battle) {
     gold -= goldTaken;
     report.plundered = { gold: goldTaken, resources: taken };
     notice = field
-      ? `Raid ${String(number)}: the army was beaten in the field. The raiders pillaged the outskirts: ${String(goldTaken)} gold and a little of every stockpile.`
-      : `Raid ${String(number)}: the hold fell. The raiders carried off ${String(goldTaken)} gold and a share of every stockpile.`;
+      ? `Raid ${String(number)} lost in the field: −${String(goldTaken)} gold and a little of every stockpile.`
+      : `Raid ${String(number)} lost: the hold was plundered, −${String(goldTaken)} gold and a share of every stockpile.`;
   } else {
-    notice = `Raid ${String(number)}: the raiders gave up and withdrew.`;
+    notice = `Raid ${String(number)}: the raiders withdrew.`;
   }
+  // On their way, the raiders ravaged the land outside the walls on their side.
+  const ravaged = ravage(state, raidSide(number), report.outcome === 'lost');
+  if (ravaged.note) notice += ` ${ravaged.note}`;
   return {
     army,
     gold,
     warehouse,
+    buildings: ravaged.buildings,
+    flocks: ravaged.flocks,
     raidReport: report,
     raid: null,
     raidsFought: Math.max(state.raidsFought, number),
@@ -120,6 +127,38 @@ export function settleBattle(state: SettleState, battle: Battle) {
     nextRaidAt: state.elapsedSeconds + RAID_INTERVAL,
     notice,
   };
+}
+
+// What raiders from `side` do to the land outside the walls: they drive off a share of every flock grazing
+// there (more if they won), and if they won, burn every fishing hut on that bank down a level.
+function ravage(state: Pick<GameState, 'buildings' | 'placements' | 'flocks'>, side: MapSide, won: boolean) {
+  let { buildings, flocks } = state;
+  let sheep = 0;
+  const burned: string[] = [];
+  const onSide = (id: BuildingId) => {
+    const spot = state.placements[id];
+    return !!spot && state.buildings[id] > 0 && sideOf(spot, FOOTPRINTS[id]) === side;
+  };
+  for (const id of PASTURE_IDS) {
+    const flock = flocks[id] ?? 0;
+    if (!onSide(id) || flock <= 0) continue;
+    const taken = Math.round(flock * (won ? LOST_RAID_SHEEP_TAKEN : RAID_SHEEP_TAKEN));
+    if (taken <= 0) continue;
+    flocks = { ...flocks, [id]: flock - taken };
+    sheep += taken;
+  }
+  if (won) {
+    for (const id of FISHERY_IDS) {
+      if (!onSide(id)) continue;
+      buildings = { ...buildings, [id]: buildings[id] - 1 };
+      burned.push(BUILDING_INFO[id].name);
+    }
+  }
+  const notes = [
+    sheep > 0 ? `They drove off ${String(sheep)} sheep.` : '',
+    burned.length > 0 ? `They burned ${burned.join(', ')} down a level.` : '',
+  ];
+  return { buildings, flocks, note: notes.filter(Boolean).join(' ') };
 }
 
 // Apply a new battle state, settling the raid if it just ended.

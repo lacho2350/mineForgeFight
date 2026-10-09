@@ -10,7 +10,7 @@ import type { Placements } from '../../game/cityMap';
 import { BERTHS, bargePose, bargeRoute } from '../../game/ship';
 import { wagonStops, type WagonJob } from '../../game/wagons';
 import { walkBetween, type Roads } from '../../game/roads';
-import { RESOURCES, RESOURCE_INFO } from '../../game/resources';
+import { RESOURCE_INFO, type Resource } from '../../game/resources';
 import { CAMPFIRE, TILE_HH, TILE_HW, iso, plotOf, type Plot } from '../GameSceneLayout';
 import { parseSvg, useSvgPaths } from '../skiaPaths';
 import { BANNER, DARK, ORIGIN, poly, tierOf, type P } from './shapes';
@@ -19,12 +19,12 @@ import { CartArt, WHEEL } from './buildingArt';
 /** Stockpiles change look in steps, so ordinary ticks don't redraw the castle. */
 export const PILE_STEPS = 6;
 
-// The warehouse's piles, one per resource, growing with the stock (in steps). They change often,
-// so they're drawn live instead of making the still image redraw.
-export const Piles = memo(function Piles({ steps, plot }: { steps: string; plot: Plot }) {
+// A store's piles (the warehouse's, the granary's), one per resource, growing with the stock (in steps).
+// They change often, so they're drawn live instead of making the still image redraw.
+export const Piles = memo(function Piles({ resources, steps, plot }: { resources: readonly Resource[]; steps: string; plot: Plot }) {
   const piles = steps.split(',').map(Number);
   // Each pile a little pyramid: its two lit faces in the resource's colour, the two shaded ones darker.
-  const svgs = RESOURCES.flatMap((resource, index) => {
+  const svgs = resources.flatMap((resource, index) => {
     const fill = piles[index] / PILE_STEPS;
     if (fill <= 0) return ['', ''];
     const x = plot.x + 0.15 + (index % 4) * 0.7;
@@ -36,7 +36,7 @@ export const Piles = memo(function Piles({ steps, plot }: { steps: string; plot:
   const paths = useSvgPaths(svgs);
   return (
     <Group>
-      {RESOURCES.map((resource, index) =>
+      {resources.map((resource, index) =>
         svgs[index * 2] ? (
           <Group key={resource}>
             <Path path={paths[index * 2]} color={RESOURCE_INFO[resource].color} />
@@ -341,3 +341,29 @@ export function ProgressBar({ job, plot }: { job: Construction; plot: Plot }) {
     </Group>
   );
 }
+
+// The sheep on the pastures (`look`: "x,y,sheep;…" per pasture, the plot's corner and its flock), scattered
+// over the field clear of the shepherd's shed. Live, because the flock grows and raiders drive sheep off.
+export const Flocks = memo(function Flocks({ look }: { look: string }) {
+  const sheep: P[] = [];
+  for (const pasture of look ? look.split(';') : []) {
+    const [px, py, count] = pasture.split(',').map(Number);
+    for (let i = 0; i < count; i++) {
+      // A golden-angle scatter over the field, keeping off the shed in its back corner.
+      const a = i * 2.39996;
+      const r = 0.35 + 0.95 * Math.sqrt((i + 0.5) / 30);
+      sheep.push(iso(px + 1.75 + Math.cos(a) * r * 0.9, py + 1.75 + Math.sin(a) * r * 0.9));
+    }
+  }
+  return (
+    <Group>
+      {sheep.map((at, index) => (
+        <Group key={index}>
+          <Circle cx={at.x} cy={at.y - 2} r={2.3} color="#eeeae0" />
+          <Circle cx={at.x + (index % 2 === 0 ? 2.2 : -2.2)} cy={at.y - 2.6} r={1} color="#2e2a26" />
+        </Group>
+      ))}
+    </Group>
+  );
+});
+

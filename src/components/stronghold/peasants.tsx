@@ -5,15 +5,19 @@ import type { SharedValue } from 'react-native-reanimated';
 import type { Construction } from '../../game/state';
 import type { BuildingId } from '../../game/buildings';
 import { HOUSE_IDS } from '../../game/houses';
+import { FISHERY_IDS, ORCHARD_IDS, PASTURE_IDS } from '../../game/farms';
 import { FOOTPRINTS, MINE_SPOT, spotOf, type Placements } from '../../game/cityMap';
-import { walkBetween, type Roads, type Walk } from '../../game/roads';
+import { FOREST_EXIT, parseSpot, standWay } from '../../game/forest';
+import { walkBetween, walkOn, type Roads, type Walk } from '../../game/roads';
 import type { ClearOrder } from '../../game/rocks';
 import type { Workforce } from '../../game/workforce';
 import { CAMPFIRE, TILE_HH, TILE_HW, iso, plotOf } from '../GameSceneLayout';
 import { ORIGIN } from './shapes';
 
 const TUNICS = ['#7a5a3a', '#5d6e3a', '#8a6a4a', '#6a5a7a', '#7a4a3a'];
-const LOADS = ['#1c1c1f', '#9a9da3', '#c46a2b', '#7a3427'];
+const LOADS = ['#1c1c1f', '#9a9da3', '#c46a2b', '#7a3427', '#8a5a2e'];
+/** The logs woodcutters carry home. */
+const LOGS_LOAD = 4;
 
 /** A peasant, standing with their feet at (x, y) (tower archers, drawn into the still image). */
 export function Peasant({ x = 0, y = 0, tunic }: { x?: number; y?: number; tunic: string }) {
@@ -77,7 +81,7 @@ const HAMMER = 2;
 type Spec = { mode: number; cell: number; route: number[]; times: number[]; speed: number; phase: number; x: number; y: number; load: boolean; carryBack: boolean };
 
 const MAX_WALKERS = 24;
-const STAFFED_SHOWN: BuildingId[] = [...HOUSE_IDS, 'docks', 'gate', 'foundry', 'research', 'armory', 'stables', 'balloonWorks', 'monastery', 'barracks', 'guardhouse', 'archery', 'chapel', 'sanctum', 'griffinEyrie'];
+const STAFFED_SHOWN: BuildingId[] = [...HOUSE_IDS, 'docks', 'gate', 'foundry', 'research', 'armory', 'stables', 'balloonWorks', 'monastery', 'barracks', 'guardhouse', 'archery', 'chapel', 'sanctum', 'griffinEyrie', 'granary', ...ORCHARD_IDS, ...FISHERY_IDS, ...PASTURE_IDS];
 
 function peasantSpecs(
   workforce: Workforce,
@@ -87,6 +91,7 @@ function peasantSpecs(
   placements: Placements,
   roads: Roads,
   clearedRocks: string[],
+  felling: string,
 ): Spec[] {
   const specs: Spec[] = [];
   const walker = (walk: Walk, speed: number, phase: number, cell: number, load: number, carryBack: boolean) => {
@@ -116,6 +121,14 @@ function peasantSpecs(
       walkers += 1;
     });
   }
+  // Woodcutters out through the gate and down the road to the forest, on to the stand being felled, and
+  // home with logs on their shoulders.
+  const hut = footprint('woodcutter');
+  const stand = felling ? parseSpot(felling) : null;
+  const road = hut && buildings.woodcutter > 0 && stand ? walkBetween(hut, { ...FOREST_EXIT, w: 1, d: 1 }, placements, roads, clearedRocks) : null;
+  const fell = road && stand ? walkOn(road, standWay(stand)) : null;
+  const cutters = fell ? Math.min(3, workforce.staff.woodcutter, MAX_WALKERS - walkers) : 0;
+  for (let i = 0; i < cutters && fell; i++) walker(fell, 0.8, i / Math.max(1, cutters), (i + 2) % TUNICS.length, LOGS_LOAD, true);
   for (const job of construction) {
     const plot = plotOf(job.building, placements);
     if (!plot) continue;
@@ -143,7 +156,7 @@ function peasantSpecs(
   return specs;
 }
 
-export function PeasantAtlas({ workforce, construction, clearOrders, clock, buildings, placements, roads, clearedRocks }: {
+export function PeasantAtlas({ workforce, construction, clearOrders, clock, buildings, placements, roads, clearedRocks, felling }: {
   workforce: Workforce;
   construction: Construction[];
   clearOrders: ClearOrder[];
@@ -152,6 +165,8 @@ export function PeasantAtlas({ workforce, construction, clearOrders, clock, buil
   buildings: Record<BuildingId, number>;
   placements: Placements;
   roads: Roads;
+  /** The forest stand the woodcutters are felling (its key; empty if none). */
+  felling: string;
 }) {
   const sheet = getSpriteSheet();
   // Only who's where matters (not every tick's numbers), so the specs are rebuilt only when that changes.
@@ -164,9 +179,11 @@ export function PeasantAtlas({ workforce, construction, clearOrders, clock, buil
     roads,
     clearedRocks.length,
     clearOrders.length > 0 ? clearOrders[0].tiles[0] : '',
+    Math.min(3, workforce.staff.woodcutter),
+    felling,
   ]);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const specs = useMemo(() => peasantSpecs(workforce, construction, clearOrders, buildings, placements, roads, clearedRocks), [shape]);
+  const specs = useMemo(() => peasantSpecs(workforce, construction, clearOrders, buildings, placements, roads, clearedRocks, felling), [shape]);
   const sprites = useMemo(() => specs.map((spec) => Skia.XYWHRect(spec.cell * CELL_W * SPRITE_RES, 0, CELL_W * SPRITE_RES, CELL_H * SPRITE_RES)), [specs]);
   const hw = TILE_HW;
   const hh = TILE_HH;

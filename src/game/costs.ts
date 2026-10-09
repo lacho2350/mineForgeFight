@@ -168,7 +168,10 @@ export function tileDigCost(state: Pick<GameState, 'buildings' | 'techs'>, row: 
   return Math.max(1, Math.round(digCost(row) * buildingStats(state.buildings, undefined, state.techs).digCostFactor));
 }
 
-/** Gold to dig a whole route, after the discounts. */
+/** Wood for the pit props of every tunnel tile. */
+export const TUNNEL_WOOD = 1;
+
+/** Gold to dig a whole route, after the discounts (it also takes `TUNNEL_WOOD` a tile). */
 export function tunnelCost(state: Pick<GameState, 'buildings' | 'techs'>, route: string[]) {
   return route.reduce((sum, key) => sum + tileDigCost(state, parseKey(key).row), 0);
 }

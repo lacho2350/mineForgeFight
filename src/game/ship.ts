@@ -80,6 +80,12 @@ export function bargePose(t: number, arrivedAt: number, leftAt: number, route: n
 // How much each resource is in demand downriver.
 const DEMAND: Record<Resource, number> = {
   coal: 4, granite: 2, copper: 2, iron: 2, gold: 1, diamond: 0.5, tin: 2, silver: 1, sulfur: 1.5, salt: 2, emerald: 0.6, mithril: 0.4,
+  // The barges come for the mine's goods, fish and wool — not timber, apples or mutton.
+  wood: 0,
+  fish: 2,
+  apples: 0,
+  mutton: 0,
+  wool: 2,
 };
 
 /**

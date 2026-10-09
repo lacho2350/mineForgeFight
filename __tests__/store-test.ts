@@ -26,7 +26,7 @@ describe('a new game', () => {
 describe('forges and carts', () => {
   it('make swords in three steps, the carts moving everything', () => {
     build({ depot: 1, forge1: 1, forge2: 1, forge3: 1 });
-    newGame({ ...game(), warehouse: warehouseWith({ iron: 60, coal: 40, copper: 20, tin: 20 }), population: 40, nextRaidAt: 1e9 });
+    newGame({ ...game(), warehouse: warehouseWith({ iron: 60, coal: 40, copper: 20, tin: 20, wood: 20 }), population: 40, nextRaidAt: 1e9 });
     game().setForgeTask('forge1', 'steel');
     game().setForgeTask('forge2', 'bronze');
     game().setForgeTask('forge3', 'sword');

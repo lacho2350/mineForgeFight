@@ -15,7 +15,7 @@ Two screens (Expo Router, `src/app/`):
 | Route | File | What it shows |
 |---|---|---|
 | `/` | `src/app/index.tsx` | Stronghold, full screen: the isometric castle map (`CityView`: drag to pan, pinch / wheel / +− to zoom, tap a building), a slim bar on top (gold, peasants, raid clock — the warehouse's resources are in the warehouse's pop-up and the Menu, not on screen), a ⚔️ **War** button on the right edge under it (red with "!" while raiders are sighted or a battle waits; otherwise a badge with the recruits that can be hired now) opening the War sheet (`CombatPanel`: the raid now via `RaidBanner inPanel` — with ride out / hold the walls, command, auto-resolve now, the next raid's kind and strength —, the auto-resolve switch, every unit with army / waiting / gear and RECRUIT ALL, the defences summary with traps per side, LAY TRAPS and links to the keep, wall, towers, gate, moat and armory, and the stakes), live raid alerts, a news toast, and a toolbar (Mine, Build, Buildings, Tech, Docks, Menu; Tech shows how many techs are ready to research, Docks shows how many barges are moored). Build opens a palette of unbuilt buildings, rock clearing, roads and traps; picking a building enters placement mode (drag the green/red footprint — a drag that starts on it moves it, any other drag pans — or tap where it should go, then Build here); picking Clear rocks, a road or a trap enters paint mode (one finger paints a stroke of tiles, laid on release; two fingers / right-drag pan; the bar switches kind; Done ends it). Tapping a building opens its pop-up (`Sheet` + `BuildingDetail`, with Destroy; the warehouse adds the haul-route table, the keep the defence summary); tapping a trap opens its sheet (effect, side, Take it up). |
-| `/mine` | `src/app/mine.tsx` | The mine map (pan/zoom camera), Dig toggle, deposit info panel, stockpile table, hauling chain, haulage, the mine's tech branch, Dig Deeper. |
+| `/mine` | `src/app/mine.tsx` | The mine map (pan/zoom camera), Dig toggle, deposit info panel (tap a tile), bin panel (tap a stockpile bin — at the mine exit or beside a miner — for that resource's stock at every stage: `BinPanel`), hauling chain, haulage, the mine's tech branch, Dig Deeper. |
 | `/battle` | `src/app/battle.tsx` | The battle — a siege at the walls or a battle in the field: hex board, orders, auto-battle / quick resolve, log, result. |
 
 The mine screen shows a `RaidBanner` (next raid countdown → raiders sighted → at the gate → result); the
@@ -94,6 +94,41 @@ game, and starts the 1-second simulation (`startSimulation()`).
   moves on load/tip events — the simulation and the renderer share one schedule (`haulage.ts`) driven
   by `haulTime`, so numbers change exactly when the cart is seen loading/tipping. Carts stop when a
   resource's exit bin can't take another load.
+- **Wood** (`wood`, a resource kept in the warehouse but never mined — `MINE_RESOURCES` is the rest):
+  the **Woodcutter's Hut** (2×2, staffed: 1 + ⌊L/5⌋ woodcutters) brings in `WOOD_PER_LEVEL` 0.25 wood/s per
+  worked level (+30/50/70% with its techs: Sharp axes, Ox sledges, Sawpits) to the warehouse (only as much
+  as it has room for), felled from **the forest** (`src/game/forest.ts`, `forest` + `forestSerial` in the
+  store) **on the near mountains** in front of the hold — the range beyond the front-left side (where the
+  gate road leaves through the pass) and on round the front corner to the front-right. A stand is a spot on
+  a slope (`side:along:band`: a place along the range, and low / middle / high up it), about 100 wood
+  (80–120); ~165 stand at the start. The woodcutters fell the stand nearest the end of the gate road, low
+  slopes first (`fellingStand`, `fellWood`); every stand cut down grows back at a spot picked from the
+  counter elsewhere on the mountains, so the forest keeps its size and never runs out. Drawn live by the
+  backdrop (`ForestTrees`, between the near range — `Backdrop part="front"` — and the far front range —
+  `part="frontFar"`): up to three trees per stand on the slope under the range's top edge there
+  (`slopePoint`, from the peaks the backdrop recorded), fewer as it's cut. The woodcutters walk out of the
+  gate, down the road into the pass and along the mountains' foot to the stand (`standWay`, `walkOn`), and
+  home with logs. The hut's pop-up shows the forest (`ForestStatus`). Wood goes into gear (pikes, crossbows 2; sword and shield 1; blessed staves 2; balloon
+  rigs 3 — the relic still needs every resource), into every building from level 2 (`WOOD_USE`: the keep
+  more, the stone works less, the hut none, so a hold can always start), and 1 wood a tunnel tile
+  (`TUNNEL_WOOD`, pit props: hand digging and the tunnels dug to assign a miner). Barges never order it. New
+  games and older saves start with `STARTING_WOOD` 30.
+- **Food** (`src/game/farms.ts`): fish, apples and mutton (`FOOD_RESOURCES`), kept in the `warehouse`
+  record but capped by the **Granary** (`granaryCapacity`: the keep's larder 60 of each without one, +120 a
+  level). Every peasant eats `FOOD_PER_PEASANT` (one food every two minutes), a little of each food in
+  proportion to what's in store; with none left the hold is `hungry`: no newcomers, and mining, digging,
+  building, forges and woodcutting run at `HUNGRY_WORK` 70% (the farms keep their full speed, so a hungry
+  hold can always feed itself again). Up to eight of each farm, built in order and unlocked with the keep
+  (`FARM_SERIES`, `farmKeep`): **Apple orchards** (3×3, in town, 0.1 apples/s per worked level),
+  **Fishing huts** (1×1, on the raiders' ground within a tile of the river at the map's two ends — outside
+  the walls; 0.12 fish/s per worked level; a raid won by raiders from its side burns it down a level) and
+  **Sheep pastures** (3×3, grazing on the raiders' ground; the flock (`flocks`) grows by lambs to 10 sheep a
+  level and gives 0.01 mutton and 0.006 wool a sheep a second; every raid from its side drives off a tenth
+  of it, three tenths if the raiders win — `ravage` in updates.ts). Barges buy fish and wool (not apples or
+  mutton). New games and older saves start with `STARTING_APPLES` 150. The top bar shows the food in store
+  (red with HUNGRY); the warehouse's piles on the map leave food out and the granary shows its own; the
+  sheep are drawn live (`Flocks`). Farms and food are rounded to hundredths each tick (wood too), since
+  tenths would swallow small rates.
 - **Stockpiles, per resource**: `vein` (miners' bins) → `mineExit` (surface bins) → `mineStock` →
   `warehouse`. Capacities apply per resource. Surface carts move exit→mine→warehouse each tick
   (per-tick totals shared across resources).
@@ -354,6 +389,8 @@ src/
                            footprints, fixed ground, placement checks, save-migration helpers
     traps.ts               trap kinds, costs, damage, belt placement checks, traps facing a side
     houses.ts              the workers' houses: ids, keep levels, names, beds per level, the 200 cap
+    forest.ts              the forest on the near mountains: stands, felling the nearest, regrowth elsewhere
+    farms.ts               food: orchard / fishing hut / pasture ids, food rates, eating and hunger, raid losses
     save.ts                batched localStorage storage for the persisted store, flushSave()
     buildings.ts           stronghold buildings: ids, start levels, stats per level, costs, build time
     units.ts               army + raider stats/abilities, dwellings, recruit gold and growth
@@ -376,12 +413,15 @@ src/
     mineTerrain.ts         terrain renderer: tiles, fog, and cached block images (16 × 4 tiles) with
                            dirty tracking so a change only redraws nearby blocks
     MineHaulers.tsx        carts + haulers, miner bins, mine-exit bins (Skia pictures)
-    MineHaulerSteps.ts     heap step counts (Skia-free so the viewport can import it on web)
+    MineHaulerSteps.ts     bin sizes/places, heap steps (≈1 px each: a part-full heap is the full heap
+                           clipped, so it rises smoothly) and `binAt` tap hit-testing (Skia-free so
+                           the viewport can import it on web)
+    BinPanel.tsx           a tapped bin's resource: miners' bins, mine exit, mine stockpile, warehouse
     MinePickaxe(.web).tsx  animated pickaxe (Reanimated on native, CSS on web)
     MineSceneReadout.tsx   small readout labels on the map
     DepositPanel.tsx       tapped-tile info + Assign / Release / Dig & Assign
     HaulagePanel.tsx       carts per level + Add Cart
-    StockpileTable.tsx     resources × stages table (both screens)
+    StockpileTable.tsx     resources × stages table (the stronghold; the mine shows bins instead)
     BargesPanel.tsx        the barges waiting at the docks: one card per order (sell 10, fill, send away)
     CombatPanel.tsx        the War sheet behind the ⚔️ side button: raid now, auto-resolve, army and
                            recruiting, defences and traps, stakes (`hireableNow` for the button's badge)
@@ -441,7 +481,9 @@ src/
     battleLayout.ts        hex geometry for the board, taps and labels (Skia-free)
     skiaPaths.ts           who owns a Skia path: parse once, held by a component, or freed with a drawing
     unitSprites.ts         12×12 pixel sprites for all 16 creatures (also the army on parade)
-    RaidBanner.tsx         raid status banner on both main screens
+    RaidBanner.tsx         raid status banner on both main screens, kept to a title and one line (kind ·
+                           side · clock; party · strength vs yours); rules, traps and the auto-resolve
+                           switch live in the War panel
     CityView.tsx           the stronghold's full-screen map: camera (shared values), gestures, wheel,
                            +/− buttons, tap hit-testing on building silhouettes (else `onTapGround`, for
                            traps), dragging the building being placed (judged by the press point,
@@ -530,6 +572,9 @@ src/
   `localStorage`, so they never touch a real save.
 - Web dev server: `npx expo start --web --port 8081` (`.claude/launch.json` has an `expo-web` config).
   **Never set `CI=1`** — Metro then stops watching files and serves stale lazy chunks.
+  **Metro doesn't watch folders created after it started** (it serves their first version forever, even
+  after `touch`): after adding a folder (e.g. `src/components/stronghold/`), restart the dev server. To
+  check what's served: `curl` the module's `.bundle` URL (as in the browser's network list) and grep it.
 - **Saving**: the store is wrapped in Zustand `persist` (key `mineforge-save`, `SAVE_VERSION` 3). Storage is
   `localStorage`: the browser's on web; on iOS/Android `import 'expo-sqlite/localStorage/install'` (first line
   of `_layout.tsx`) provides a synchronous SQLite-backed one. `_layout.tsx` calls `loadGame()` at module load

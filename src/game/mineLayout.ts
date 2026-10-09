@@ -210,6 +210,12 @@ const DEPOSIT_SIZE: Record<Deposit, [number, number]> = {
   salt: [1000, 4000],
   emerald: [800, 2000],
   mithril: [600, 1500],
+  // Wood, food and wool come from above ground, never from a deposit.
+  wood: [0, 0],
+  fish: [0, 0],
+  apples: [0, 0],
+  mutton: [0, 0],
+  wool: [0, 0],
 };
 
 /** How much a deposit holds when untouched. */

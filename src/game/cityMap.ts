@@ -8,6 +8,7 @@
 import type { BuildingId } from './buildings';
 import { FORGE_IDS, type ForgeId } from './forges';
 import { HOUSE_IDS, type HouseId } from './houses';
+import { FISHERY_IDS, ORCHARD_IDS, PASTURE_IDS, isFishery, isPasture, type FisheryId, type OrchardId, type PastureId } from './farms';
 
 export const MAP_SIZE = 59;
 /** The map's middle tile (the gate, the harbour and the keep's axis). */
@@ -66,6 +67,13 @@ export function sideDistance(x: number, y: number, side: MapSide) {
     case 'northWest':
       return x;
   }
+}
+
+/** The side of the map a footprint is nearest (where raiders from that side pass it). */
+export function sideOf(spot: Spot, footprint: Footprint): MapSide {
+  const x = spot.x + footprint.w / 2 - 0.5;
+  const y = spot.y + footprint.d / 2 - 0.5;
+  return MAP_SIDES.reduce((best, side) => (sideDistance(x, y, side) < sideDistance(x, y, best) ? side : best));
 }
 
 /** The sides a tile faces: the edges it's nearest to (two at the corners). */
@@ -128,6 +136,11 @@ export const FOOTPRINTS: Record<BuildingId, Footprint> = {
   research: { w: 3, d: 3 },
   armory: { w: 3, d: 3 },
   depot: { w: 3, d: 2 },
+  woodcutter: { w: 2, d: 2 },
+  granary: { w: 2, d: 2 },
+  ...(Object.fromEntries(ORCHARD_IDS.map((id) => [id, { w: 3, d: 3 }])) as Record<OrchardId, Footprint>),
+  ...(Object.fromEntries(FISHERY_IDS.map((id) => [id, { w: 1, d: 1 }])) as Record<FisheryId, Footprint>),
+  ...(Object.fromEntries(PASTURE_IDS.map((id) => [id, { w: 3, d: 3 }])) as Record<PastureId, Footprint>),
   ...(Object.fromEntries(FORGE_IDS.map((id) => [id, { w: 2, d: 2 }])) as Record<ForgeId, Footprint>),
   wall: { w: 1, d: CASTLE.y1 - CASTLE.y0 + 1 },
   towers: { w: 1, d: 1 },
@@ -166,6 +179,7 @@ export const PARADE = { x: 30.6, y: 26.7 };
 /** The road out of the gate, over the moat and through the traps (fixed; town roads are the player's). */
 export const GATE_ROAD = { x: MIDDLE, y: CASTLE.y1 + 1, w: 1, d: MAP_SIZE - CASTLE.y1 - 1 };
 export const onGateRoad = (x: number, y: number) => x >= GATE_ROAD.x && x < GATE_ROAD.x + GATE_ROAD.w && y >= GATE_ROAD.y && y < GATE_ROAD.y + GATE_ROAD.d;
+
 /**
  * The dirt roads a new game starts with, as tile runs [x, y, w, d]: keep → the main road, the main
  * road, down to the mine, and out to the gate.
@@ -231,8 +245,17 @@ export function placementProblem(id: BuildingId, spot: Spot, placements: Placeme
   if (!isPlaceable(id)) return 'It has a fixed place.';
   const { w, d } = FOOTPRINTS[id];
   if (spot.x < 0 || spot.y < 0 || spot.x + w > MAP_SIZE || spot.y + d > MAP_SIZE) return 'Off the edge of the map.';
+  // Fishing huts and pastures stand outside the walls, on the raiders' ground: huts on the river's banks.
+  const outside = isFishery(id) || isPasture(id);
   for (let x = spot.x; x < spot.x + w; x++) {
     for (let y = spot.y; y < spot.y + d; y++) {
+      if (outside) {
+        if (zoneAt(x, y) !== 'enemy' || onGateRoad(x, y)) {
+          return isFishery(id) ? 'A fishing hut stands on the river bank outside the walls, where the river meets the map’s ends.' : 'Sheep graze outside the walls, on the raiders’ ground (not on the road).';
+        }
+        if (isFishery(id) && y > RIVER_ROWS + 1) return 'Too far from the river: a fishing hut stands on its bank.';
+        continue;
+      }
       if (!isOpenGround(x, y)) {
         const zone = zoneAt(x, y);
         if (zone === 'enemy') return 'That ground belongs to the raiders.';

@@ -1,6 +1,6 @@
 import { MINE_GROUND_Y, MINE_SHAFT_COLUMN, MINE_TILE_SIZE, getExitBinX } from '../components/MineMapLayout';
 import { depositAt, parseKey, siteLevel, tileKey, type MineLayout, type Site } from './mineLayout';
-import { RESOURCES, type Resource } from './resources';
+import { MINE_RESOURCES, type Resource } from './resources';
 
 // The cart schedule shared by the simulation (which moves coal when a cart loads or tips) and
 // the mine renderer (which draws the cart where the same schedule says it is). Both read the
@@ -124,7 +124,7 @@ function buildRoute(stops: { site: Site; path: [number, number][] }[], liftX: nu
   const resources = stops.map(({ site }) => depositAt(site.faceRow, site.faceColumn) ?? 'coal');
   const trips = stops.map(({ path }, index) => {
     // Tip beside this resource's own bin at the mine exit.
-    const exitX = getExitBinX(RESOURCES.indexOf(resources[index])) - CART_WIDTH + 12;
+    const exitX = getExitBinX(MINE_RESOURCES.indexOf(resources[index])) - CART_WIDTH + 12;
     const nextPath = stops[(index + 1) % stops.length].path;
     const xs: number[] = [];
     const ys: number[] = [];

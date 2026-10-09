@@ -4,13 +4,15 @@ import { PixelRatio, StyleSheet, View } from 'react-native';
 import { useDerivedValue, useFrameCallback, useSharedValue, type SharedValue } from 'react-native-reanimated';
 import { workforceOf } from '../game/hold';
 import { useGameStore } from '../game/gameStore';
-import { towerCount, type BuildingId } from '../game/buildings';
+import { buildingStats, towerCount, type BuildingId } from '../game/buildings';
 import type { MapSide, Placements } from '../game/cityMap';
 import { raidSide, type RaidParty } from '../game/raids';
 import type { Roads } from '../game/roads';
 import { rocksLeft } from '../game/rocks';
 import type { Trap } from '../game/traps';
-import { RESOURCES } from '../game/resources';
+import { FOOD_RESOURCES, RESOURCES, type Resource } from '../game/resources';
+import { fellingStand, forestLook } from '../game/forest';
+import { PASTURE_IDS } from '../game/farms';
 import { ARMY_UNITS } from '../game/units';
 import {
   CAMPFIRE,
@@ -31,7 +33,7 @@ import {
 } from './GameSceneLayout';
 import { svgPath } from './skiaPaths';
 import { poly, tierOf } from './stronghold/shapes';
-import { Backdrop, LAND } from './stronghold/backdrop';
+import { Backdrop, ForestTrees, LAND } from './stronghold/backdrop';
 import {
   ClearingMarks,
   Ground,
@@ -48,7 +50,7 @@ import {
 import { EmptyPlot, PlacementGhost, Selection, type Ghost } from './stronghold/overlays';
 import { Gatehouse, Tower, WallSegment } from './stronghold/fortifications';
 import { BuildingArt, Campfire, Headframe, Parade, Scaffold } from './stronghold/buildingArt';
-import { Barges, LiveBits, PILE_STEPS, Piles, ProgressBar, Wagons } from './stronghold/live';
+import { Barges, Flocks, LiveBits, PILE_STEPS, Piles, ProgressBar, Wagons } from './stronghold/live';
 import { PeasantAtlas } from './stronghold/peasants';
 import { useStillImage } from './stronghold/stillImage';
 
@@ -75,6 +77,9 @@ const STILL_SCALE = Math.min(1.6, PixelRatio.get() * 1.25);
 // function, a few small animated bits, stockpiles, progress bars, the selection and placement ghost.
 
 /** Parade companies change look in steps (like the stockpiles), so ordinary ticks don't redraw the castle. */
+/** The warehouse's piles: everything but food, which the granary keeps. */
+const STORE_RESOURCES = RESOURCES.filter((resource) => !FOOD_RESOURCES.includes(resource));
+
 const figuresFor = (count: number) => (count <= 0 ? 0 : count >= 30 ? 3 : count >= 10 ? 2 : 1);
 
 function GameSceneCanvas({ width, height, camX, camY, zoom, selected, ghost, active = true }: GameSceneProps) {
@@ -94,6 +99,16 @@ function GameSceneCanvas({ width, height, camX, camY, zoom, selected, ghost, act
   const carts = useGameStore((state) => state.carts);
   const paused = useGameStore((state) => state.paused);
   const raid = useGameStore((state) => state.raid);
+  const forest = useGameStore((state) => forestLook(state.forest));
+  const felling = useGameStore((state) => fellingStand(state.forest) ?? '');
+  const flocks = useGameStore((state) =>
+    PASTURE_IDS.map((id) => {
+      const spot = state.placements[id];
+      return spot && state.buildings[id] > 0 ? `${String(spot.x)},${String(spot.y)},${String(Math.min(30, Math.round(state.flocks[id] ?? 0)))}` : '';
+    })
+      .filter(Boolean)
+      .join(';'),
+  );
   const atGate = useGameStore((state) => state.battle?.status === 'active');
   const workforce = useMemo(
     () => workforceOf({ population, sites, pendingSites, carts, construction, clearOrders, buildings, paused }),
@@ -103,7 +118,9 @@ function GameSceneCanvas({ width, height, camX, camY, zoom, selected, ghost, act
   const transform = useDerivedValue(() => [{ scale: zoom.get() }, { translateX: -camX.get() }, { translateY: -camY.get() }]);
 
   // What the still image shows, in steps.
-  const piles = RESOURCES.map((resource) => Math.ceil(Math.min(1, warehouse[resource] / Math.max(1, warehouseCapacity)) * PILE_STEPS));
+  const steps = (resources: readonly Resource[], capacity: number) => resources.map((resource) => Math.ceil(Math.min(1, warehouse[resource] / Math.max(1, capacity)) * PILE_STEPS)).join();
+  const piles = steps(STORE_RESOURCES, warehouseCapacity);
+  const foodPiles = steps(FOOD_RESOURCES, buildingStats(buildings).granaryCapacity);
   const parade = ARMY_UNITS.map((unit) => figuresFor(army[unit]));
   const building = construction.map((job) => job.building).sort();
   // Raiders show up on their ground, on the side they come from, while a raid is on its way or at the gate.
@@ -113,6 +130,7 @@ function GameSceneCanvas({ width, height, camX, camY, zoom, selected, ghost, act
     <StaticScene buildings={buildings} placements={placements} roads={roads} clearedRocks={clearedRocks} traps={traps} parade={parade} building={building} raiders={raiders} />
   ));
   const warehousePlot = plotOf('warehouse', placements);
+  const granaryPlot = plotOf('granary', placements);
   const selectedPlot = selected ? plotOf(selected, placements) : null;
 
   return (
@@ -123,7 +141,11 @@ function GameSceneCanvas({ width, height, camX, camY, zoom, selected, ghost, act
           <Backdrop part="back" />
           {still && <Image image={still} x={0} y={STILL_TOP} width={sceneWidth} height={STILL_HEIGHT} />}
           <Backdrop part="front" />
-          {warehousePlot && buildings.warehouse > 0 && <Piles steps={piles.join()} plot={warehousePlot} />}
+          <ForestTrees look={forest} />
+          <Backdrop part="frontFar" />
+          {warehousePlot && buildings.warehouse > 0 && <Piles resources={STORE_RESOURCES} steps={piles} plot={warehousePlot} />}
+          {granaryPlot && buildings.granary > 0 && <Piles resources={FOOD_RESOURCES} steps={foodPiles} plot={granaryPlot} />}
+          <Flocks look={flocks} />
           <LiveBits buildings={buildings} placements={placements} clock={clock} />
           <Barges clock={clock} />
           <Wagons clock={clock} placements={placements} roads={roads} clearedRocks={clearedRocks} />
@@ -141,6 +163,7 @@ function GameSceneCanvas({ width, height, camX, camY, zoom, selected, ghost, act
             placements={placements}
             roads={roads}
             clearedRocks={clearedRocks}
+            felling={felling}
           />
           {selectedPlot && <Selection plot={selectedPlot} />}
           {ghost && <PlacementGhost ghost={ghost} />}

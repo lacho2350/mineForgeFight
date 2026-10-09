@@ -9,6 +9,8 @@ import { ROCK_INFO, startingRock } from './rocks';
 import { ITEM_INFO, UNIT_GEAR, type ItemId } from './items';
 import { FORGE_IDS, FORGE_OUTPUT_CAP, addLoad, isForge, loadUnits, shelfMissing, type ForgeId, type ForgeTask, type Load } from './forges';
 import { isHouse } from './houses';
+import { fellWood } from './forest';
+import { FOODS, FOOD_PER_PEASANT, HUNGRY_WORK, LAMBS_PER_LEVEL, MUTTON_PER_SHEEP, PASTURE_IDS, SHEEP_PER_LEVEL, WOOL_PER_SHEEP } from './farms';
 import { gearComing, gearWanted, incomingTo, supplyLoad, wagonBackAt, wagonDropAt, type WagonJob } from './wagons';
 import { SIDE_NAMES } from './cityMap';
 import { haulFactor } from './roads';
@@ -34,7 +36,11 @@ import { buildingFields, roundCoal, settleBattle, transfer, withSite } from './u
 
 // One second of the game: miners cut, carts and haulers move the goods, builders, smiths and carts work,
 // recruits muster, raids and barges come and go.
+const hundredths = (value: number) => Math.round(value * 100) / 100;
+
 export function tickGame(state: GameState): Partial<GameState> {
+  // A hungry hold works slower (but its farms bring food in at full speed).
+  const work = state.hungry ? HUNGRY_WORK : 1;
   // Each miner cuts from their own deposit into that resource's stockpile beside the miners,
   // until the deposit is mined out (or the stockpile is full).
   const vein = { ...state.vein };
@@ -47,7 +53,7 @@ export function tickGame(state: GameState): Partial<GameState> {
     const resource = siteResource(site);
     const total = depositTotal(site.faceRow, site.faceColumn);
     const remaining = depositRemaining({ depositMined }, site.faceRow, site.faceColumn);
-    const take = roundCoal(Math.min(state.minerRate, remaining, Math.max(0, state.veinCapacity - vein[resource])));
+    const take = roundCoal(Math.min(state.minerRate * work, remaining, Math.max(0, state.veinCapacity - vein[resource])));
     if (take <= 0 && remaining > 0) continue;
     const key = tileKey(site.faceRow, site.faceColumn);
     if (depositMined === state.depositMined) depositMined = { ...depositMined };
@@ -111,12 +117,50 @@ export function tickGame(state: GameState): Partial<GameState> {
   // Surface hauling: mine exit → mine stockpile → warehouse, in the same tick as a delivery.
   const toMine = transfer(mineExitIn, state.mineStock, state.surfaceHaul, state.mineCapacity);
   const toStore = transfer(toMine.to, state.warehouse, state.surfaceHaul, state.warehouseCapacity);
+  // The land above: what the woodcutters and the farms bring in (by their staff), in hundredths so small
+  // rates add up exactly.
+  const landStaff = workforceOf(state).staff;
+  const land = buildingStats(state.buildings, landStaff, state.techs);
+  const stock = toStore.to;
+  const add = (resource: Resource, amount: number, capacity: number) => {
+    stock[resource] = hundredths(stock[resource] + Math.max(0, Math.min(amount, capacity - stock[resource])));
+  };
+  // Woodcutters fell the forest beyond the gate and carry the logs home (as much as the warehouse takes).
+  let { forest, forestSerial } = state;
+  const woodCut = Math.min(land.woodPerSecond * work, Math.max(0, state.warehouseCapacity - stock.wood));
+  if (woodCut > 0) {
+    const felled = fellWood(forest, forestSerial, woodCut);
+    forest = felled.forest;
+    forestSerial = felled.serial;
+    add('wood', felled.wood, state.warehouseCapacity);
+  }
+  // Orchards and fishing huts bring food in; each pasture's flock grows to what it can graze, and gives
+  // mutton and wool.
+  add('apples', land.applesPerSecond, land.granaryCapacity);
+  add('fish', land.fishPerSecond, land.granaryCapacity);
+  let flocks = state.flocks;
+  for (const id of PASTURE_IDS) {
+    const level = state.buildings[id];
+    if (level <= 0) continue;
+    const grazing = SHEEP_PER_LEVEL * level;
+    const flock = hundredths(Math.min(grazing, (flocks[id] ?? 0) + LAMBS_PER_LEVEL * workedLevel(id, level, landStaff[id])));
+    if (flock !== flocks[id]) flocks = { ...flocks, [id]: flock };
+    add('mutton', flock * MUTTON_PER_SHEEP, land.granaryCapacity);
+    add('wool', flock * WOOL_PER_SHEEP, state.warehouseCapacity);
+  }
+  // Every peasant eats, a little from each food in proportion to what's in store; short of food, the hold
+  // goes hungry.
+  const hunger = FOOD_PER_PEASANT * state.population;
+  const stored = FOODS.reduce((sum, food) => sum + stock[food], 0);
+  const eaten = Math.min(hunger, stored);
+  if (stored > 0) for (const food of FOODS) stock[food] = hundredths(Math.max(0, stock[food] - (eaten * stock[food]) / stored));
+  const hungry = stored < hunger - 1e-9;
 
   // Diggers work through the plan one tile at a time.
   let { digPlan, digProgress, playerDug, pendingSites } = state;
   let layoutVersion = state.layoutVersion + (layoutChanged ? 1 : 0);
   if (digPlan.length > 0) {
-    digProgress = roundCoal(digProgress + buildingStats(state.buildings, undefined, state.techs).digSpeed);
+    digProgress = roundCoal(digProgress + buildingStats(state.buildings, undefined, state.techs).digSpeed * work);
     if (digProgress >= digTime(parseKey(digPlan[0]).row)) {
       playerDug = [...playerDug, digPlan[0]];
       digPlan = digPlan.slice(1);
@@ -142,7 +186,7 @@ export function tickGame(state: GameState): Partial<GameState> {
   let { buildings, construction } = state;
   let gold = state.gold;
   if (construction.length > 0) {
-    const speed = buildingStats(buildings, undefined, techs).buildSpeed;
+    const speed = buildingStats(buildings, undefined, techs).buildSpeed * work;
     construction = construction.map((job) => ({ ...job, progress: Math.round((job.progress + speed * siteFactor(state, job.building)) * 100) / 100 }));
     const finished = construction.filter((job) => job.progress >= job.duration);
     if (finished.length > 0) {
@@ -280,7 +324,7 @@ export function tickGame(state: GameState): Partial<GameState> {
 
     // Each forge works from its own shelf: it takes the next piece's materials while its rack has room and
     // the store (counting racks and carts) is below its target; finished, the piece goes onto the rack.
-    const speeds = forgeSpeedsOf(state);
+    const speeds = Object.fromEntries(Object.entries(forgeSpeedsOf(state)).map(([forge, speed]) => [forge, speed * work])) as Record<ForgeId, number>;
     for (const forge of FORGE_IDS) {
       const task = forgeTasks[forge];
       if (!task || speeds[forge] <= 0) continue;
@@ -322,7 +366,7 @@ export function tickGame(state: GameState): Partial<GameState> {
   const before = { sites, pendingSites, carts: state.carts, construction, clearOrders, buildings, paused: state.paused };
   const beds = buildingStats(buildings, workforceOf({ ...before, population: state.population }).staff, techs).beds;
   let population = state.population;
-  if (elapsedSeconds % structure.arrivalSeconds === 0 && population < beds) population += 1;
+  if (elapsedSeconds % structure.arrivalSeconds === 0 && population < beds && !state.hungry) population += 1;
 
   // Staff the buildings from whoever isn't under orders; what each building does follows its staff.
   const workforce = workforceOf({ ...before, population });
@@ -350,12 +394,8 @@ export function tickGame(state: GameState): Partial<GameState> {
     const party = raidParty(number, raidStrength(number, kind === 'field' ? power.army : power.total, state.raidsLostInARow), kind);
     raidFields = { raid: { number, arrivesAt: state.nextRaidAt, party, kind } };
     const side = raidSide(number);
-    const traps = trapsFacing(state.traps, side).length;
     const soon = String(state.nextRaidAt - elapsedSeconds);
-    notice =
-      kind === 'field'
-        ? `Raiders pillaging the fields to the ${SIDE_NAMES[side]}: ${describeParty(party)}. The army must meet them in the open in ${soon} s.`
-        : `A siege army to the ${SIDE_NAMES[side]}: ${describeParty(party)}. They storm the walls in ${soon} s${traps > 0 ? `, crossing ${String(traps)} trap${traps === 1 ? '' : 's'}` : ' — no traps on that side'} (or ride out to meet them).`;
+    notice = `${kind === 'field' ? 'Raiders' : 'Siege'} from the ${SIDE_NAMES[side]}: ${describeParty(party)}, in ${soon} s.`;
   } else if (raid && !battleRunning && elapsedSeconds >= raid.arrivesAt) {
     const stats = buildingStats(buildings, workforce.staff, techs);
     const kind = raidBattleKind(raid);
@@ -382,7 +422,7 @@ export function tickGame(state: GameState): Partial<GameState> {
       // Decided before it began (no army to defend the hold), or the auto-resolver is on: fight it out and
       // settle the raid at once (the result stays on the battlefield to look at).
       const fought = created.status === 'active' ? resolveBattle(created) : created;
-      const settled = settleBattle({ ...state, gold, warehouse: toStore.to, elapsedSeconds, battleArmy: state.army }, fought);
+      const settled = settleBattle({ ...state, gold, warehouse: toStore.to, elapsedSeconds, buildings, flocks, battleArmy: state.army }, fought);
       raidFields = { ...settled, battle: fought, battleArmy: state.army, battleCommanded: false };
       notice = settled.notice;
     } else {
@@ -394,17 +434,21 @@ export function tickGame(state: GameState): Partial<GameState> {
       };
       notice =
         kind === 'field'
-          ? `The armies meet in the field! Take command, or it's fought without you in ${String(RAID_AUTO_AFTER)} s.`
-          : `Raiders at the gate! Take command, or the defence fights on its own in ${String(RAID_AUTO_AFTER)} s.`;
+          ? `Battle in the field! Command it, or it's auto in ${String(RAID_AUTO_AFTER)} s.`
+          : `Raiders at the gate! Command it, or it's auto in ${String(RAID_AUTO_AFTER)} s.`;
     }
   } else if (battle && battleRunning && !state.battleCommanded && elapsedSeconds >= state.battleDeadline) {
-    const settled = settleBattle({ ...state, gold, warehouse: toStore.to, elapsedSeconds }, resolveBattle(battle));
+    const settled = settleBattle({ ...state, gold, warehouse: toStore.to, elapsedSeconds, buildings, flocks }, resolveBattle(battle));
     raidFields = { ...settled, battle: null };
     notice = settled.notice;
   }
 
   const next: Partial<GameState> = {
     ...fields,
+    forest,
+    forestSerial,
+    flocks,
+    hungry,
     population,
     construction,
     gold,

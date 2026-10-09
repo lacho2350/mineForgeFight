@@ -5,6 +5,7 @@
 import { BUILDING_IDS, staffNeeded, type BuildingId, type BuildingLevels } from './buildings';
 import { FORGE_IDS } from './forges';
 import { HOUSE_IDS } from './houses';
+import { FISHERY_IDS, ORCHARD_IDS, PASTURE_IDS } from './farms';
 
 export { PEASANT_ARRIVAL_SECONDS } from './buildings';
 
@@ -15,6 +16,11 @@ export { PEASANT_ARRIVAL_SECONDS } from './buildings';
 export const STAFF_PRIORITY: BuildingId[] = [
   ...HOUSE_IDS,
   'warehouse',
+  ...ORCHARD_IDS,
+  ...FISHERY_IDS,
+  ...PASTURE_IDS,
+  'granary',
+  'woodcutter',
   'foundry',
   'docks',
   'gate',

@@ -12,7 +12,7 @@ import { svgPath } from '../skiaPaths';
 // dressed stone under slate. `kind` dresses walls (planks, beams, stone courses) and roofs (thatch, tile,
 // slate rows); materials without it (piles, odd parts) stay plain.
 type MatKind = 'timber' | 'plaster' | 'stone' | 'dressed';
-type Mat = { left: string; right: string; top: string; roof: string; roofDark: string; kind?: MatKind };
+export type Mat = { left: string; right: string; top: string; roof: string; roofDark: string; kind?: MatKind };
 export const MATS: Mat[] = [
   { left: '#a5774c', right: '#7c5435', top: '#b98a5a', roof: '#b38c4f', roofDark: '#8c6a37', kind: 'timber' }, // planks, thatch
   { left: '#e2d2ab', right: '#bea883', top: '#ebdcb8', roof: '#9a5038', roofDark: '#78382a', kind: 'plaster' }, // half-timbered, tiles

@@ -1,4 +1,6 @@
 // The game's state: everything the game remembers (and saves), and the actions the store offers on it.
+import type { Forest } from './forest';
+import type { PastureId } from './farms';
 import type { LevelCarts } from './haulage';
 import type { Resource, Stock } from './resources';
 import type { BuildingId, BuildingLevels } from './buildings';
@@ -117,6 +119,14 @@ export type GameState = {
   pendingSites: Site[];
   /** Stand tiles (`row,column`) of the miners the hold sent from the campfire itself (see `idleToTheMine`). */
   autoMiners: string[];
+  /** The forest beyond the gate: wood left on each standing tile (see forest.ts). */
+  forest: Forest;
+  /** Stands cut down so far: picks where the next one grows back. */
+  forestSerial: number;
+  /** Sheep on each pasture. */
+  flocks: Partial<Record<PastureId, number>>;
+  /** The food ran out last second: no newcomers, and the peasants work slower (farms.ts). */
+  hungry: boolean;
   /** Units taken from each deposit so far, keyed by tile; a deposit is mined out at its total. */
   depositMined: Record<string, number>;
   /** Gallery stations that have been cut ("level:station"); their chamber and shaft stay dug. */
