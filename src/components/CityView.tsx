@@ -8,7 +8,6 @@ import type { Placements } from '../game/cityMap';
 import GameScene from './GameScene';
 import type { Ghost } from './stronghold/overlays';
 import {
-  MINE_PLOT,
   ORIGIN_X,
   ORIGIN_Y,
   SCENE_HEIGHT,
@@ -72,7 +71,6 @@ type Props = {
   onSelect: (id: BuildingId) => void;
   /** A tap that hit no building: the map point (tile units) under it, e.g. a trap. */
   onTapGround: (x: number, y: number) => void;
-  onMine: () => void;
   /** The screen is in view. */
   active: boolean;
   /** Space covered by the bars at the top and bottom, kept clear when the camera stops at the map's edge. */
@@ -96,7 +94,6 @@ function CityView({
   onPaintEnd,
   onSelect,
   onTapGround,
-  onMine,
   active,
   insetTop,
   insetBottom,
@@ -159,11 +156,11 @@ function CityView({
   };
 
   // A tap: while placing, where to put the building or trap; otherwise the front-most building whose
-  // outline holds the point, the mine, or else the ground (traps lie flat on it).
+  // outline holds the point, or else the ground (traps lie flat on it). The mine is entered by its button
+  // in the toolbar, not from the map.
   const tapAt = (x: number, y: number) => {
     const at = groundAt(x, y);
     if (ghost) return onPlaceAt(at.x, at.y);
-    if (inside(silhouette(MINE_PLOT, MINE_PLOT.tall), x, y)) return onMine();
     const targets = tapTargets(placements);
     for (let index = targets.length - 1; index >= 0; index--) {
       const { id, plot } = targets[index];
@@ -177,6 +174,27 @@ function CityView({
     const plot = ghost?.plot;
     ghostBox.set(plot && !painting && plot.w > 1 ? [plot.x, plot.y, plot.w, plot.d, Math.min(30, plot.tall / 2) + 8] : []);
   }, [ghost, painting, ghostBox]);
+  // When placing starts somewhere off screen (a fishing hut's far river bank, say), bring it into view.
+  const placingShown = useRef(false);
+  const placingAt = ghost?.plot && !painting ? ghost.plot : null;
+  useEffect(() => {
+    if (!placingAt) {
+      placingShown.current = false;
+      return;
+    }
+    if (placingShown.current) return;
+    placingShown.current = true;
+    const centre = iso(placingAt.x + placingAt.w / 2, placingAt.y + placingAt.d / 2);
+    const z = zoom.get();
+    const sx = (centre.x - camX.get()) * z;
+    const sy = (centre.y - camY.get()) * z;
+    if (sx > 40 && sx < viewW.get() - 40 && sy > top.get() + 40 && sy < viewH.get() - bottom.get() - 40) return;
+    const bandTop = top.get() / z;
+    const bandBottom = (viewH.get() - bottom.get()) / z;
+    settle(centre.x - viewW.get() / z / 2, centre.y - (bandTop + bandBottom) / 2, z);
+    // settle and the shared values are stable.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [placingAt]);
   // While a drag moves the building: the finger's offset from its corner, and the spot it's at.
   const dragging = useSharedValue<number[]>([]);
   // Where the finger went down (scene units): a drag is judged by where it started.
@@ -333,7 +351,7 @@ const Badges = memo(function Badges({ buildings, placements }: { buildings: Reco
           </Text>
         );
       })}
-      <Text style={[styles.mineSign, { left: SHAFT_RECT.x + SHAFT_RECT.width / 2 - 18, top: SHAFT_RECT.y + SHAFT_RECT.height - 10 }]}>↓ MINE</Text>
+      <Text style={[styles.mineSign, { left: SHAFT_RECT.x + SHAFT_RECT.width / 2 - 18, top: SHAFT_RECT.y + SHAFT_RECT.height - 10 }]}>MINE</Text>
     </>
   );
 });

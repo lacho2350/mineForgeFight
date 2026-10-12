@@ -1,9 +1,11 @@
 import { memo, useMemo } from 'react';
-import { Canvas, Group, Line, Path, Rect, vec } from '@shopify/react-native-skia';
+import { Canvas, Circle, Group, Path, Rect } from '@shopify/react-native-skia';
 import { StyleSheet, View } from 'react-native';
+import { useDerivedValue, type SharedValue } from 'react-native-reanimated';
 import { BATTLE_COLS, BATTLE_ROWS, GATE_ROW, MOAT_COL, WALL_COL, inMoat, isAlive, type Battle } from '../game/combat';
 import type { UnitId } from '../game/units';
 import { hexCenter, hexPath, type BoardLayout } from './battleLayout';
+import { strikeFlash, strikeFlight, trackOpacity, trackPose, type Playback, type Strike, type Track } from './battlePlayback';
 import { SPRITE_SIZE, spritePixels } from './unitSprites';
 import { useSvgPaths } from './skiaPaths';
 
@@ -14,11 +16,15 @@ export type BattleBoardProps = {
   moves: number[];
   targets: number[];
   helps: number[];
+  /** The last action played out (`progress`: seconds into it), and whether it's still playing. */
+  playback: Playback;
+  progress: SharedValue<number>;
+  playing: boolean;
 };
 
 const keyHex = (key: number) => ({ col: key % BATTLE_COLS, row: Math.floor(key / BATTLE_COLS) });
 
-function BattleBoardCanvas({ battle, layout, moves, targets, helps }: BattleBoardProps) {
+function BattleBoardCanvas({ battle, layout, moves, targets, helps, playback, progress, playing }: BattleBoardProps) {
   const { size, width, height, fieldWidth } = layout;
   const gridSvg = useMemo(() => {
     const parts: string[] = [];
@@ -26,7 +32,7 @@ function BattleBoardCanvas({ battle, layout, moves, targets, helps }: BattleBoar
     return parts.join(' ');
   }, [size]);
   const courtyard = hexCenter(size, WALL_COL, 0).x;
-  const active = battle.status === 'active' ? battle.stacks.find((stack) => stack.id === battle.queue[0]) : undefined;
+  const active = battle.status === 'active' && !playing ? battle.stacks.find((stack) => stack.id === battle.queue[0]) : undefined;
   const tint = (keys: number[], inset = 2) => keys.map((key) => hexPath(size, keyHex(key).col, keyHex(key).row, inset)).join(' ');
   // The flooded moat in front of the wall (and the bridge at the gate, unless it's raised).
   const moat = Array.from({ length: BATTLE_ROWS }, (_, row) => row).filter((row) => inMoat(battle, MOAT_COL, row));
@@ -119,31 +125,60 @@ function BattleBoardCanvas({ battle, layout, moves, targets, helps }: BattleBoar
           );
         })}
 
-        {/* What just happened */}
-        {battle.last.map((event, index) => {
-          if (!event.from || !event.to || event.kind === 'move') return null;
-          const from = hexCenter(size, event.from.col, event.from.row);
-          const to = hexCenter(size, event.to.col, event.to.row);
-          const color = event.kind === 'heal' || event.kind === 'resurrect' ? '#9fe08a' : event.kind === 'shot' ? '#f3d27a' : '#e8604a';
-          return <Line key={index} p1={vec(from.x, from.y)} p2={vec(to.x, to.y)} color={color} strokeWidth={2} />;
-        })}
-
         {active && <Path path={activePath} style="stroke" strokeWidth={2.5} color="#f3d27a" />}
 
-        {battle.stacks.filter(isAlive).map((stack) => {
-          const center = hexCenter(size, stack.col, stack.row);
-          return <UnitSprite key={stack.id} unit={stack.unit} x={center.x} y={center.y} size={size} mirror={stack.side === 'defender'} />;
+        {/* The stacks, walking and striking as the last action plays (and those it cut down, until they fall) */}
+        {battle.stacks.map((stack) => {
+          const track = playback.tracks[stack.id] as Track | undefined;
+          if (!track || (!isAlive(stack) && track.fallsAt === Infinity)) return null;
+          return <StackSprite key={stack.id} unit={stack.unit} size={size} mirror={stack.side === 'defender'} track={track} progress={progress} />;
         })}
+
+        {/* Shots, boulders and spells in flight, and the flash where each hit lands */}
+        {playback.strikes.map((strike, index) => (
+          <StrikeMark key={index} strike={strike} size={size} progress={progress} />
+        ))}
       </Canvas>
     </View>
   );
 }
 
-// A creature drawn as pixels, standing on the hex centre. The hold's units face left (towards the raiders).
-const UnitSprite = memo(function UnitSprite({ unit, x, y, size, mirror }: { unit: UnitId; x: number; y: number; size: number; mirror: boolean }) {
+// A stack on the board: its creature where its track has it now, fading as it falls.
+const StackSprite = memo(function StackSprite({ unit, size, mirror, track, progress }: { unit: UnitId; size: number; mirror: boolean; track: Track; progress: SharedValue<number> }) {
+  const transform = useDerivedValue(() => {
+    const [x, y] = trackPose(track, progress.get());
+    return [{ translateX: x }, { translateY: y }];
+  }, [track]);
+  const opacity = useDerivedValue(() => trackOpacity(track, progress.get()), [track]);
+  return (
+    <Group transform={transform} opacity={opacity}>
+      <UnitSprite unit={unit} size={size} mirror={mirror} />
+    </Group>
+  );
+});
+
+// A shot or spell flying to its target (gold arrows and boulders, green healing), then the hit's flash.
+const StrikeMark = memo(function StrikeMark({ strike, size, progress }: { strike: Strike; size: number; progress: SharedValue<number> }) {
+  const flight = useDerivedValue(() => strikeFlight(strike, progress.get()), [strike]);
+  const cx = useDerivedValue(() => flight.get()[0]);
+  const cy = useDerivedValue(() => flight.get()[1]);
+  const flying = useDerivedValue(() => flight.get()[2]);
+  const flash = useDerivedValue(() => strikeFlash(strike, progress.get()) * 0.8, [strike]);
+  const color = strike.heal ? '#9fe08a' : '#f3d27a';
+  return (
+    <Group>
+      {strike.flies && <Circle cx={cx} cy={cy} r={Math.max(2, size * 0.13)} color={color} opacity={flying} />}
+      <Circle cx={strike.x1} cy={strike.y1 - size * 0.2} r={size * 0.62} color={strike.heal ? '#9fe08a' : '#ff5a3c'} opacity={flash} />
+    </Group>
+  );
+});
+
+// A creature drawn as pixels, standing on the origin (its hex centre). The hold's units face left (towards
+// the raiders).
+const UnitSprite = memo(function UnitSprite({ unit, size, mirror }: { unit: UnitId; size: number; mirror: boolean }) {
   const pixel = (size * 1.45) / SPRITE_SIZE;
-  const left = x - (SPRITE_SIZE / 2) * pixel;
-  const top = y - SPRITE_SIZE * 0.62 * pixel;
+  const left = -(SPRITE_SIZE / 2) * pixel;
+  const top = -SPRITE_SIZE * 0.62 * pixel;
   const pixels = useMemo(() => spritePixels(unit), [unit]);
   return (
     <Group>

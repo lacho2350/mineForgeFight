@@ -3,8 +3,9 @@
 import { memo } from 'react';
 import { Circle, Group, Line, Path, Rect, vec } from '@shopify/react-native-skia';
 import type { BuildingId } from '../../game/buildings';
+import { isHouse } from '../../game/houses';
 import { ARMY_UNITS } from '../../game/units';
-import { CAMPFIRE, MINE_PLOT, PARADE, RIVER_ROWS, iso, type Plot } from '../GameSceneLayout';
+import { CAMPFIRE, MINE_PLOT, PARADE, iso, type Plot } from '../GameSceneLayout';
 import { spritePixels } from '../unitSprites';
 import { svgPath } from '../skiaPaths';
 import {
@@ -35,6 +36,21 @@ const LOGS: Mat = { left: '#8a5a2e', right: '#6b4422', top: '#c9955c', roof: '#8
 export function BuildingArt({ id, plot, tier, level }: { id: BuildingId; plot: Plot; tier: number; level: number }) {
   const m = matOf(tier);
   const { x, y, w, d } = plot;
+  if (isHouse(id)) {
+    // A one-tile cottage: plaster walls and a thatched roof, then stone and tiles as it's raised; a
+    // chimney from the second tier; the ridge turned on every other cottage, so a street of them varies.
+    const hh = 7 + 2 * tier;
+    const along = (x + y) % 2 ? 'y' : 'x';
+    return (
+      <Group>
+        <Box x={x + 0.18} y={y + 0.2} w={0.64} d={0.6} h={hh} m={m} />
+        <Gable x={x + 0.12} y={y + 0.14} w={0.76} d={0.72} z={hh} rise={6} m={m} along={along} />
+        <LeftFace x={x + 0.18} yFront={y + 0.8} u0={0.22} u1={0.4} v0={0} v1={5} color={DARK} />
+        <LeftFace x={x + 0.18} yFront={y + 0.8} u0={0.46} u1={0.58} v0={4} v1={6.5} color="#e7c46a" />
+        {tier >= 2 && <Box x={x + 0.6} y={y + 0.26} w={0.12} d={0.12} h={5} z={hh + 2} m={STONE} />}
+      </Group>
+    );
+  }
   switch (id) {
     case 'keep': {
       // The keep, Stronghold-style: a timber keep (a tall wooden tower with an overhanging fighting
@@ -107,35 +123,6 @@ export function BuildingArt({ id, plot, tier, level }: { id: BuildingId; plot: P
           {corner(bx, by + bd)}
           {corner(bx + bw, by + bd)}
           <Flag x={bx + bw / 2} y={by + bd / 2} z={h + 30} color={tier === 4 ? GOLD : BANNER} />
-        </Group>
-      );
-    }
-    case 'houses':
-    case 'houses2':
-    case 'houses3':
-    case 'houses4':
-    case 'houses5':
-    case 'houses6':
-    case 'houses7':
-    case 'houses8': {
-      // Cottages on the plot, one more every few levels, plaster and then stone as the houses grow.
-      const count = Math.min(4, 1 + Math.floor(level / 4));
-      const spots = count === 1 ? [[0.55, 0.55]] : [[0.1, 0.1], [1.05, 0.1], [0.1, 1.05], [1.05, 1.05]].slice(0, count);
-      const hh = 8 + 2 * tier;
-      return (
-        <Group>
-          {spots.map(([dx, dy], index) => {
-            const hx = x + dx;
-            const hy = y + dy;
-            return (
-              <Group key={index}>
-                <Box x={hx} y={hy} w={0.85} d={0.8} h={hh} m={m} />
-                <Gable x={hx - 0.05} y={hy - 0.05} w={0.95} d={0.9} z={hh} rise={7} m={m} along={index % 2 ? 'y' : 'x'} />
-                <LeftFace x={hx} yFront={hy + 0.8} u0={0.3} u1={0.52} v0={0} v1={6} color={DARK} />
-                {tier >= 2 && <Box x={hx + 0.6} y={hy + 0.2} w={0.14} d={0.14} h={6} z={hh + 2} m={STONE} />}
-              </Group>
-            );
-          })}
         </Group>
       );
     }
@@ -346,20 +333,26 @@ export function BuildingArt({ id, plot, tier, level }: { id: BuildingId; plot: P
       );
     }
     case 'docks': {
-      // A stone quay at the back of the harbour, a shed for the goods, and a crane that
-      // swings out over the water to load the barge.
-      // The barge ties up in the middle, so the shed stands at one end and the crane at the other.
+      // A stone quay along the whole back of the harbour, where all five barges tie up nose-in: a shed
+      // for the goods at one end (a second at the other from the second tier), and a crane between
+      // that swings out over the water to load them.
       const h = 6 + 2 * tier;
       const shed = h + 10 + 2 * tier;
-      const post = iso(x + 2.55, y + 0.45, h + 26);
-      const arm = iso(x + 1.7, y - 0.5, h + 23);
-      const hook = iso(x + 1.7, y - 0.5, h + 8);
+      const post = iso(x + w - 1.45, y + 0.45, h + 26);
+      const arm = iso(x + w - 2.3, y - 0.5, h + 23);
+      const hook = iso(x + w - 2.3, y - 0.5, h + 8);
       return (
         <Group>
           <Box x={x} y={y + 0.05} w={w} d={d - 0.1} h={h} m={STONE} />
           <Box x={x + 0.15} y={y + 0.15} w={1.1} d={0.7} h={shed} m={m} />
           <Gable x={x + 0.1} y={y + 0.1} w={1.2} d={0.8} z={shed} rise={7} m={m} />
-          <Box x={x + 2.46} y={y + 0.36} w={0.18} d={0.18} h={h + 26} m={MATS[0]} />
+          {tier >= 2 && (
+            <Group>
+              <Box x={x + w - 1.0} y={y + 0.2} w={0.85} d={0.65} h={shed - 4} m={m} />
+              <Gable x={x + w - 1.05} y={y + 0.15} w={0.95} d={0.75} z={shed - 4} rise={6} m={m} />
+            </Group>
+          )}
+          <Box x={x + w - 1.54} y={y + 0.36} w={0.18} d={0.18} h={h + 26} m={MATS[0]} />
           <Line p1={vec(post.x, post.y)} p2={vec(arm.x, arm.y)} strokeWidth={2} color="#6e4a2f" />
           <Line p1={vec(arm.x, arm.y)} p2={vec(hook.x, hook.y)} strokeWidth={0.8} color="#3a2a1c" />
           {tier >= 3 && <Flag x={x + 0.7} y={y + 0.5} z={shed + 7} color="#3f6f8a" />}
@@ -442,13 +435,10 @@ export function BuildingArt({ id, plot, tier, level }: { id: BuildingId; plot: P
     case 'fishery6':
     case 'fishery7':
     case 'fishery8': {
-      // A shack on stilts at the water's edge, a jetty out over the river, a rack of drying fish.
+      // A shack on stilts along the river wall, a rack of drying fish.
       const h = 7 + 2 * tier;
-      // The jetty runs from the hut out over the river, whichever row of the bank the hut stands on.
-      const jetty = [iso(x + 0.35, RIVER_ROWS - 0.9), iso(x + 0.65, RIVER_ROWS - 0.9), iso(x + 0.65, y + 0.2), iso(x + 0.35, y + 0.2)];
       return (
         <Group>
-          <Path path={svgPath(poly(jetty))} color="#8a6440" />
           <Box x={x + 0.15} y={y + 0.2} w={0.7} d={0.65} h={h} z={3} m={MATS[0]} />
           <Gable x={x + 0.1} y={y + 0.15} w={0.8} d={0.75} z={h + 3} rise={5} m={tier >= 2 ? m : MATS[0]} />
           {[0.2, 0.5, 0.8].map((u) => {
@@ -483,7 +473,11 @@ export function BuildingArt({ id, plot, tier, level }: { id: BuildingId; plot: P
         </Group>
       );
     }
-    case 'woodcutter': {
+    case 'woodcutter':
+    case 'woodcutter2':
+    case 'woodcutter3':
+    case 'woodcutter4':
+    case 'woodcutter5': {
       // A log cabin (later roofed in its tier's tiles or slate), the log stack beside it growing with the
       // hut, and a chopping block in front.
       const h = 9 + 2 * tier;

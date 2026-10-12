@@ -4,23 +4,22 @@
 // campfire. Recruiting a soldier takes a peasant out of the pool for good.
 import { BUILDING_IDS, staffNeeded, type BuildingId, type BuildingLevels } from './buildings';
 import { FORGE_IDS } from './forges';
-import { HOUSE_IDS } from './houses';
 import { FISHERY_IDS, ORCHARD_IDS, PASTURE_IDS } from './farms';
+import { WOODCUTTER_IDS } from './woodcutters';
 
 export { PEASANT_ARRIVAL_SECONDS } from './buildings';
 
 /**
- * Who gets staff first when there aren't enough peasants for every building. Houses come first:
- * without housekeepers only the keep's hall sleeps anyone, so newcomers soon stop.
+ * Who gets staff first when there aren't enough peasants for every building. (The cottages need none:
+ * their women keep them, and aren't workers.)
  */
 export const STAFF_PRIORITY: BuildingId[] = [
-  ...HOUSE_IDS,
   'warehouse',
   ...ORCHARD_IDS,
   ...FISHERY_IDS,
   ...PASTURE_IDS,
   'granary',
-  'woodcutter',
+  ...WOODCUTTER_IDS,
   'foundry',
   'docks',
   'gate',

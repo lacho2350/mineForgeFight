@@ -2,7 +2,8 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { BUILDING_INFO, type BuildingId } from '../game/buildings';
 import { RAID_SIDES, SIDE_NAMES } from '../game/cityMap';
 import type { GameState } from '../game/state';
-import { affordableRecruits, unitAvailable } from '../game/hold';
+import { affordableRecruits, forgesMaking, unitAvailable } from '../game/hold';
+import { FORGE_IDS } from '../game/forges';
 import { ITEM_INFO, UNIT_GEAR } from '../game/items';
 import { trapsFacing } from '../game/traps';
 import { ARMY_RECRUITING, ARMY_UNITS, UNIT_STATS, armyValue, type ArmyUnit } from '../game/units';
@@ -13,7 +14,7 @@ import { GameButton, SectionLabel } from './GameUI';
 import RaidBanner from './RaidBanner';
 
 // The War panel, behind the ⚔️ button on the side of the stronghold: everything about fighting in one
-// place — the raid now (sighted, in battle, or the next one), the auto-resolver, the army with its
+// place — the raid now (sighted, in battle, or the next one), the instant-battles switch, the army with its
 // recruits and gear, the defences with the traps on every side, and what's at stake.
 
 /** How many recruits could be hired right now, over every unit (each needs gold, its gear and a free peasant). */
@@ -35,8 +36,12 @@ export default function CombatPanel({ game, workforce, onOpenBuilding, onLayTrap
     <View style={styles.panel}>
       <RaidBanner inPanel />
       <GameButton
-        label={game.autoResolveRaids ? 'AUTO-RESOLVE RAIDS: ON' : 'AUTO-RESOLVE RAIDS: OFF'}
-        detail={game.autoResolveRaids ? 'raids are fought out the moment they arrive' : 'raids wait for your orders (30 s, then they fight on their own)'}
+        label={game.autoResolveRaids ? 'BATTLES: INSTANT' : 'BATTLES: FOUGHT OUT'}
+        detail={
+          game.autoResolveRaids
+            ? 'every raid is settled the moment it arrives · tap to fight them out'
+            : 'troops march and strike on the field: command them, or after 30 s the captains do · tap for instant'
+        }
         onPress={() => game.setAutoResolveRaids(!game.autoResolveRaids)}
         secondary
       />
@@ -83,6 +88,21 @@ export default function CombatPanel({ game, workforce, onOpenBuilding, onLayTrap
   );
 }
 
+// Why a unit's gear isn't at its dwelling, and what to do: gear is made at a forge set to it, and the
+// depot's carts bring it from the store.
+function gearProblem(game: GameState, unit: ArmyUnit) {
+  const item = UNIT_GEAR[unit];
+  const name = ITEM_INFO[item].plural.toLowerCase();
+  if (forgesMaking(game, item).length === 0) {
+    return FORGE_IDS.some((forge) => game.buildings[forge] > 0)
+      ? `no ${name}: set a forge to ${name}`
+      : `no ${name}: build a Forge (BUILD → Forge I) and set it to ${name}`;
+  }
+  if (game.items[item] < 1) return `${name} are being forged`;
+  if (game.buildings.depot < 1) return `${name} in the store: build a Cart Depot to carry them here`;
+  return `${name} are on their way by cart`;
+}
+
 // One unit: how many stand in the army, wait at the dwelling, and have gear there; RECRUIT ALL.
 function UnitRow({ game, unit, free, onOpen }: { game: GameState; unit: ArmyUnit; free: number; onOpen: () => void }) {
   const stats = UNIT_STATS[unit];
@@ -98,7 +118,7 @@ function UnitRow({ game, unit, free, onOpen }: { game: GameState; unit: ArmyUnit
     : waiting < 1
       ? 'none waiting'
       : gear < 1
-        ? `no ${ITEM_INFO[UNIT_GEAR[unit]].plural.toLowerCase()} at the ${BUILDING_INFO[dwelling].name}`
+        ? gearProblem(game, unit)
         : free < 1
           ? 'no free peasants'
           : 'not enough gold';

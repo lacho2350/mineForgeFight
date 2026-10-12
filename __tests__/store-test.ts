@@ -93,6 +93,39 @@ describe('raids', () => {
     expect(game().raidReport?.kind).toBe('siege');
   });
 
+  it('are fought out by the captains at the battlefield’s pace when nobody takes command', () => {
+    sightNext(fieldRaid);
+    run(61 + 20);
+    const started = game().battle;
+    expect(started?.status).toBe('active');
+    expect(started?.auto).toBe(false);
+    run(13);
+    // The captains have it now, an action every second or two, not all at once.
+    const fighting = game().battle;
+    expect(fighting?.auto).toBe(true);
+    expect(fighting?.status).toBe('active');
+    expect(fighting!.log.length).toBeGreaterThan(started!.log.length);
+    expect(fighting!.log.length - started!.log.length).toBeLessThan(12);
+    for (let seconds = 0; game().battle?.status === 'active' && seconds < 600; seconds++) run(1);
+    expect(game().battle?.status).toBe('won');
+    expect(game().raidReport?.number).toBe(fieldRaid);
+  });
+
+  it('go on with the captains when the commander leaves the battlefield', () => {
+    sightNext(fieldRaid);
+    run(65);
+    game().commandBattle();
+    const held = game().battle?.log.length;
+    run(60);
+    // Under command, the battle waits for orders.
+    expect(game().battle?.log.length).toBe(held);
+    game().releaseBattle();
+    expect(game().battleCommanded).toBe(false);
+    run(200);
+    expect(game().battle?.status).toBe('won');
+    expect(game().raidReport?.number).toBe(fieldRaid);
+  });
+
   it('let the hold ride out against a siege army and fight in the field', () => {
     sightNext(siegeRaid);
     run(5);

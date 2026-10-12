@@ -52,6 +52,9 @@ export type BattleEvent = {
   from?: Hex;
   to?: Hex;
   damage?: number;
+  /** A move: the hexes walked, from where it started to where it stopped (fliers: just the two). */
+  path?: Hex[];
+  flying?: boolean;
 };
 
 export type BattleStatus = 'active' | 'won' | 'lost' | 'withdrawn';
@@ -582,16 +585,23 @@ function passable(battle: Battle, stack: Stack, col: number, row: number, landin
 
 /** Hexes the stack can reach this turn, with the number of hexes walked to each. */
 export function reachable(battle: Battle, stack: Stack): Map<number, number> {
+  return walks(battle, stack).reach;
+}
+
+// Every hex the stack can reach this turn (with the hexes walked to it), and the hex each was first
+// reached from (walkers only: fliers go straight there).
+function walks(battle: Battle, stack: Stack) {
   const stats = UNIT_STATS[stack.unit];
-  const result = new Map<number, number>([[hexKey(stack.col, stack.row), 0]]);
+  const reach = new Map<number, number>([[hexKey(stack.col, stack.row), 0]]);
+  const cameFrom = new Map<number, number>();
   if (stats.flying) {
     for (let row = 0; row < BATTLE_ROWS; row++) {
       for (let col = 0; col < BATTLE_COLS; col++) {
         const distance = hexDistance(stack, { col, row });
-        if (distance > 0 && distance <= stats.speed && passable(battle, stack, col, row, true)) result.set(hexKey(col, row), distance);
+        if (distance > 0 && distance <= stats.speed && passable(battle, stack, col, row, true)) reach.set(hexKey(col, row), distance);
       }
     }
-    return result;
+    return { reach, cameFrom };
   }
   const seen = new Map<number, number>([[hexKey(stack.col, stack.row), 0]]);
   let frontier: Hex[] = [{ col: stack.col, row: stack.row }];
@@ -602,7 +612,8 @@ export function reachable(battle: Battle, stack: Stack): Map<number, number> {
         const key = hexKey(n.col, n.row);
         if (seen.has(key) || !passable(battle, stack, n.col, n.row, false)) continue;
         seen.set(key, step);
-        if (passable(battle, stack, n.col, n.row, true)) result.set(key, step);
+        cameFrom.set(key, hexKey(hex.col, hex.row));
+        if (passable(battle, stack, n.col, n.row, true)) reach.set(key, step);
         // Raiders who wade into the moat stop there.
         if (stack.side === 'attacker' && inMoat(battle, n.col, n.row)) continue;
         next.push(n);
@@ -610,7 +621,21 @@ export function reachable(battle: Battle, stack: Stack): Map<number, number> {
     }
     frontier = next;
   }
-  return result;
+  return { reach, cameFrom };
+}
+
+/** The hexes the stack walks to get to `to` this turn, from where it stands (fliers: straight there). */
+export function pathTo(battle: Battle, stack: Stack, to: Hex): Hex[] {
+  const start = { col: stack.col, row: stack.row };
+  const { reach, cameFrom } = walks(battle, stack);
+  if (!reach.has(hexKey(to.col, to.row))) return [start];
+  if (UNIT_STATS[stack.unit].flying) return [start, to];
+  const path: Hex[] = [to];
+  for (let key = hexKey(to.col, to.row), guard = 0; cameFrom.has(key) && guard < BATTLE_COLS * BATTLE_ROWS; guard++) {
+    key = cameFrom.get(key) ?? key;
+    path.unshift(keyHex(key));
+  }
+  return path;
 }
 
 const keyHex = (key: number): Hex => ({ col: key % BATTLE_COLS, row: Math.floor(key / BATTLE_COLS) });
@@ -650,7 +675,8 @@ export function act(previous: Battle, action: BattleAction): Battle {
     if (to.col === stack.col && to.row === stack.row) return 0;
     const walked = reach().get(hexKey(to.col, to.row));
     if (walked === undefined) return -1;
-    emit(battle, { kind: 'move', text: `${nameOf(stack)} ${stats.flying ? 'fly' : 'move'}.`, actor: stack.id, from: { col: stack.col, row: stack.row }, to });
+    const path = pathTo(battle, stack, to);
+    emit(battle, { kind: 'move', text: `${nameOf(stack)} ${stats.flying ? 'fly' : 'move'}.`, actor: stack.id, from: { col: stack.col, row: stack.row }, to, path, flying: !!stats.flying });
     stack.col = to.col;
     stack.row = to.row;
     return walked;
@@ -675,7 +701,7 @@ export function act(previous: Battle, action: BattleAction): Battle {
         hit(battle, target, stack, { ranged: false, retaliation: true }, 'retaliate');
       }
       if (stats.strikeAndReturn && isAlive(stack) && (stack.col !== start.col || stack.row !== start.row)) {
-        emit(battle, { kind: 'move', text: `${nameOf(stack)} fly back.`, actor: stack.id, from: { col: stack.col, row: stack.row }, to: start });
+        emit(battle, { kind: 'move', text: `${nameOf(stack)} fly back.`, actor: stack.id, from: { col: stack.col, row: stack.row }, to: start, path: [{ col: stack.col, row: stack.row }, start], flying: true });
         stack.col = start.col;
         stack.row = start.row;
       }
@@ -940,6 +966,36 @@ export function chooseAction(battle: Battle, stack: Stack): BattleAction {
   if (bestKey === hexKey(stack.col, stack.row)) return { type: 'defend' };
   return { type: 'move', to: keyHex(bestKey) };
 }
+
+// ——— Pace ———
+
+/**
+ * How long things take on the battlefield, in seconds: a hex walked, a hex flown, a blow, shot or spell,
+ * a company standing its ground, a new round, and the beat after every action. The battle screen plays
+ * each action at this pace, and a battle nobody commands is fought at it too.
+ */
+export const BATTLE_PACE = { walk: 0.32, fly: 0.12, strike: 0.6, defend: 0.3, round: 0.6, beat: 0.3 };
+
+/** Seconds one event takes to play out. */
+export function eventSeconds(event: BattleEvent): number {
+  switch (event.kind) {
+    case 'move': {
+      const hexes = event.from && event.to ? (event.flying ? hexDistance(event.from, event.to) : Math.max(1, (event.path?.length ?? 2) - 1)) : 1;
+      return hexes * (event.flying ? BATTLE_PACE.fly : BATTLE_PACE.walk);
+    }
+    case 'defend':
+      return BATTLE_PACE.defend;
+    case 'round':
+      return BATTLE_PACE.round;
+    case 'end':
+      return 0;
+    default:
+      return BATTLE_PACE.strike;
+  }
+}
+
+/** Seconds an action takes to play out: its events one after another, then a beat. */
+export const actionSeconds = (events: readonly BattleEvent[]) => events.reduce((sum, event) => sum + eventSeconds(event), BATTLE_PACE.beat);
 
 /** Let the AI act if it's an AI-controlled stack's turn. */
 export function stepAI(battle: Battle): Battle {

@@ -6,6 +6,7 @@ import { GATE_ROAD, MAP_SIZE, RIVER_ROWS, SCENE_WIDTH as sceneWidth, iso } from 
 import { MOUNTAIN_FOOT, forestHash, parseSpot, type ForestSide, type ForestSpot } from '../../game/forest';
 import { parseSvg, useSvgPaths } from '../skiaPaths';
 import { ROAD_COLORS, poly, type P } from './shapes';
+import { GRASS_DARK, GRASS_LIGHT, TUFT, TUFT_LIGHT, emptyGrass, grassTile } from './grass';
 
 type Side = 'backLeft' | 'backRight' | 'frontLeft' | 'frontRight';
 // A range's foot, `d` tiles out from one side of the map, `t` tiles along it.
@@ -69,9 +70,8 @@ export const WATER = '#3a6a86';
 const RIVER_REACH = 12;
 
 // The land's colours, shared by the map and the backdrop so the hold sits in its valley rather than on
-// a board: the wild land all round (and the raiders' ground on the map), the town's lawn, the woods.
+// a board: the land all round, on the map and off it (with the same grass, grass.ts), and the woods.
 export const LAND = '#506738';
-export const LAWN = '#5f7942';
 export const TRUNK = '#5e4630';
 export const CROWNS = ['#3f5f30', '#4b6d36', '#557a3c'];
 
@@ -133,6 +133,24 @@ const WOODS = (() => {
     }
   }
   return { back: woodsPaths(back, backRocks), front: woodsPaths(front, frontRocks) };
+})();
+
+// The grass on the land round the map, carrying on the map's own (the same patches and tufts, seamless
+// across its edge): as far out as the woods, but not on the river or the road out through the pass.
+const MEADOW = (() => {
+  const grass = emptyGrass();
+  for (let x = -4; x < MAP_SIZE + 7; x++) {
+    for (let y = -4; y < MAP_SIZE + 7; y++) {
+      const inFront = x >= MAP_SIZE || y >= MAP_SIZE;
+      if (!inFront && x >= 0 && y >= 0) continue;
+      const out = Math.max(-x, -y, x - MAP_SIZE + 1, y - MAP_SIZE + 1);
+      if (out > (inFront ? 6 : 3)) continue;
+      if ((x < 0 || x >= MAP_SIZE) && y >= -1 && y < RIVER_ROWS) continue;
+      if (y >= MAP_SIZE && x >= GATE_ROAD.x - 1 && x < GATE_ROAD.x + GATE_ROAD.w + 1) continue;
+      grassTile(x, y, grass);
+    }
+  }
+  return { light: grass.light.join(' '), dark: grass.dark.join(' '), tufts: grass.tufts.join(' '), tuftsLight: grass.tuftsLight.join(' ') };
 })();
 
 const BACKDROP = (() => {
@@ -215,6 +233,7 @@ function buildBackdropPaths() {
     ripples: parseSvg(BACKDROP.ripples),
     road: parseSvg(BACKDROP.road),
     woods: { back: woods(WOODS.back), front: woods(WOODS.front) },
+    meadow: { light: parseSvg(MEADOW.light), dark: parseSvg(MEADOW.dark), tufts: parseSvg(MEADOW.tufts), tuftsLight: parseSvg(MEADOW.tuftsLight) },
   };
 }
 
@@ -248,6 +267,11 @@ export const Backdrop = memo(function Backdrop({ part }: { part: 'back' | 'front
   }
   return (
     <Group>
+      {/* First the grass on the land round the map (everything else here lies over it) */}
+      <Path path={paths.meadow.light} color={GRASS_LIGHT} opacity={0.55} />
+      <Path path={paths.meadow.dark} color={GRASS_DARK} opacity={0.55} />
+      <Path path={paths.meadow.tufts} style="stroke" strokeWidth={0.7} color={TUFT} opacity={0.75} />
+      <Path path={paths.meadow.tuftsLight} style="stroke" strokeWidth={0.7} color={TUFT_LIGHT} opacity={0.8} />
       <Path path={paths.sky}>
         <LinearGradient start={vec(0, BACKDROP.skyTop)} end={vec(0, BACKDROP.skyLow)} colors={[SKY_TOP, SKY_LOW]} />
       </Path>

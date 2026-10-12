@@ -25,6 +25,7 @@ import {
   TERRAIN_BLOCK_ROWS,
   closeTerrainView,
   getBlockImage,
+  keepBlocksInView,
   newTerrainView,
   openTerrainView,
   terrainViewCommitted,
@@ -119,6 +120,7 @@ function TerrainBlocks({ view, layout, active }: { view: MineView; layout: MineL
   for (let row = firstRow; row <= lastRow; row += 1) {
     for (let column = firstColumn; column <= lastColumn; column += 1) blocks.push([row, column]);
   }
+  keepBlocksInView(blocks.length);
 
   return blocks.map(([row, column]) => {
     const image = getBlockImage(row, column, layout);

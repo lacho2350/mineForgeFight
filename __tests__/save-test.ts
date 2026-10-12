@@ -43,10 +43,12 @@ describe('loading older saves', () => {
     // … and a new game's apples, and no hunger.
     expect(state.warehouse.apples).toBe(150);
     expect(state.hungry).toBe(false);
-    // Houses added since are there, unbuilt.
-    expect(state.buildings.houses).toBe(2);
-    expect(state.buildings.houses2).toBe(0);
-    expect(state.buildings.houses8).toBe(0);
+    // The old 2×2 house (level 2, sleeping 9) became three cottages on its tiles, at its level, stocked.
+    expect([state.buildings.houses, state.buildings.houses2, state.buildings.houses3, state.buildings.houses4]).toEqual([2, 2, 2, 0]);
+    expect([state.placements.houses2, state.placements.houses3]).toEqual([{ x: 19, y: 35 }, { x: 18, y: 36 }]);
+    expect(Object.keys(state.homes).sort()).toEqual(['houses', 'houses2', 'houses3']);
+    expect(state.homes.houses?.water).toBeGreaterThan(0);
+    expect(state.buildings.houses24).toBe(0);
     // Traps keep their place in the belt on their own side.
     expect(state.traps).toEqual([{ kind: 'spikes', x: 3, y: 26 }, { kind: 'snare', x: 54, y: 36 }]);
     for (const trap of state.traps) expect(trapProblem(trap, state.traps.filter((other) => other !== trap))).toBeNull();

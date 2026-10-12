@@ -1,4 +1,4 @@
-// Food: fishing huts on the river banks outside the walls, sheep grazing on the land outside them, and
+// Food: fishing huts along the river wall in town, sheep grazing on the land outside the walls, and
 // apple orchards in town feed the peasants; the granary stores it. Up to eight of each kind of farm, each
 // placed and levelled on its own and unlocked as the keep grows; one granary. Every peasant eats; with no
 // food left the hold goes hungry: no newcomers, and the peasants work slower (food itself is still made at

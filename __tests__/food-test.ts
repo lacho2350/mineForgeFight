@@ -1,21 +1,34 @@
 import { BUILDING_NAMES } from '../src/game/hold';
-import { placementProblem, sideOf, FOOTPRINTS } from '../src/game/cityMap';
+import { RIVER_ROWS, buildingGround, placementProblem, sideOf, zoneAt, FOOTPRINTS } from '../src/game/cityMap';
 import { FOOD_PER_PEASANT, HUNGRY_WORK, SHEEP_PER_LEVEL } from '../src/game/farms';
 import { raidSide } from '../src/game/raids';
 import { emptyArmy } from '../src/game/units';
 import { useGameStore } from '../src/game/gameStore';
+import { houseBeds } from '../src/game/houses';
 import { build, game, newGame, run, warehouseWith } from './support';
 
 const place = (spots: Record<string, { x: number; y: number }>, levels: Record<string, number>, extra = {}) =>
   useGameStore.setState({ placements: { ...game().placements, ...spots }, buildings: { ...game().buildings, ...levels }, ...extra });
 
 describe('where farms go', () => {
-  it('puts fishing huts on the river banks outside the walls, and nowhere else', () => {
+  it('puts fishing huts only right next to the river, along the river wall inside the town', () => {
     const problem = (x: number, y: number) => placementProblem('fishery1', { x, y }, {}, BUILDING_NAMES);
-    expect(problem(0, 6)).toBeNull();
-    expect(problem(57, 7)).toBeNull();
-    expect(problem(0, 20)).toMatch(/river/);
-    expect(problem(30, 30)).toMatch(/river bank/);
+    expect(problem(20, 7)).toBeNull();
+    expect(problem(0, 6)).toMatch(/river wall/); // the bank outside the walls
+    expect(problem(57, 7)).toMatch(/river wall/);
+    expect(problem(20, 8)).toMatch(/river wall/); // a row back
+    expect(problem(29, 10)).toMatch(/river wall/); // behind the docks
+    expect(problem(30, 30)).toMatch(/river wall/);
+  });
+
+  it('lights every riverside spot in town, and none outside the walls', () => {
+    const spots = buildingGround('fishery1');
+    expect(spots.length).toBeGreaterThanOrEqual(8);
+    for (const spot of spots) {
+      expect(zoneAt(spot.x, spot.y)).toBe('town');
+      expect(spot.y).toBe(RIVER_ROWS + 1);
+      expect(placementProblem('fishery1', spot, {}, BUILDING_NAMES)).toBeNull();
+    }
   });
 
   it('puts sheep out to graze on the raiders’ ground, and orchards in town', () => {
@@ -28,7 +41,8 @@ describe('where farms go', () => {
 describe('food', () => {
   it('is eaten by every peasant, and runs out into hunger: no newcomers then', () => {
     newGame({ population: 24, warehouse: warehouseWith({ apples: 1 }) });
-    const eats = 24 * FOOD_PER_PEASANT;
+    // The first cottage's sleepers live on its pantry; everyone else sleeps in the keep's hall and eats from the store.
+    const eats = (24 - houseBeds(1)) * FOOD_PER_PEASANT;
     run(1);
     expect(game().warehouse.apples).toBeCloseTo(1 - eats, 2);
     run(10);
@@ -42,7 +56,7 @@ describe('food', () => {
   it('comes in from the orchards, the fishing huts and the pastures', () => {
     newGame({ population: 40, warehouse: warehouseWith({ apples: 50 }) });
     build({ orchard1: 3 });
-    place({ fishery1: { x: 0, y: 6 }, pasture1: { x: 0, y: 20 } }, { fishery1: 2, pasture1: 1 }, { flocks: { pasture1: SHEEP_PER_LEVEL } });
+    place({ fishery1: { x: 20, y: 7 }, pasture1: { x: 0, y: 20 } }, { fishery1: 2, pasture1: 1 }, { flocks: { pasture1: SHEEP_PER_LEVEL } });
     const before = { ...game().warehouse };
     run(10);
     const after = game().warehouse;
@@ -58,7 +72,8 @@ describe('food', () => {
     newGame({ warehouse: warehouseWith({ apples: 500 }) });
     run(1);
     const fed = game().lastFlow.mined;
-    newGame({ warehouse: warehouseWith({}), hungry: true });
+    // No food in store, and the cottages run dry too: everyone works slower.
+    newGame({ warehouse: warehouseWith({}), hungry: true, homes: { houses: { water: 0, food: 0, errand: null } } });
     run(1);
     // Each miner's cut is rounded to a tenth.
     expect(game().lastFlow.mined).toBeLessThan(fed);
@@ -74,17 +89,16 @@ describe('food', () => {
 });
 
 describe('raids on the land outside the walls', () => {
-  it('drive off sheep from their side, and burn its fishing huts when they win', () => {
+  it('drive off sheep from their side, more when they win, and leave the fishing huts alone', () => {
     newGame({ population: 30, warehouse: warehouseWith({ apples: 500 }) });
-    place({ fishery1: { x: 0, y: 6 }, pasture1: { x: 0, y: 20 } }, { fishery1: 2, pasture1: 2 }, { flocks: { pasture1: 20 } });
+    place({ fishery1: { x: 3, y: 7 }, pasture1: { x: 0, y: 20 } }, { fishery1: 2, pasture1: 2 }, { flocks: { pasture1: 20 } });
     const side = sideOf({ x: 0, y: 20 }, FOOTPRINTS.pasture1);
-    expect(sideOf({ x: 0, y: 6 }, FOOTPRINTS.fishery1)).toBe(side);
     const n = Array.from({ length: 60 }, (_, i) => i + 3).find((raid) => raidSide(raid) === side) ?? 3;
     // Nobody to fight it: the raid is lost at once.
     newGame({ ...game(), raidsFought: n - 1, nextRaidAt: game().elapsedSeconds + 61, army: emptyArmy(), autoResolveRaids: true });
     run(65);
     expect(game().raidReport?.outcome).toBe('lost');
     expect(game().flocks.pasture1).toBeLessThan(20 - 5);
-    expect(game().buildings.fishery1).toBe(1);
+    expect(game().buildings.fishery1).toBe(2);
   });
 });

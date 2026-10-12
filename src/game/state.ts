@@ -17,6 +17,7 @@ import type { RoadKind, Roads } from './roads';
 import type { Trap, TrapKind } from './traps';
 import type { TechId } from './techs';
 import type { Site } from './mineLayout';
+import type { Homes } from './homes';
 
 export type Cost = { coal: number; gold: number };
 
@@ -125,8 +126,12 @@ export type GameState = {
   forestSerial: number;
   /** Sheep on each pasture. */
   flocks: Partial<Record<PastureId, number>>;
-  /** The food ran out last second: no newcomers, and the peasants work slower (farms.ts). */
+  /** Every resource the hold has had in a stockpile: barges only order these. */
+  discovered: Resource[];
+  /** The store's food ran out last second: the keep's hall goes hungry and no cottage can be stocked (homes.ts). */
   hungry: boolean;
+  /** Each built cottage's water and food, and its woman's errand (homes.ts). */
+  homes: Homes;
   /** Units taken from each deposit so far, keyed by tile; a deposit is mined out at its total. */
   depositMined: Record<string, number>;
   /** Gallery stations that have been cut ("level:station"); their chamber and shaft stay dug. */
@@ -147,7 +152,7 @@ export type GameState = {
   raidsFought: number;
   /** Raids lost in a row (the next ones come smaller until one is won). */
   raidsLostInARow: number;
-  /** Fight every raid out at once when it arrives (the auto-resolver), instead of waiting for orders. */
+  /** Instant battles: settle every raid at once when it arrives, instead of fighting it out on the field. */
   autoResolveRaids: boolean;
   /** Game second the next raiders arrive. */
   nextRaidAt: number;
@@ -157,7 +162,10 @@ export type GameState = {
   battle: Battle | null;
   /** The army when the battle began (recruits joining mid-battle are kept out of it). */
   battleArmy: Army;
-  /** The player took command; otherwise the battle fights itself at `battleDeadline`. */
+  /**
+   * The player took command (the battle screen drives it); otherwise the captains fight it from
+   * `battleDeadline` (the end of the 30 s for orders), and it then holds when their next action is due.
+   */
   battleCommanded: boolean;
   battleDeadline: number;
   raidReport: RaidReport | null;
@@ -212,10 +220,12 @@ export type GameState = {
   recruit: (unit: ArmyUnit, amount: number | 'max') => void;
   /** Against a siege army: ride out and meet it in the field (true), or hold the walls (false). */
   setRideOut: (rideOut: boolean) => void;
-  /** Turn the auto-resolver on or off: raids fought out at once when they arrive. */
+  /** Instant battles on or off: raids settled at once when they arrive, or fought out on the field. */
   setAutoResolveRaids: (on: boolean) => void;
   /** Take command of the battle at the gate (it then waits for the player's orders). */
   commandBattle: () => void;
+  /** Leave the battlefield mid-battle: the captains fight on (once the time for orders is up). */
+  releaseBattle: () => void;
   /** Order the stack whose turn it is. */
   battleAct: (action: BattleAction) => void;
   /** Let the raiders (or auto-battle) make their next move. */

@@ -3,6 +3,7 @@ import { router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming, type SharedValue } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   actionForHex,
@@ -20,10 +21,11 @@ import {
   type Stack,
 } from '../game/combat';
 import type { RaidReport } from '../game/state';
-import { useGameStore } from '../game/gameStore';
+import { useGameSlice, useGameStore } from '../game/gameStore';
 import { UNIT_STATS, type ArmyUnit } from '../game/units';
 import BattleBoard from '../components/BattleBoard';
 import { boardLayout, hexAt, hexCenter } from '../components/battleLayout';
+import { SETTLED, battlePlayback, trackPose, type Playback, type Strike, type Track } from '../components/battlePlayback';
 import { GameButton, SectionLabel } from '../components/GameUI';
 
 // What the active stack could do: tinted hexes and the damage it would deal to each target.
@@ -51,39 +53,61 @@ function playerOptions(battle: Battle) {
 }
 
 export default function BattleScreen() {
-  const battle = useGameStore((state) => state.battle);
-  const report = useGameStore((state) => state.raidReport);
-  const { commandBattle, battleAct, battleStep, setBattleAuto, quickResolveBattle, closeBattle } = useGameStore.getState();
+  // While the page is hidden these hold still, so a battle under command waits for its commander.
+  const battle = useGameSlice((state) => state.battle);
+  const commanded = useGameSlice((state) => state.battleCommanded);
+  const report = useGameSlice((state) => state.raidReport);
+  const { commandBattle, releaseBattle, battleAct, battleStep, setBattleAuto, quickResolveBattle, closeBattle } = useGameStore.getState();
   const [frameWidth, setFrameWidth] = useState(0);
   // Hexes stay big enough to tap; small phones scroll the field sideways.
-  const layout = boardLayout(frameWidth || 360, 34, 17);
+  const layout = useMemo(() => boardLayout(frameWidth || 360, 34, 17), [frameWidth]);
   const small = layout.size < 22;
 
-  // Opening the battlefield takes command: the battle now waits for orders.
+  // Opening the battlefield takes command (of a battle that starts while it's open, too): the battle now
+  // waits for orders. Leaving it mid-battle hands it to the captains, who fight on.
+  const fighting = battle?.status === 'active' ? battle.raid : 0;
   useEffect(() => {
+    if (!fighting) return;
     commandBattle();
-  }, [commandBattle]);
+    return releaseBattle;
+  }, [fighting, commandBattle, releaseBattle]);
+
+  // Every action plays out on the board at the battlefield's pace — the stacks walk hex by hex and strike —
+  // and nothing more happens (orders, the next move) until it's over. What happened before the screen
+  // opened isn't replayed.
+  const playKey = battle ? `${String(battle.raid)}:${String(battle.log.length)}` : '';
+  const [playedKey, setPlayedKey] = useState(playKey);
+  const playing = playKey !== playedKey;
+  const playback = useMemo(() => (battle ? battlePlayback(battle, layout) : null), [battle, layout]);
+  const progress = useSharedValue(SETTLED);
+  useEffect(() => {
+    if (!playing || !playback) return;
+    progress.set(0);
+    progress.set(withTiming(playback.total, { duration: playback.total * 1000, easing: Easing.linear }));
+    const timer = setTimeout(() => setPlayedKey(playKey), playback.total * 1000);
+    return () => clearTimeout(timer);
+  }, [playing, playKey, playback, progress]);
 
   // The raiders (and the hold's army in auto-battle) act on their own, one move at a time.
   useEffect(() => {
-    if (!battle || battle.status !== 'active' || isPlayerTurn(battle)) return;
-    const timer = setTimeout(battleStep, battle.auto ? 200 : 550);
+    if (!battle || battle.status !== 'active' || !commanded || isPlayerTurn(battle) || playing) return;
+    const timer = setTimeout(battleStep, 100);
     return () => clearTimeout(timer);
-  }, [battle, battleStep]);
+  }, [battle, battleStep, commanded, playing]);
 
-  const options = useMemo(() => (battle ? playerOptions(battle) : null), [battle]);
+  const options = useMemo(() => (battle && !playing ? playerOptions(battle) : null), [battle, playing]);
   const tap = useMemo(
     () =>
       Gesture.Tap()
         .runOnJS(true)
         .onEnd((event) => {
           const current = useGameStore.getState().battle;
-          if (!current || !isPlayerTurn(current)) return;
+          if (!current || !isPlayerTurn(current) || playing) return;
           const hex = hexAt(layout.size, event.x, event.y);
           const action = hex && actionForHex(current, hex);
           if (action) battleAct(action);
         }),
-    [layout.size, battleAct],
+    [layout.size, battleAct, playing],
   );
 
   const leave = () => {
@@ -93,7 +117,10 @@ export default function BattleScreen() {
   };
 
   const stack = battle ? currentStack(battle) : null;
-  const playerTurn = !!battle && isPlayerTurn(battle);
+  const playerTurn = !!battle && isPlayerTurn(battle) && !playing;
+  // Whose action is playing: the raiders', or the hold's.
+  const actor = battle?.last.find((event) => event.actor !== undefined)?.actor;
+  const raidersActing = playing ? battle?.stacks[actor ?? -1]?.side === 'attacker' : !playerTurn;
 
   return (
     <SafeAreaView style={styles.screen}>
@@ -118,23 +145,23 @@ export default function BattleScreen() {
               <ScrollView horizontal scrollEnabled={layout.width > frameWidth} showsHorizontalScrollIndicator={false} contentContainerStyle={styles.boardScroll}>
               <GestureDetector gesture={tap}>
                 <View style={[styles.board, { width: layout.width, height: layout.height }]}>
-                  <BattleBoard battle={battle} layout={layout} moves={options?.moves ?? []} targets={options?.targets ?? []} helps={options?.helps ?? []} />
-                  {battle.stacks.filter(isAlive).map((item) => (
-                    <StackLabel key={item.id} stack={item} size={layout.size} small={small} preview={options?.previews.get(item.id)} />
-                  ))}
-                  {battle.last.map((event, index) => {
-                    if (event.target === undefined || !event.to || (event.damage === undefined && event.kind !== 'heal' && event.kind !== 'resurrect')) return null;
-                    const center = hexCenter(layout.size, event.to.col, event.to.row);
-                    const healing = event.kind === 'heal' || event.kind === 'resurrect';
-                    return (
-                      <Text
-                        key={`${String(battle.log.length)}-${String(index)}`}
-                        style={[styles.floater, { left: center.x - 30, top: center.y - layout.size * 1.6 - index * 12, pointerEvents: 'none' }, healing && styles.floaterHeal]}
-                      >
-                        {healing ? '✚' : `−${String(event.damage)}`}
-                      </Text>
-                    );
-                  })}
+                  {playback && (
+                    <BattleBoard
+                      battle={battle}
+                      layout={layout}
+                      moves={options?.moves ?? []}
+                      targets={options?.targets ?? []}
+                      helps={options?.helps ?? []}
+                      playback={playback}
+                      progress={progress}
+                      playing={playing}
+                    />
+                  )}
+                  {playback &&
+                    battle.stacks.filter(isAlive).map((item) => (
+                      <StackLabel key={item.id} stack={item} size={layout.size} small={small} preview={options?.previews.get(item.id)} track={playback.tracks[item.id]} progress={progress} />
+                    ))}
+                  {playback && <Floaters key={playKey} playback={playback} size={layout.size} progress={progress} />}
                 </View>
               </GestureDetector>
               </ScrollView>
@@ -142,8 +169,8 @@ export default function BattleScreen() {
               {battle.status === 'active' ? (
                 <View style={styles.controls}>
                   <View style={styles.turn}>
-                    <Text style={[styles.turnText, playerTurn ? styles.turnYours : styles.turnTheirs]}>
-                      {playerTurn ? 'YOUR MOVE' : battle.auto ? 'AUTO-BATTLE' : 'RAIDERS MOVE…'}
+                    <Text style={[styles.turnText, raidersActing ? styles.turnTheirs : styles.turnYours]}>
+                      {playerTurn ? 'YOUR MOVE' : battle.auto ? 'AUTO-BATTLE' : raidersActing ? 'RAIDERS MOVE…' : 'YOUR TROOPS MOVE…'}
                     </Text>
                     {playerTurn && <Text style={styles.hint}>Tap a blue hex to move, a red-ringed enemy to attack{stack && (UNIT_STATS[stack.unit].heals || UNIT_STATS[stack.unit].resurrects) ? ', a green ally to heal' : ''}.</Text>}
                   </View>
@@ -193,22 +220,53 @@ export default function BattleScreen() {
   );
 }
 
-// Count badge under each stack (blue for the hold, red for raiders), and the damage preview over targets.
-function StackLabel({ stack, size, small, preview }: { stack: Stack; size: number; small: boolean; preview?: string }) {
+// Count badge under each stack (blue for the hold, red for raiders), walking with it, and the damage
+// preview over targets.
+function StackLabel({ stack, size, small, preview, track, progress }: {
+  stack: Stack;
+  size: number;
+  small: boolean;
+  preview?: string;
+  track: Track | undefined;
+  progress: SharedValue<number>;
+}) {
   const center = hexCenter(size, stack.col, stack.row);
+  const follow = useAnimatedStyle(() => {
+    const [x, y] = track ? trackPose(track, progress.get()) : [center.x, center.y];
+    return { transform: [{ translateX: x - 2 }, { translateY: y + size * 0.35 }] };
+  }, [track, center.x, center.y, size]);
   return (
     <>
-      <Text
-        style={[styles.count, stack.side === 'defender' ? styles.countHold : styles.countRaider, { left: center.x - 2, top: center.y + size * 0.35, pointerEvents: 'none' }]}
-      >
+      <Animated.Text style={[styles.count, stack.side === 'defender' ? styles.countHold : styles.countRaider, { left: 0, top: 0, pointerEvents: 'none' }, follow]}>
         {String(stackCount(stack))}
-      </Text>
+      </Animated.Text>
       {preview && (
         <Text style={[styles.preview, small && styles.previewSmall, { left: Math.max(0, center.x - (small ? 28 : 40)), top: center.y - size * 1.25, pointerEvents: 'none' }]}>
           {preview}
         </Text>
       )}
     </>
+  );
+}
+
+// The damage (or healing) of each hit, shown as it lands; hits on the same spot stack upwards.
+function Floaters({ playback, size, progress }: { playback: Playback; size: number; progress: SharedValue<number> }) {
+  const seen = new Map<string, number>();
+  return playback.strikes.map((strike, index) => {
+    if (strike.damage === undefined && !strike.heal) return null;
+    const spot = `${String(strike.x1)},${String(strike.y1)}`;
+    const above = seen.get(spot) ?? 0;
+    seen.set(spot, above + 1);
+    return <Floater key={index} strike={strike} size={size} above={above} progress={progress} />;
+  });
+}
+
+function Floater({ strike, size, above, progress }: { strike: Strike; size: number; above: number; progress: SharedValue<number> }) {
+  const shown = useAnimatedStyle(() => ({ opacity: progress.get() >= strike.land ? 1 : 0 }), [strike]);
+  return (
+    <Animated.Text style={[styles.floater, { left: strike.x1 - 30, top: strike.y1 - size * 1.6 - above * 12, pointerEvents: 'none' }, strike.heal && styles.floaterHeal, shown]}>
+      {strike.heal ? '✚' : `−${String(strike.damage)}`}
+    </Animated.Text>
   );
 }
 

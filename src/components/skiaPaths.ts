@@ -20,18 +20,19 @@ export const parseSvg = (svg: string): SkPath => Skia.Path.MakeFromSVGString(svg
 
 // Path sets released by an unmount or a change, waiting to be freed; taken back if the component comes
 // right back with the same set (React's strict-mode double effects, fast refresh).
-const releasing = new Map<SkPath[], ReturnType<typeof setTimeout>>();
+const releasing = new Map<SkPath[], () => void>();
 const keep = (paths: SkPath[]) => {
-  const timer = releasing.get(paths);
-  if (timer !== undefined) {
-    clearTimeout(timer);
+  const cancel = releasing.get(paths);
+  if (cancel) {
+    cancel();
     releasing.delete(paths);
   }
 };
+// Freed only once the screen has drawn on without them (a hidden tab draws nothing, so it waits).
 const release = (paths: SkPath[]) => {
   releasing.set(
     paths,
-    setTimeout(() => {
+    freeAfterDrawn(() => {
       releasing.delete(paths);
       for (const path of paths) path.dispose();
     }, DISPOSE_AFTER_MS),
@@ -110,6 +111,31 @@ export function latest<K, T>(slot: Slot<K, T>, key: K, build: () => T): T {
   const old = slot.value;
   slot.key = key;
   slot.value = build();
-  if (old !== undefined) setTimeout(() => disposePaths(old), DISPOSE_AFTER_MS);
+  if (old !== undefined) freeAfterDrawn(() => disposePaths(old), DISPOSE_AFTER_MS);
   return slot.value;
 }
+
+/**
+ * Run `free` once the screen has drawn on past what's being freed: two animation frames, then `delay` ms,
+ * then two more frames. Timers keep running in a hidden browser tab but frames don't, so a canvas there
+ * still has its old drawing queued; freeing on a timer alone let it draw a deleted image when the tab came
+ * back ("Cannot pass deleted object as a pointer of type Image"). Returns a cancel function.
+ */
+export function freeAfterDrawn(free: () => void, delay: number): () => void {
+  let cancelled = false;
+  const frames = (next: () => void) => {
+    if (typeof requestAnimationFrame === 'undefined') return next();
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      if (!cancelled) next();
+    }));
+  };
+  frames(() => {
+    setTimeout(() => {
+      if (!cancelled) frames(() => free());
+    }, delay);
+  });
+  return () => {
+    cancelled = true;
+  };
+}
+

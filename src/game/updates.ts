@@ -2,7 +2,7 @@
 // starting a building, moving stock.
 import { RESOURCES, type Resource, type Stock } from './resources';
 import { FOOTPRINTS, sideOf, type MapSide } from './cityMap';
-import { FISHERY_IDS, LOST_RAID_SHEEP_TAKEN, PASTURE_IDS, RAID_SHEEP_TAKEN } from './farms';
+import { LOST_RAID_SHEEP_TAKEN, PASTURE_IDS, RAID_SHEEP_TAKEN } from './farms';
 import { BUILDING_INFO, buildingCost, buildingStats, buildingTime, crewSize, type BuildingId, type BuildingLevels } from './buildings';
 import { ARMY_UNITS } from './units';
 import { battleOutcome, raiderStrength, type Battle } from './combat';
@@ -118,7 +118,6 @@ export function settleBattle(state: SettleState, battle: Battle) {
     army,
     gold,
     warehouse,
-    buildings: ravaged.buildings,
     flocks: ravaged.flocks,
     raidReport: report,
     raid: null,
@@ -130,35 +129,20 @@ export function settleBattle(state: SettleState, battle: Battle) {
 }
 
 // What raiders from `side` do to the land outside the walls: they drive off a share of every flock grazing
-// there (more if they won), and if they won, burn every fishing hut on that bank down a level.
+// there, more if they won. (Fishing huts stand inside the walls, safe.)
 function ravage(state: Pick<GameState, 'buildings' | 'placements' | 'flocks'>, side: MapSide, won: boolean) {
-  let { buildings, flocks } = state;
+  let { flocks } = state;
   let sheep = 0;
-  const burned: string[] = [];
-  const onSide = (id: BuildingId) => {
-    const spot = state.placements[id];
-    return !!spot && state.buildings[id] > 0 && sideOf(spot, FOOTPRINTS[id]) === side;
-  };
   for (const id of PASTURE_IDS) {
+    const spot = state.placements[id];
     const flock = flocks[id] ?? 0;
-    if (!onSide(id) || flock <= 0) continue;
+    if (!spot || state.buildings[id] <= 0 || sideOf(spot, FOOTPRINTS[id]) !== side || flock <= 0) continue;
     const taken = Math.round(flock * (won ? LOST_RAID_SHEEP_TAKEN : RAID_SHEEP_TAKEN));
     if (taken <= 0) continue;
     flocks = { ...flocks, [id]: flock - taken };
     sheep += taken;
   }
-  if (won) {
-    for (const id of FISHERY_IDS) {
-      if (!onSide(id)) continue;
-      buildings = { ...buildings, [id]: buildings[id] - 1 };
-      burned.push(BUILDING_INFO[id].name);
-    }
-  }
-  const notes = [
-    sheep > 0 ? `They drove off ${String(sheep)} sheep.` : '',
-    burned.length > 0 ? `They burned ${burned.join(', ')} down a level.` : '',
-  ];
-  return { buildings, flocks, note: notes.filter(Boolean).join(' ') };
+  return { flocks, note: sheep > 0 ? `They drove off ${String(sheep)} sheep.` : '' };
 }
 
 // Apply a new battle state, settling the raid if it just ended.

@@ -3,7 +3,9 @@
 import { RESOURCES, STARTING_WOOD, emptyStock, type Resource } from './resources';
 import { cleanForest } from './forest';
 import { STARTING_APPLES } from './farms';
-import { BUILDING_IDS, crewSize, type BuildingId } from './buildings';
+import { BUILDING_IDS, MAX_BUILDING_LEVEL, buildingCost, crewSize, type BuildingId, type BuildingLevels } from './buildings';
+import { HOUSE_IDS, houseBeds, isHouse, oldHouseBeds } from './houses';
+import { fullHome, type Homes } from './homes';
 import { ARMY_RECRUITING, ARMY_UNITS, emptyArmy, type ArmyUnit } from './units';
 import { RAID_AUTO_AFTER, partyValue, raidParty, raidStrength } from './raids';
 import { BERTHS, MAX_BARGES, isWaiting } from './ship';
@@ -139,6 +141,7 @@ export function mergeSave(saved: Partial<SavedState> | undefined, fresh: GameSta
     warehouse,
     // The forest as it was left; a save from before the forest (or a damaged one) gets a new one.
     forest: cleanForest(saved.forest) ?? fresh.forest,
+    homes: cleanHomes(saved.homes, buildings),
     army: saved.army ? { ...emptyArmy(), ...saved.army } : fresh.army,
     recruits: saved.recruits ? { ...emptyArmy(), ...saved.recruits } : fresh.recruits,
     ...buildingFields(buildings, undefined, techs, haulFactor(haulWalk({ placements, roads, clearedRocks }))),
@@ -179,11 +182,12 @@ export function mergeSave(saved: Partial<SavedState> | undefined, fresh: GameSta
     bargeSerial: saved.bargeSerial ?? 0,
     traps,
     gold: (saved.gold ?? fresh.gold) + washedAway.gold,
-    // A battle left open when the game closed waits a little for its commander, then fights itself.
+    // A battle left open when the game closed waits a little for its commander, then the captains fight it
+    // (one they were already fighting goes straight on).
     battleCommanded: false,
     // Saves from before the losing streak was kept count it from the last raid.
     raidsLostInARow: saved.raidsLostInARow ?? (saved.raidReport?.outcome === 'lost' ? 1 : 0),
-    battleDeadline: saved.battle?.status === 'active' ? elapsedSeconds + RAID_AUTO_AFTER : (saved.battleDeadline ?? 0),
+    battleDeadline: saved.battle?.status === 'active' ? elapsedSeconds + (saved.battle.auto ? 0 : RAID_AUTO_AFTER) : (saved.battleDeadline ?? 0),
   };
   // The old timed barge's bookkeeping.
   for (const key of ['shipVisit', 'shipSold', 'craftQueue']) delete (merged as Record<string, unknown>)[key];
@@ -216,7 +220,56 @@ export function migrateSave(saved: Partial<SavedState> | undefined, version: num
     next = { ...next, placements };
   }
   if (version < 3) next = grownMap(next);
+  if (version < 4) next = splitHouses(next);
   return next;
+}
+
+// Each built cottage's home as it was saved (one without starts stocked).
+function cleanHomes(saved: Homes | undefined, buildings: BuildingLevels): Homes {
+  const homes: Homes = {};
+  for (const id of HOUSE_IDS) {
+    if ((buildings[id] ?? 0) <= 0) continue;
+    const home = saved?.[id];
+    homes[id] = home && typeof home.water === 'number' && typeof home.food === 'number' ? { water: home.water, food: home.food, errand: home.errand ?? null } : fullHome();
+  }
+  return homes;
+}
+
+// Before the cottages there were up to eight 2×2 workers' houses: each becomes cottages on its own four
+// tiles, at its level — enough of them to sleep as many as it did, up to four. A house being built or
+// raised is paid back (its job dropped, as it stood). Every cottage starts with its pantry full.
+function splitHouses(saved: Partial<SavedState>): Partial<SavedState> {
+  const buildings: Partial<BuildingLevels> = { ...saved.buildings };
+  const placements: Placements = { ...saved.placements };
+  const old = HOUSE_IDS.map((id) => ({ level: buildings[id] ?? 0, spot: placements[id] })).filter((house): house is { level: number; spot: Spot } => house.level > 0 && !!house.spot);
+  for (const id of HOUSE_IDS) {
+    buildings[id] = 0;
+    delete placements[id];
+  }
+  let next = 0;
+  for (const { level, spot } of old) {
+    const count = Math.min(4, Math.max(1, Math.ceil(oldHouseBeds(level) / houseBeds(level))));
+    for (const [dx, dy] of [[0, 0], [1, 0], [0, 1], [1, 1]].slice(0, count)) {
+      if (next >= HOUSE_IDS.length) break;
+      const id = HOUSE_IDS[next++];
+      buildings[id] = Math.min(level, MAX_BUILDING_LEVEL);
+      placements[id] = { x: spot.x + dx, y: spot.y + dy };
+    }
+  }
+  const split: Partial<SavedState> = { ...saved, buildings: buildings as BuildingLevels, placements };
+  const refunds = (saved.construction ?? []).filter((job) => isHouse(job.building));
+  if (refunds.length > 0) {
+    let gold = saved.gold ?? 0;
+    const warehouse: Partial<Record<Resource, number>> = { ...saved.warehouse };
+    for (const job of refunds) {
+      const cost = buildingCost(job.building, job.level);
+      gold += cost.gold;
+      for (const [resource, amount] of Object.entries(cost.resources) as [Resource, number][]) warehouse[resource] = (warehouse[resource] ?? 0) + amount;
+    }
+    Object.assign(split, { gold, warehouse, construction: (saved.construction ?? []).filter((job) => !isHouse(job.building)) });
+  }
+  split.homes = Object.fromEntries(HOUSE_IDS.filter((id) => (buildings[id] ?? 0) > 0).map((id) => [id, fullHome()]));
+  return split;
 }
 
 // The town and everything in it (buildings, roads, cleared and ordered rocks) moves in with the grown map;

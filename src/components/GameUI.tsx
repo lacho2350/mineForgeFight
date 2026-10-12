@@ -1,23 +1,21 @@
 import type { ReactNode } from 'react';
-import { useEffect } from 'react';
+import { memo } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import Animated, {
-  useAnimatedStyle,
-  useSharedValue,
-  withRepeat,
-  withTiming,
-} from 'react-native-reanimated';
+import Animated, { css } from 'react-native-reanimated';
 
-export function LiveSignal() {
-  const opacity = useSharedValue(0.35);
-  const animatedStyle = useAnimatedStyle(() => ({ opacity: opacity.get() }), [opacity]);
-
-  useEffect(() => {
-    opacity.set(withRepeat(withTiming(1, { duration: 900 }), -1, true));
-  }, [opacity]);
-
-  return <Animated.View style={[styles.liveSignal, animatedStyle]} />;
-}
+// A pulsing dot. A CSS animation: on web the browser runs it with no script per frame.
+const pulse = css.create({
+  dot: {
+    animationName: css.keyframes({ from: { opacity: 0.35 }, to: { opacity: 1 } }),
+    animationDuration: '900ms',
+    animationIterationCount: 'infinite',
+    animationDirection: 'alternate',
+    animationTimingFunction: 'ease-in-out',
+  },
+});
+export const LiveSignal = memo(function LiveSignal() {
+  return <Animated.View style={[styles.liveSignal, pulse.dot]} />;
+});
 
 export function GameButton({
   label,

@@ -31,6 +31,7 @@ import { destroyRefund, upgradeBlocker } from '../game/costs';
 import { gearComing } from '../game/wagons';
 import { FORGE_IDS, FORGE_NAMES, isForge } from '../game/forges';
 import { isHouse } from '../game/houses';
+import { isWoodcutter } from '../game/woodcutters';
 import { techsOf } from '../game/techs';
 import { ITEM_INFO, UNIT_GEAR } from '../game/items';
 import type { Workforce } from '../game/workforce';
@@ -146,7 +147,7 @@ export function BuildingDetail({ game, workforce, id, bare = false, onChooseSpot
   const job = construction.find((item) => item.building === id);
   const maxed = level >= MAX_BUILDING_LEVEL;
   const next = level + 1;
-  const branch = isForge(id) ? 'forges' : isHouse(id) ? 'houses' : id;
+  const branch = isForge(id) ? 'forges' : isHouse(id) ? 'houses' : isWoodcutter(id) ? 'woodcutter' : id;
   const now = buildingEffects(id, level, game.techs);
   const after = maxed ? null : buildingEffects(id, next, game.techs);
   const cost = maxed ? null : buildingCost(id, next);

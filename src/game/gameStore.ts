@@ -1,10 +1,12 @@
-import { create } from 'zustand';
+import { useSyncExternalStore } from 'react';
+import { create, type StoreApi } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { MINE_GALLERY_COUNT, MINE_STATIONS } from '../components/MineMapLayout';
 import { cartsOnLevel } from './haulage';
 import { RESOURCES, RESOURCE_INFO, STARTING_WOOD, emptyStock } from './resources';
 import { startingForest } from './forest';
 import { STARTING_APPLES } from './farms';
+import { fullHome } from './homes';
 import { BUILDING_INFO, DWELLING_UNIT, STARTING_BUILDINGS, buildingCost, buildingStats, staffNeeded } from './buildings';
 import { ARMY_RECRUITING, UNIT_STATS, emptyArmy } from './units';
 import { act, resolveBattle, stepAI } from './combat';
@@ -14,8 +16,8 @@ import { isMoored, isWaiting } from './ship';
 import { CLEAR_CREW, ROCK_INFO, rockAt, rockyTest } from './rocks';
 import { ITEM_INFO, UNIT_GEAR, emptyItems } from './items';
 import { DEFAULT_FORGE_TARGET, FORGE_NAMES, FORGE_TARGETS, emptyLoad, isForge } from './forges';
-import { FOOTPRINTS, coveredTiles, fillPlacements, isPlaceable, placementProblem, tileKey as mapTileKey } from './cityMap';
-import { ROAD_INFO, haulFactor, roadProblem, roadsUnder, startingRoads, withoutRoads } from './roads';
+import { coveredTiles, fillPlacements, isPlaceable, placementProblem, tileKey as mapTileKey } from './cityMap';
+import { ROAD_INFO, haulFactor, roadProblem, startingRoads } from './roads';
 import { TRAP_INFO, TRAP_REFUND, trapAt } from './traps';
 import { TECHS, techCost } from './techs';
 import {
@@ -84,10 +86,11 @@ const startingStats = buildingStats(STARTING_BUILDINGS);
 
 const saveStorage = createSaveStorage<SavedState>();
 
-const createGameStore = () => create<GameState>()(persist<GameState, [], [], SavedState>((set) => ({
+// The game: its starting state and every action, bound to a store's `set`.
+const gameState = (set: StoreApi<GameState>['setState']): GameState => ({
   elapsedSeconds: 0,
   depth: 1,
-  gold: 120,
+  gold: 1000,
   population: 10,
   paused: [],
   placements: startingPlacements,
@@ -127,6 +130,8 @@ const createGameStore = () => create<GameState>()(persist<GameState, [], [], Sav
   forestSerial: 0,
   flocks: {},
   hungry: false,
+  homes: { houses: fullHome() },
+  discovered: ['coal', 'wood', 'apples'],
   depositMined: {},
   openedStations: [stationKey(-1, 0), stationKey(-1, 1)],
   playerDug: [],
@@ -317,6 +322,11 @@ const createGameStore = () => create<GameState>()(persist<GameState, [], [], Sav
 
   commandBattle: () => set((state) => (state.battle?.status === 'active' ? { battleCommanded: true } : {})),
 
+  // Leaving the battlefield mid-battle hands it to the captains: it's fought on at the battlefield's pace
+  // (still waiting out the 30 s for orders if those haven't run out).
+  releaseBattle: () =>
+    set((state) => (state.battle?.status === 'active' && state.battleCommanded ? { battleCommanded: false, battleDeadline: Math.max(state.battleDeadline, state.elapsedSeconds) } : {})),
+
   battleAct: (action) => set((state) => (state.battle ? withBattle(state, act(state.battle, action)) : {})),
 
   battleStep: () => set((state) => (state.battle ? withBattle(state, stepAI(state.battle)) : {})),
@@ -331,7 +341,9 @@ const createGameStore = () => create<GameState>()(persist<GameState, [], [], Sav
 
   setAutoResolveRaids: (on) => set({
     autoResolveRaids: on,
-    notice: on ? 'Auto-resolve on: every raid is fought out the moment it arrives.' : 'Auto-resolve off: raids wait for your orders (they fight on their own after 30 s).',
+    notice: on
+      ? 'Battles: instant. Every raid is settled the moment it arrives.'
+      : 'Battles: fought out. Command each battle, or after 30 s the captains fight it, march by march.',
   }),
 
   setRideOut: (rideOut) => set((state) => {
@@ -370,17 +382,10 @@ const createGameStore = () => create<GameState>()(persist<GameState, [], [], Sav
   placeBuilding: (id, spot) => set((state) => {
     const { name } = BUILDING_INFO[id];
     if (state.buildings[id] > 0 || state.construction.some((job) => job.building === id)) return { notice: `The ${name} is already built.` };
-    const problem = placementProblem(id, spot, state.placements, BUILDING_NAMES, rockyTest(state.clearedRocks)) ?? upgradeBlocker(state, id);
+    const onRoad = (x: number, y: number) => !!state.roads[mapTileKey(x, y)];
+    const problem = placementProblem(id, spot, state.placements, BUILDING_NAMES, rockyTest(state.clearedRocks), onRoad) ?? upgradeBlocker(state, id);
     if (problem) return { notice: `${name}: ${problem}` };
-    // Roads where it goes are taken up.
-    const under = roadsUnder({ ...spot, ...FOOTPRINTS[id] }, state.roads);
-    const started = startBuilding(state, id);
-    return {
-      ...started,
-      placements: { ...state.placements, [id]: spot },
-      roads: withoutRoads(state.roads, under),
-      notice: under.length > 0 ? `${started.notice ?? ''} ${String(under.length)} road tile${under.length === 1 ? ' was' : 's were'} taken up.` : started.notice,
-    };
+    return { ...startBuilding(state, id), placements: { ...state.placements, [id]: spot } };
   }),
 
   clearRocks: (tiles) => set((state) => {
@@ -634,7 +639,9 @@ const createGameStore = () => create<GameState>()(persist<GameState, [], [], Sav
       notice: `Ordered ${String(accepted.length)} tile${accepted.length === 1 ? '' : 's'} dug for ${String(spent)} gold and ${String(accepted.length * TUNNEL_WOOD)} wood.${reason ? ` ${reason}` : ''}`,
     };
   }),
-}), {
+});
+
+const createGameStore = () => create<GameState>()(persist<GameState, [], [], SavedState>((set) => gameState(set), {
   name: SAVE_KEY,
   version: SAVE_VERSION,
   storage: saveStorage,
@@ -658,8 +665,8 @@ const createGameStore = () => create<GameState>()(persist<GameState, [], [], Sav
 // In development, Fast Refresh re-runs this module after an edit to the game logic. A store made then
 // would start blank — it never loads the save or ticks — and the screens froze on it while the running
 // game carried on unseen behind it (its writes are kept off the save, so nothing was lost). So the running
-// store and its clock are kept across a refresh: reload the app to run edited game logic. Tests load
-// fresh copies of the store on purpose, so they always get a new one.
+// store and its clock are kept across a refresh, and handed the edited actions (save migrations still
+// only run when the app loads). Tests load fresh copies of the store on purpose, so they always get a new one.
 const running = globalThis as { mineforgeStore?: ReturnType<typeof createGameStore>; mineforgeClock?: ReturnType<typeof setInterval> };
 const keepAcrossRefresh = __DEV__ && typeof jest === 'undefined';
 /** Records keyed by fixed ids (every building, resource, unit, item): a refresh may add entries to them. */
@@ -668,14 +675,18 @@ const FIXED_RECORDS = ['buildings', 'warehouse', 'vein', 'mineExit', 'mineStock'
 const kept = keepAcrossRefresh ? running.mineforgeStore : undefined;
 export const useGameStore = kept ?? createGameStore();
 if (kept) {
-  // A refresh that added state (a new feature) hands the kept store the new fields' starting values — and
-  // new entries in the records keyed by fixed ids (a new building, resource, unit or item) — so screens
-  // built for them don't break on it; its actions stay the ones it was made with.
-  const fresh = createGameStore().getInitialState() as unknown as Record<string, unknown>;
+  // A refresh hands the kept store the edited actions, bound to it, so changed game logic runs at once. One
+  // that added state (a new feature) also hands it the new fields' starting values — and new entries in the
+  // records keyed by fixed ids (a new building, resource, unit or item) — so screens built for them don't
+  // break on it.
+  const fresh = gameState(kept.setState) as unknown as Record<string, unknown>;
   const current = kept.getState() as unknown as Record<string, unknown>;
   const added: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(fresh)) {
-    if (typeof value === 'function') continue;
+    if (typeof value === 'function') {
+      added[key] = value;
+      continue;
+    }
     if (!(key in current)) {
       added[key] = value;
       continue;
@@ -688,6 +699,41 @@ if (kept) {
   if (Object.keys(added).length > 0) kept.setState(added as Partial<GameState>);
 }
 if (keepAcrossRefresh) running.mineforgeStore = useGameStore;
+
+// A store subscription that's off: a screen out of sight keeps what it last showed.
+const stayPut = () => () => {};
+
+// On web, while the page itself is hidden (another tab, a minimised window) nothing on screen needs
+// updating: the game goes on ticking, but its changes are passed on to the screens only once the page
+// is shown again.
+const page = typeof document === 'undefined' ? null : document;
+function subscribeShown(onChange: () => void) {
+  const unsubscribe = useGameStore.subscribe(() => {
+    if (!page?.hidden) onChange();
+  });
+  const onVisibility = () => {
+    if (!page?.hidden) onChange();
+  };
+  page?.addEventListener('visibilitychange', onVisibility);
+  return () => {
+    unsubscribe();
+    page?.removeEventListener('visibilitychange', onVisibility);
+  };
+}
+
+/**
+ * The whole game for a screen, kept up to date only while it's `live`: a screen out of sight (the
+ * stronghold under the mine or the battle) skips the ticks instead of re-rendering on every one, and
+ * catches up when it's shown again — as do all of them while the page is hidden.
+ */
+export function useGame(live = true): GameState {
+  return useSyncExternalStore(live ? subscribeShown : stayPut, useGameStore.getState);
+}
+
+/** One slice of the game (a state field, or a value worked out from it that compares equal while unchanged), while `live`. */
+export function useGameSlice<T>(selector: (state: GameState) => T, live = true): T {
+  return useSyncExternalStore(live ? subscribeShown : stayPut, () => selector(useGameStore.getState()));
+}
 
 /** Load the saved game (call once storage is ready, before the simulation starts); only the first call loads. */
 export function loadGame() {

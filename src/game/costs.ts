@@ -15,6 +15,7 @@ import type { Workforce } from './workforce';
 import { isMoored, isWaiting, BARGE_SAIL, type Barge } from './ship';
 import { FORGE_IDS } from './forges';
 import { HOUSE_IDS } from './houses';
+import { WOODCUTTER_IDS } from './woodcutters';
 import type { Spot } from './cityMap';
 import { ROAD_INFO, type RoadKind } from './roads';
 import { TRAP_INFO, trapProblem, type TrapKind } from './traps';
@@ -127,9 +128,10 @@ export function destroyRefund(state: Pick<GameState, 'buildings' | 'construction
 /** The level that counts for a building branch of the tech tree (the forges': the best forge). */
 function branchLevel(buildings: BuildingLevels, branch: Exclude<TechBranch, 'mine'>) {
   if (branch === 'forges') return Math.max(...FORGE_IDS.map((forge) => buildings[forge]));
+  if (branch === 'woodcutter') return Math.max(...WOODCUTTER_IDS.map((hut) => buildings[hut]));
   return branch === 'houses' ? Math.max(...HOUSE_IDS.map((house) => buildings[house])) : buildings[branch];
 }
-const branchBuilding = (branch: Exclude<TechBranch, 'mine'>) => (branch === 'forges' ? 'a forge' : branch === 'houses' ? 'a house' : `the ${BUILDING_INFO[branch].name}`);
+const branchBuilding = (branch: Exclude<TechBranch, 'mine'>) => (branch === 'forges' ? 'a forge' : branch === 'houses' ? 'a house' : branch === 'woodcutter' ? 'a woodcutter’s hut' : `the ${BUILDING_INFO[branch].name}`);
 
 /** Why a tech can't be bought right now, or null if it can. */
 export function techBlocker(state: Pick<GameState, 'techs' | 'buildings' | 'depth' | 'gold'>, id: TechId): string | null {

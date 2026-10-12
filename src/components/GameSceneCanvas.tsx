@@ -3,7 +3,7 @@ import { BlurMask, Canvas, Group, Image, Path, Rect } from '@shopify/react-nativ
 import { PixelRatio, StyleSheet, View } from 'react-native';
 import { useDerivedValue, useFrameCallback, useSharedValue, type SharedValue } from 'react-native-reanimated';
 import { workforceOf } from '../game/hold';
-import { useGameStore } from '../game/gameStore';
+import { useGameSlice } from '../game/gameStore';
 import { buildingStats, towerCount, type BuildingId } from '../game/buildings';
 import type { MapSide, Placements } from '../game/cityMap';
 import { raidSide, type RaidParty } from '../game/raids';
@@ -51,6 +51,7 @@ import { EmptyPlot, PlacementGhost, Selection, type Ghost } from './stronghold/o
 import { Gatehouse, Tower, WallSegment } from './stronghold/fortifications';
 import { BuildingArt, Campfire, Headframe, Parade, Scaffold } from './stronghold/buildingArt';
 import { Barges, Flocks, LiveBits, PILE_STEPS, Piles, ProgressBar, Wagons } from './stronghold/live';
+import { Housewives } from './stronghold/housewives';
 import { PeasantAtlas } from './stronghold/peasants';
 import { useStillImage } from './stronghold/stillImage';
 
@@ -83,33 +84,35 @@ const STORE_RESOURCES = RESOURCES.filter((resource) => !FOOD_RESOURCES.includes(
 const figuresFor = (count: number) => (count <= 0 ? 0 : count >= 30 ? 3 : count >= 10 ? 2 : 1);
 
 function GameSceneCanvas({ width, height, camX, camY, zoom, selected, ghost, active = true }: GameSceneProps) {
-  const buildings = useGameStore((state) => state.buildings);
-  const construction = useGameStore((state) => state.construction);
-  const placements = useGameStore((state) => state.placements);
-  const traps = useGameStore((state) => state.traps);
-  const roads = useGameStore((state) => state.roads);
-  const clearedRocks = useGameStore((state) => state.clearedRocks);
-  const clearOrders = useGameStore((state) => state.clearOrders);
-  const army = useGameStore((state) => state.army);
-  const warehouse = useGameStore((state) => state.warehouse);
-  const warehouseCapacity = useGameStore((state) => state.warehouseCapacity);
-  const population = useGameStore((state) => state.population);
-  const sites = useGameStore((state) => state.sites);
-  const pendingSites = useGameStore((state) => state.pendingSites);
-  const carts = useGameStore((state) => state.carts);
-  const paused = useGameStore((state) => state.paused);
-  const raid = useGameStore((state) => state.raid);
-  const forest = useGameStore((state) => forestLook(state.forest));
-  const felling = useGameStore((state) => fellingStand(state.forest) ?? '');
-  const flocks = useGameStore((state) =>
-    PASTURE_IDS.map((id) => {
-      const spot = state.placements[id];
-      return spot && state.buildings[id] > 0 ? `${String(spot.x)},${String(spot.y)},${String(Math.min(30, Math.round(state.flocks[id] ?? 0)))}` : '';
-    })
-      .filter(Boolean)
-      .join(';'),
+  const buildings = useGameSlice((state) => state.buildings, active);
+  const construction = useGameSlice((state) => state.construction, active);
+  const placements = useGameSlice((state) => state.placements, active);
+  const traps = useGameSlice((state) => state.traps, active);
+  const roads = useGameSlice((state) => state.roads, active);
+  const clearedRocks = useGameSlice((state) => state.clearedRocks, active);
+  const clearOrders = useGameSlice((state) => state.clearOrders, active);
+  const army = useGameSlice((state) => state.army, active);
+  const warehouse = useGameSlice((state) => state.warehouse, active);
+  const warehouseCapacity = useGameSlice((state) => state.warehouseCapacity, active);
+  const population = useGameSlice((state) => state.population, active);
+  const sites = useGameSlice((state) => state.sites, active);
+  const pendingSites = useGameSlice((state) => state.pendingSites, active);
+  const carts = useGameSlice((state) => state.carts, active);
+  const paused = useGameSlice((state) => state.paused, active);
+  const raid = useGameSlice((state) => state.raid, active);
+  const forest = useGameSlice((state) => forestLook(state.forest), active);
+  const felling = useGameSlice((state) => fellingStand(state.forest) ?? '', active);
+  const flocks = useGameSlice(
+    (state) =>
+      PASTURE_IDS.map((id) => {
+        const spot = state.placements[id];
+        return spot && state.buildings[id] > 0 ? `${String(spot.x)},${String(spot.y)},${String(Math.min(30, Math.round(state.flocks[id] ?? 0)))}` : '';
+      })
+        .filter(Boolean)
+        .join(';'),
+    active,
   );
-  const atGate = useGameStore((state) => state.battle?.status === 'active');
+  const atGate = useGameSlice((state) => state.battle?.status === 'active', active);
   const workforce = useMemo(
     () => workforceOf({ population, sites, pendingSites, carts, construction, clearOrders, buildings, paused }),
     [population, sites, pendingSites, carts, construction, clearOrders, buildings, paused],
@@ -126,13 +129,19 @@ function GameSceneCanvas({ width, height, camX, camY, zoom, selected, ghost, act
   // Raiders show up on their ground, on the side they come from, while a raid is on its way or at the gate.
   const raiders = raid ? { party: raid.party, side: raidSide(raid.number), atGate } : null;
   const key = JSON.stringify([buildings, placements, roads, clearedRocks.length, traps, parade, building, raiders]);
-  const still = useStillImage(key, STILL_SCALE, active, () => (
-    <StaticScene buildings={buildings} placements={placements} roads={roads} clearedRocks={clearedRocks} traps={traps} parade={parade} building={building} raiders={raiders} />
-  ));
+  // In two layers, each drawn in a step of its own: the ground, then everything standing on it.
+  const still = useStillImage(key, STILL_SCALE, active, () => [
+    <StaticGround key="ground" buildings={buildings} roads={roads} clearedRocks={clearedRocks} traps={traps} />,
+    <StaticScene key="scene" buildings={buildings} placements={placements} roads={roads} clearedRocks={clearedRocks} parade={parade} building={building} raiders={raiders} />,
+  ]);
   const warehousePlot = plotOf('warehouse', placements);
   const granaryPlot = plotOf('granary', placements);
   const selectedPlot = selected ? plotOf(selected, placements) : null;
 
+  // Two canvases, one over the other. Below, everything that stands still — the mountains, the castle
+  // image and the forest, big and costly to fill — drawn again only when the camera moves or they change.
+  // Over it, see-through, what moves or changes often, redrawn with every animation frame (filling the
+  // still part every frame too took a fifth of the browser's time).
   return (
     <View style={styles.frame}>
       <Canvas style={styles.canvas}>
@@ -143,12 +152,17 @@ function GameSceneCanvas({ width, height, camX, camY, zoom, selected, ghost, act
           <Backdrop part="front" />
           <ForestTrees look={forest} />
           <Backdrop part="frontFar" />
+        </Group>
+      </Canvas>
+      <Canvas style={styles.over}>
+        <Group transform={transform}>
           {warehousePlot && buildings.warehouse > 0 && <Piles resources={STORE_RESOURCES} steps={piles} plot={warehousePlot} />}
           {granaryPlot && buildings.granary > 0 && <Piles resources={FOOD_RESOURCES} steps={foodPiles} plot={granaryPlot} />}
           <Flocks look={flocks} />
           <LiveBits buildings={buildings} placements={placements} clock={clock} />
-          <Barges clock={clock} />
-          <Wagons clock={clock} placements={placements} roads={roads} clearedRocks={clearedRocks} />
+          <Barges clock={clock} live={active} />
+          <Wagons clock={clock} placements={placements} roads={roads} clearedRocks={clearedRocks} live={active} />
+          <Housewives clock={clock} placements={placements} roads={roads} clearedRocks={clearedRocks} live={active} />
           {construction.map((job) => {
             const plot = plotOf(job.building, placements);
             return plot ? <ProgressBar key={job.building} job={job} plot={plot} /> : null;
@@ -175,13 +189,25 @@ function GameSceneCanvas({ width, height, camX, camY, zoom, selected, ghost, act
 
 export default memo(GameSceneCanvas);
 
-// Everything that doesn't move.
-function StaticScene({ buildings, placements, roads, clearedRocks, traps, parade, building, raiders }: {
+// The ground that doesn't move: grass, roads, rocks, traps and, until it's built, the wall's line.
+function StaticGround({ buildings, roads, clearedRocks, traps }: { buildings: Record<BuildingId, number>; roads: Roads; clearedRocks: string[]; traps: Trap[] }) {
+  return (
+    <Group>
+      <Ground flooded={buildings.moat > 0} />
+      <RoadTiles roads={roads} />
+      <Rocks cleared={clearedRocks} rocks={rocksLeft(clearedRocks)} />
+      <Traps traps={traps} />
+      {tierOf(buildings.wall) === 0 && <PlannedWall />}
+    </Group>
+  );
+}
+
+// Everything standing on it that doesn't move.
+function StaticScene({ buildings, placements, roads, clearedRocks, parade, building, raiders }: {
   buildings: Record<BuildingId, number>;
   placements: Placements;
   roads: Roads;
   clearedRocks: string[];
-  traps: Trap[];
   parade: number[];
   building: BuildingId[];
   raiders: { party: RaidParty; side: MapSide; atGate: boolean } | null;
@@ -261,11 +287,6 @@ function StaticScene({ buildings, placements, roads, clearedRocks, traps, parade
 
   return (
     <Group>
-      <Ground flooded={buildings.moat > 0} />
-      <RoadTiles roads={roads} />
-      <Rocks cleared={clearedRocks} rocks={rocks} />
-      <Traps traps={traps} />
-      {wallTier === 0 && <PlannedWall />}
       <Path path={svgPath(shadows.join(' '))} color="rgba(22, 30, 12, 0.32)">
         <BlurMask blur={2.5} style="normal" />
       </Path>
@@ -293,4 +314,5 @@ function useCityClock(active: boolean) {
 const styles = StyleSheet.create({
   frame: { flex: 1, overflow: 'hidden' },
   canvas: { flex: 1 },
+  over: { position: 'absolute', left: 0, top: 0, right: 0, bottom: 0 },
 });

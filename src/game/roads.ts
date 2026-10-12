@@ -62,20 +62,6 @@ export function roadProblem(spot: Spot, kind: RoadKind | 'erase', roads: Roads, 
   return null;
 }
 
-/** Road tiles under a footprint (taken up when a building goes there). */
-export function roadsUnder(spot: Spot & Footprint, roads: Roads): string[] {
-  const keys: string[] = [];
-  for (let x = spot.x; x < spot.x + spot.w; x++) for (let y = spot.y; y < spot.y + spot.d; y++) if (roads[tileKey(x, y)]) keys.push(tileKey(x, y));
-  return keys;
-}
-
-export function withoutRoads(roads: Roads, keys: string[]): Roads {
-  if (keys.length === 0) return roads;
-  const next = { ...roads };
-  for (const key of keys) delete next[key];
-  return next;
-}
-
 // ——— Walking ———
 
 /** A walk: its time in seconds, and the points walked through (tile units) with the time at each. */

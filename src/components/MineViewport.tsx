@@ -10,7 +10,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { scheduleOnRN } from 'react-native-worklets';
 import type { CartLoad } from '../game/state';
-import { FIXED_TICK_MS } from '../game/gameStore';
+import { FIXED_TICK_MS, useGameStore } from '../game/gameStore';
 import type { LevelCarts } from '../game/haulage';
 import { RESOURCES, type Resource, type Stock } from '../game/resources';
 import { checkDigStep, depositRemaining, findDigParent, isDug, parseKey, tileKey, type MineLayout } from '../game/mineLayout';
@@ -66,8 +66,9 @@ type MineViewportProps = MineSceneProps & {
   renderCanvas: (props: MineSceneCanvasProps) => ReactNode;
 };
 
-type Drag = { tiles: string[]; invalid: string | null };
-const noDrag: Drag = { tiles: [], invalid: null };
+/** A tunnel being drawn; `invalid` is the tile it stopped at, red, and `reason` why. */
+type Drag = { tiles: string[]; invalid: string | null; reason: string | null };
+const noDrag: Drag = { tiles: [], invalid: null, reason: null };
 
 function clamp(value: number, min: number, max: number) {
   'worklet';
@@ -170,9 +171,22 @@ export default function MineViewport({
     [digPlan, digProgress, drag],
   );
   const extendAt = (mapX: number, mapY: number) => dragActions.extend(tileKey(Math.floor(mapY / T), Math.floor(mapX / T)));
+  // What happened to the last drag, shown over the map for a few seconds: why it stopped, or the order's
+  // result (dug for so much, or why not — gold, wood).
+  const [said, setSaid] = useState<{ text: string } | null>(null);
+  const say = (text: string) => setSaid({ text });
+  useEffect(() => {
+    if (!said) return undefined;
+    const timer = setTimeout(() => setSaid(null), 4500);
+    return () => clearTimeout(timer);
+  }, [said]);
+  const message = said?.text ?? null;
   const finishDrag = (commit: boolean) => {
-    const tiles = dragActions.finish();
-    if (commit && tiles.length > 0) onPlanDig(tiles);
+    const { tiles, reason } = dragActions.finish();
+    if (commit && tiles.length > 0) {
+      onPlanDig(tiles);
+      say([useGameStore.getState().notice, reason].filter(Boolean).join(' · Stopped: '));
+    } else if (reason) say(reason);
   };
 
   const panBy = (dx: number, dy: number) => {
@@ -371,6 +385,11 @@ export default function MineViewport({
           <DepositLabels layout={layout} view={view} depositMined={depositMined} />
           <MineSceneReadout miners={layout.sites.length} depth={layout.depth} coal={coal} />
         </CameraLayer>
+        {(drag.reason ?? message) && (
+          <View style={[styles.digMessage, drag.reason ? styles.digMessageStop : null]}>
+            <Text style={styles.digMessageText}>{drag.reason ?? message}</Text>
+          </View>
+        )}
       </View>
     </GestureDetector>
     <View style={styles.zoomControls}>
@@ -431,15 +450,18 @@ function useDigDrag(layout: MineLayout, digPlan: string[]) {
     const planned = new Set([...digPlan, ...tiles]);
 
     if (tiles.length === 0) {
+      const { row, column } = parseKey(key);
+      // A drag starts on a tunnel; the first tile of rock after it is where the new tunnel begins.
+      if (isDug(layout, row, column) || digPlan.includes(key)) return;
       const parent = findDigParent(layout, new Set(digPlan), key);
-      update(parent ? { tiles: [key], invalid: null } : { tiles: [], invalid: key });
+      update(parent ? { tiles: [key], invalid: null, reason: null } : { tiles: [], invalid: key, reason: startProblem(layout, digPlan, key) });
       return;
     }
     const last = tiles[tiles.length - 1];
     if (key === last) return;
     const back = tiles.indexOf(key);
     if (back >= 0) {
-      update({ tiles: tiles.slice(0, back + 1), invalid: null });
+      update({ tiles: tiles.slice(0, back + 1), invalid: null, reason: null });
       return;
     }
 
@@ -447,6 +469,7 @@ function useDigDrag(layout: MineLayout, digPlan: string[]) {
     const target = parseKey(key);
     const path = [...tiles];
     let invalid: string | null = null;
+    let reason: string | null = null;
     let at = parseKey(last);
     while (at.row !== target.row || at.column !== target.column) {
       const next = at.column !== target.column
@@ -455,24 +478,39 @@ function useDigDrag(layout: MineLayout, digPlan: string[]) {
       const nextKey = tileKey(next.row, next.column);
       // The run has reached a tunnel it joins: it ends there (that's not a mistake).
       if (planned.has(nextKey) || isDug(layout, next.row, next.column)) break;
-      if (!checkDigStep(layout, planned, nextKey, tileKey(at.row, at.column)).ok) {
+      const check = checkDigStep(layout, planned, nextKey, tileKey(at.row, at.column));
+      if (!check.ok) {
         invalid = nextKey;
+        reason = check.reason;
         break;
       }
       planned.add(nextKey);
       path.push(nextKey);
       at = next;
     }
-    update({ tiles: path, invalid });
+    update({ tiles: path, invalid, reason });
   };
 
   const finish = () => {
-    const { tiles } = current.current;
+    const { tiles, reason } = current.current;
     update(noDrag);
-    return tiles;
+    return { tiles, reason };
   };
 
   return [drag, { extend, finish }] as const;
+}
+
+// Why a dig can't start on `key`: the rule its nearest tunnel breaks, or that there's no tunnel beside it.
+function startProblem(layout: MineLayout, digPlan: string[], key: string) {
+  const { row, column } = parseKey(key);
+  const planned = new Set(digPlan);
+  for (const [dr, dc] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
+    const parent = tileKey(row + dr, column + dc);
+    if (!isDug(layout, row + dr, column + dc) && !planned.has(parent)) continue;
+    const check = checkDigStep(layout, planned, key, parent);
+    if (!check.ok) return check.reason;
+  }
+  return 'Start a tunnel from the end of one already dug: drag from it out across rock.';
 }
 
 function pileStep(fill: number, steps: number) {
@@ -537,6 +575,9 @@ function DepositLabels({ layout, view, depositMined }: { layout: MineLayout; vie
 }
 
 const styles = StyleSheet.create({
+  digMessage: { pointerEvents: 'none', position: 'absolute', left: 12, right: 12, bottom: 12, padding: 10, backgroundColor: 'rgba(25, 31, 27, 0.92)', borderLeftWidth: 3, borderLeftColor: '#c3ce87' },
+  digMessageStop: { borderLeftColor: '#e5484d' },
+  digMessageText: { color: '#f0ead8', fontFamily: 'monospace', fontSize: 13 },
   depositLabel: { position: 'absolute', minWidth: T - 4, paddingHorizontal: 2, backgroundColor: 'rgba(13, 10, 8, 0.75)' },
   depositLabelText: { color: '#ffd166', fontFamily: 'monospace', fontSize: 8, textAlign: 'center' },
   frame: { width: '100%', overflow: 'hidden', backgroundColor: '#0d0a08' },

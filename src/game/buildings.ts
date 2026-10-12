@@ -4,6 +4,7 @@
 import { FORGE_IDS, FORGE_KEEP, FORGE_NAMES, forgeSpeedAt, isForge, type ForgeId } from './forges';
 import { HOUSE_IDS, HOUSE_KEEP, HOUSE_NAMES, MAX_PEASANTS, houseBeds, isHouse, type HouseId } from './houses';
 import { APPLES_PER_LEVEL, FISHERY_IDS, FISH_PER_LEVEL, LAMBS_PER_LEVEL, ORCHARD_IDS, PASTURE_IDS, SHEEP_PER_LEVEL, farmKeep, farmName, isFarm, isFishery, isOrchard, isPasture, type FarmId } from './farms';
+import { WOODCUTTER_IDS, WOODCUTTER_KEEP, isWoodcutter, woodcutterName, type WoodcutterId } from './woodcutters';
 import { RESOURCES, type Resource } from './resources';
 import { MIN_BARGE_INTERVAL } from './ship';
 import { BASE_WAGON_LOAD, WAGON_SPEED } from './wagons';
@@ -19,9 +20,9 @@ export const BUILDING_IDS = [
   'armory',
   // Carts that move goods between the warehouse and the forges.
   'depot',
-  // Woodcutters fell the woods beyond the walls.
-  'woodcutter',
-  // Food: the granary keeps it; orchards in town, fishing huts on the river banks and sheep on the land
+  // Woodcutters fell the forest on the mountains.
+  ...WOODCUTTER_IDS,
+  // Food: the granary keeps it; orchards in town, fishing huts along the river wall and sheep on the land
   // outside the walls bring it in.
   'granary',
   ...ORCHARD_IDS,
@@ -59,7 +60,7 @@ export const STARTING_BUILDINGS: BuildingLevels = {
   research: 0,
   armory: 0,
   depot: 0,
-  woodcutter: 0,
+  ...(Object.fromEntries(WOODCUTTER_IDS.map((id) => [id, 0])) as Record<WoodcutterId, number>),
   granary: 0,
   ...(Object.fromEntries([...ORCHARD_IDS, ...FISHERY_IDS, ...PASTURE_IDS].map((id) => [id, 0])) as Record<FarmId, number>),
   ...(Object.fromEntries(FORGE_IDS.map((id) => [id, 0])) as Record<ForgeId, number>),
@@ -93,6 +94,7 @@ export function requiredKeep(id: BuildingId) {
   if (isForge(id)) return FORGE_KEEP[id];
   if (isHouse(id)) return HOUSE_KEEP[id];
   if (isFarm(id)) return farmKeep(id);
+  if (isWoodcutter(id)) return WOODCUTTER_KEEP[id];
   const unit = DWELLING_UNIT[id];
   // Stables also pull the surface wagons, so they can be built early; cavalry still wait for the keep.
   return unit && id !== 'stables' ? ARMY_RECRUITING[unit].requiresKeep : 1;
@@ -107,9 +109,10 @@ export type BuildCost = { gold: number; resources: Partial<Record<Resource, numb
 // nobody at all it does nothing.
 
 /** Buildings that work without staff (the moat is part of the defensive works, like the wall). */
-export const UNSTAFFED: readonly BuildingId[] = ['keep', 'wall', 'towers', 'moat'];
+// The cottages are kept by their women, who aren't workers (homes.ts).
+export const UNSTAFFED: readonly BuildingId[] = ['keep', 'wall', 'towers', 'moat', ...HOUSE_IDS];
 
-/** Peasants a building needs to run at a level (the keep, the wall and the towers need nobody). */
+/** Peasants a building needs to run at a level (the keep, the wall, the towers and the cottages need nobody). */
 export function staffNeeded(id: BuildingId, level: number) {
   if (level <= 0 || UNSTAFFED.includes(id)) return 0;
   switch (id) {
@@ -260,7 +263,7 @@ export function buildingStats(levels: BuildingLevels, staff?: Partial<Record<Bui
     digCostFactor: round2((round1(10 - 0.3 * research) / 10) * (1 - tech.digCost)),
     tradeBonus: round2(0.03 * docks + tech.trade),
     forgeSpeed: Object.fromEntries(FORGE_IDS.map((id) => [id, forgeSpeedAt(worked(id), tech.forgeSpeed)])) as Record<ForgeId, number>,
-    woodPerSecond: round2(WOOD_PER_LEVEL * worked('woodcutter') * (1 + tech.wood)),
+    woodPerSecond: round2(WOOD_PER_LEVEL * WOODCUTTER_IDS.reduce((sum, id) => sum + worked(id), 0) * (1 + tech.wood)),
     // Storage follows the built level, like the warehouse.
     granaryCapacity: LARDER + GRANARY_PER_LEVEL * levels.granary,
     fishPerSecond: round2(FISH_PER_LEVEL * FISHERY_IDS.reduce((sum, id) => sum + worked(id), 0)),
@@ -305,7 +308,7 @@ export function buildingEffects(id: BuildingId, level: number, techs: readonly T
   if (isHouse(id)) {
     return [{ label: `Peasants it sleeps (the hold: at most ${String(MAX_PEASANTS)})`, value: String(Math.floor(houseBeds(level) * (1 + techBonuses(techs).beds))) }];
   }
-  if (id === 'woodcutter') return [{ label: 'Wood cut', value: `${String(stats.woodPerSecond)} / s` }];
+  if (isWoodcutter(id)) return [{ label: 'Wood it cuts', value: `${String(round2(WOOD_PER_LEVEL * level * (1 + techBonuses(techs).wood)))} / s` }];
   if (id === 'granary') return [{ label: 'Food kept, each kind', value: String(stats.granaryCapacity) }];
   if (isOrchard(id)) return [{ label: 'Apples picked', value: `${String(round2(APPLES_PER_LEVEL * level))} / s` }];
   if (isFishery(id)) return [{ label: 'Fish landed', value: `${String(round2(FISH_PER_LEVEL * level))} / s` }];
@@ -384,7 +387,7 @@ export const BUILDING_INFO: Record<BuildingId, { name: string; role: string }> =
   keep: { name: 'Central Keep', role: 'Seat of the hold. Its level caps every other building, unlocks stronger units, adds builders and collects taxes. Its hall sleeps 8 peasants.' },
   ...(Object.fromEntries(HOUSE_IDS.map((id) => [id, {
     name: HOUSE_NAMES[id],
-    role: `Homes for peasants, kept by housekeepers: without them nobody sleeps here and only the keep’s hall (8 beds) is left. New peasants arrive at the campfire while there are free beds. Build up to ${String(HOUSE_IDS.length)} houses, as the keep grows; the hold sleeps at most ${String(MAX_PEASANTS)} peasants.`,
+    role: `A one-tile cottage where a few peasants sleep (4, up to 9 as it grows). Its woman keeps it — she isn’t one of the workers: she fetches water from the river and food from the store, and its sleepers live on what she brings. Run dry, they work slower and nobody new moves in; roads and a near store keep her trips short. New peasants arrive at the campfire while a kept cottage (or the keep’s hall, 8 beds) has room. Build up to ${String(HOUSE_IDS.length)} cottages, as the keep grows; the hold sleeps at most ${String(MAX_PEASANTS)} peasants.`,
   }])) as Record<HouseId, { name: string; role: string }>),
   warehouse: { name: 'Warehouses', role: 'Store more of each resource. Its haulers carry everything up from the mine.' },
   foundry: { name: 'Foundry', role: 'Forges better pickaxes and bigger mine carts.' },
@@ -397,10 +400,10 @@ export const BUILDING_INFO: Record<BuildingId, { name: string; role: string }> =
     role: isOrchard(id)
       ? 'Rows of apple trees in town; its pickers bring the apples to the granary. Build up to eight, as the keep grows.'
       : isFishery(id)
-        ? 'A fishing hut on the river bank outside the walls, where the river meets the map’s ends; its fishermen land fish for the granary (barges buy fish too). Raiders who win on its side burn it down a level. Build up to eight, as the keep grows.'
+        ? 'A fishing hut right next to the river, along the river wall inside the town (safe from raiders); its fishermen land fish for the granary (barges buy fish too). Build up to eight, as the keep grows.'
         : 'Sheep grazing on the raiders’ ground outside the walls: the flock grows to 10 sheep a level and gives mutton for the granary and wool (barges buy it). Every raid from its side drives off a tenth of the flock — three tenths if the raiders win. Build up to eight, as the keep grows.',
   }])) as Record<FarmId, { name: string; role: string }>),
-  woodcutter: { name: 'Woodcutter’s Hut', role: 'Woodcutters walk out through the gate and the pass to the forest on the mountains, fell the stand nearest the road (about 100 wood each) and carry the logs home to the warehouse; every stand cut down grows back elsewhere on the mountains. Wood goes into gear, into every building from level 2, and into the pit props of every tunnel. Higher levels cut more; needs woodcutters.' },
+  ...(Object.fromEntries(WOODCUTTER_IDS.map((id) => [id, { name: woodcutterName(id), role: 'Woodcutters walk out through the gate and the pass to the forest on the mountains, fell the stand nearest the road (about 100 wood each) and carry the logs home to the warehouse; every stand cut down grows back elsewhere on the mountains. Wood goes into gear, into every building from level 2, and into the pit props of every tunnel. Higher levels cut more; needs woodcutters. Build up to five, as the keep grows.' }])) as Record<WoodcutterId, { name: string; role: string }>),
   ...(Object.fromEntries(FORGE_IDS.map((id) => [id, {
     name: FORGE_NAMES[id],
     role: 'A forge for one task at a time: set it to a part or a piece of gear and its smiths keep making it, from the warehouse and the parts store, until the stock reaches its target. Higher levels work faster. Each step of a recipe needs a forge of its own (or a forge set to each in turn).',
@@ -428,12 +431,12 @@ const GROWTH = 1.3;
 const RESOURCE_START: Partial<Record<Resource, number>> = { coal: 1, granite: 3, copper: 5, iron: 7, gold: 11, diamond: 15, wood: 2 };
 const RESOURCE_BASE: Partial<Record<Resource, number>> = { coal: 25, granite: 30, copper: 20, iron: 20, gold: 10, diamond: 5, wood: 15 };
 // Timber for frames and scaffolding: every building takes wood from level 2 — the stone works less, the
-// keep more, the woodcutter's hut none.
-const WOOD_USE: Partial<Record<BuildingId, number>> = { keep: 1.4, woodcutter: 0, wall: 0.4, towers: 0.5, gate: 0.6, moat: 0.3 };
+// keep more, the woodcutters' huts none.
+const WOOD_USE: Partial<Record<BuildingId, number>> = { keep: 1.4, wall: 0.4, towers: 0.5, gate: 0.6, moat: 0.3, ...Object.fromEntries(WOODCUTTER_IDS.map((id) => [id, 0])) };
 // Per building: treasury gold at level 1, and how much of each resource it uses (1 = the base amount).
 const COST_MIX: Record<BuildingId, { treasury: number; uses: Partial<Record<Resource, number>> }> = {
   keep: { treasury: 60, uses: { coal: 1, granite: 1.5, copper: 0.5, iron: 1, gold: 0.8, diamond: 1 } },
-  ...(Object.fromEntries(HOUSE_IDS.map((id) => [id, { treasury: 30, uses: { coal: 0.6, granite: 0.8, copper: 0.3, iron: 0.3 } }])) as Record<HouseId, { treasury: number; uses: Partial<Record<Resource, number>> }>),
+  ...(Object.fromEntries(HOUSE_IDS.map((id) => [id, { treasury: 12, uses: { coal: 0.25, granite: 0.35, copper: 0.1, iron: 0.1 } }])) as Record<HouseId, { treasury: number; uses: Partial<Record<Resource, number>> }>),
   warehouse: { treasury: 30, uses: { coal: 1, granite: 1, copper: 0.3, iron: 0.4 } },
   foundry: { treasury: 45, uses: { coal: 1.2, granite: 0.8, copper: 0.6, iron: 1, gold: 0.5, diamond: 0.8 } },
   research: { treasury: 50, uses: { coal: 0.8, granite: 0.6, copper: 1.2, iron: 0.6, gold: 1, diamond: 1 } },
@@ -444,7 +447,7 @@ const COST_MIX: Record<BuildingId, { treasury: number; uses: Partial<Record<Reso
   ...(Object.fromEntries(FISHERY_IDS.map((id) => [id, { treasury: 20, uses: { coal: 0.3, granite: 0.2, iron: 0.2 } }])) as Record<FarmId, { treasury: number; uses: Partial<Record<Resource, number>> }>),
   ...(Object.fromEntries(PASTURE_IDS.map((id) => [id, { treasury: 25, uses: { coal: 0.3, granite: 0.2 } }])) as Record<FarmId, { treasury: number; uses: Partial<Record<Resource, number>> }>),
   // The hut takes no wood, so a hold without any can always start cutting.
-  woodcutter: { treasury: 25, uses: { coal: 0.4, granite: 0.5, iron: 0.3 } },
+  ...(Object.fromEntries(WOODCUTTER_IDS.map((id) => [id, { treasury: 25, uses: { coal: 0.4, granite: 0.5, iron: 0.3 } }])) as Record<WoodcutterId, { treasury: number; uses: Partial<Record<Resource, number>> }>),
   ...(Object.fromEntries(FORGE_IDS.map((id) => [id, { treasury: 40, uses: { coal: 1, granite: 0.8, iron: 0.5, copper: 0.3, gold: 0.2 } }])) as Record<ForgeId, { treasury: number; uses: Partial<Record<Resource, number>> }>),
   wall: { treasury: 35, uses: { coal: 0.4, granite: 1.6, iron: 0.6, diamond: 0.3 } },
   towers: { treasury: 40, uses: { coal: 0.4, granite: 1.2, copper: 0.3, iron: 0.8, gold: 0.2, diamond: 0.4 } },

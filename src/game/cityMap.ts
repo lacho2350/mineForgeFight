@@ -9,6 +9,7 @@ import type { BuildingId } from './buildings';
 import { FORGE_IDS, type ForgeId } from './forges';
 import { HOUSE_IDS, type HouseId } from './houses';
 import { FISHERY_IDS, ORCHARD_IDS, PASTURE_IDS, isFishery, isPasture, type FisheryId, type OrchardId, type PastureId } from './farms';
+import { WOODCUTTER_IDS, type WoodcutterId } from './woodcutters';
 
 export const MAP_SIZE = 59;
 /** The map's middle tile (the gate, the harbour and the keep's axis). */
@@ -25,13 +26,13 @@ const WALL_AT = MOAT_AT + RINGS.moat;
 
 /** The river: every row from the far edge (y = 0) up to the wall, flowing west to east. */
 export const RIVER_ROWS = WALL_AT;
-/** The harbour: a walled inlet cut into the castle square from the river (water tiles). */
-export const HARBOUR = { x0: MIDDLE - 1, x1: MIDDLE + 1, y0: WALL_AT, y1: WALL_AT + 2 };
-/** The harbour's back wall, where the docks stand in the middle. */
+/** The harbour: a walled inlet cut into the castle square from the river (water tiles), five wide: room for every barge. */
+export const HARBOUR = { x0: MIDDLE - 2, x1: MIDDLE + 2, y0: WALL_AT, y1: WALL_AT + 2 };
+/** The harbour's back wall, where the docks stand. */
 export const DOCKS_ROW = HARBOUR.y1 + 1;
-/** The docks: the middle of the harbour's back wall. */
+/** The docks: a quay along the whole back wall of the harbour. */
 export const DOCKS_SPOT = { x: HARBOUR.x0, y: DOCKS_ROW };
-export const DOCK_TILES = [HARBOUR.x0, HARBOUR.x0 + 1, HARBOUR.x1];
+export const DOCK_TILES = Array.from({ length: HARBOUR.x1 - HARBOUR.x0 + 1 }, (_, i) => HARBOUR.x0 + i);
 const inHarbour = (x: number, y: number) => x >= HARBOUR.x0 && x <= HARBOUR.x1 && y >= HARBOUR.y0 && y <= HARBOUR.y1;
 // The wall round the harbour: a column either side and the row behind it.
 const harbourWall = (x: number, y: number) =>
@@ -130,13 +131,13 @@ export type Placements = Partial<Record<BuildingId, Spot>>;
 /** Tiles each building covers (along x, along y). */
 export const FOOTPRINTS: Record<BuildingId, Footprint> = {
   keep: { w: 5, d: 5 },
-  ...(Object.fromEntries(HOUSE_IDS.map((id) => [id, { w: 2, d: 2 }])) as Record<HouseId, Footprint>),
+  ...(Object.fromEntries(HOUSE_IDS.map((id) => [id, { w: 1, d: 1 }])) as Record<HouseId, Footprint>),
   warehouse: { w: 3, d: 3 },
   foundry: { w: 3, d: 3 },
   research: { w: 3, d: 3 },
   armory: { w: 3, d: 3 },
   depot: { w: 3, d: 2 },
-  woodcutter: { w: 2, d: 2 },
+  ...(Object.fromEntries(WOODCUTTER_IDS.map((id) => [id, { w: 2, d: 2 }])) as Record<WoodcutterId, Footprint>),
   granary: { w: 2, d: 2 },
   ...(Object.fromEntries(ORCHARD_IDS.map((id) => [id, { w: 3, d: 3 }])) as Record<OrchardId, Footprint>),
   ...(Object.fromEntries(FISHERY_IDS.map((id) => [id, { w: 1, d: 1 }])) as Record<FisheryId, Footprint>),
@@ -146,7 +147,7 @@ export const FOOTPRINTS: Record<BuildingId, Footprint> = {
   towers: { w: 1, d: 1 },
   gate: { w: 3, d: 1 },
   moat: { w: 1, d: 1 },
-  docks: { w: 3, d: 1 },
+  docks: { w: 5, d: 1 },
   guardhouse: { w: 2, d: 2 },
   archery: { w: 3, d: 3 },
   barracks: { w: 3, d: 3 },
@@ -237,25 +238,26 @@ export function spotOf(id: BuildingId, placements: Placements): Spot | null {
 
 const overlaps = (a: Spot & Footprint, b: Spot & Footprint) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.d && b.y < a.y + a.d;
 
-/** Tells whether a tile still has rocks on it (rocks.ts); placement checks without one ignore rocks. */
+/** Tells whether a tile still has rocks on it (rocks.ts), or a road (roads.ts); placement checks without one ignore them. */
 export type RockyTest = (x: number, y: number) => boolean;
+export type RoadTest = (x: number, y: number) => boolean;
 
 /** Why a building can't stand at `spot`, or null if it can. */
-export function placementProblem(id: BuildingId, spot: Spot, placements: Placements, names: Record<BuildingId, string>, rocky?: RockyTest): string | null {
+export function placementProblem(id: BuildingId, spot: Spot, placements: Placements, names: Record<BuildingId, string>, rocky?: RockyTest, road?: RoadTest): string | null {
   if (!isPlaceable(id)) return 'It has a fixed place.';
   const { w, d } = FOOTPRINTS[id];
   if (spot.x < 0 || spot.y < 0 || spot.x + w > MAP_SIZE || spot.y + d > MAP_SIZE) return 'Off the edge of the map.';
-  // Fishing huts and pastures stand outside the walls, on the raiders' ground: huts on the river's banks.
-  const outside = isFishery(id) || isPasture(id);
+  // Between tiles (a damaged save) a spot would slip past the tile checks below.
+  if (!Number.isInteger(spot.x) || !Number.isInteger(spot.y)) return 'Off the tile grid.';
+  // Pastures graze outside the walls, on the raiders' ground; fishing huts stand right next to the river,
+  // along the river wall inside the town.
   for (let x = spot.x; x < spot.x + w; x++) {
     for (let y = spot.y; y < spot.y + d; y++) {
-      if (outside) {
-        if (zoneAt(x, y) !== 'enemy' || onGateRoad(x, y)) {
-          return isFishery(id) ? 'A fishing hut stands on the river bank outside the walls, where the river meets the map’s ends.' : 'Sheep graze outside the walls, on the raiders’ ground (not on the road).';
-        }
-        if (isFishery(id) && y > RIVER_ROWS + 1) return 'Too far from the river: a fishing hut stands on its bank.';
+      if (isPasture(id)) {
+        if (zoneAt(x, y) !== 'enemy' || onGateRoad(x, y)) return 'Sheep graze outside the walls, on the raiders’ ground (not on the road).';
         continue;
       }
+      if (isFishery(id) && !riverside(x, y)) return 'A fishing hut stands right next to the river, along the river wall inside the town (the lit ground).';
       if (!isOpenGround(x, y)) {
         const zone = zoneAt(x, y);
         if (zone === 'enemy') return 'That ground belongs to the raiders.';
@@ -270,14 +272,60 @@ export function placementProblem(id: BuildingId, spot: Spot, placements: Placeme
     if (other === id) continue;
     if (overlaps({ ...spot, w, d }, { ...at, ...FOOTPRINTS[other] })) return `Overlaps the ${names[other]}.`;
   }
+  if (road) {
+    for (let x = spot.x; x < spot.x + w; x++) {
+      for (let y = spot.y; y < spot.y + d; y++) if (road(x, y)) return 'A road runs there: buildings can’t stand on roads (take it up first: BUILD → Take up roads).';
+    }
+  }
   if (rocky) {
     for (let x = spot.x; x < spot.x + w; x++) for (let y = spot.y; y < spot.y + d; y++) if (rocky(x, y)) return 'Rocks in the way: clear them first (BUILD → Clear rocks).';
   }
   return null;
 }
 
+/** The town's riverside: the row right inside the wall along the river (out to the harbour's corners). */
+const riverside = (x: number, y: number) => zoneAt(x, y) === 'town' && y === RIVER_ROWS + 1;
+
+// Each kind of building's ground, worked out once.
+const groundCache = new Map<string, Spot[]>();
+
+/**
+ * The tiles a building's kind may stand on: right next to the river (fishing huts), the raiders' ground
+ * outside the walls (pastures) or the town's open ground (everything else placed by the player).
+ */
+export function buildingGround(id: BuildingId): Spot[] {
+  if (!isPlaceable(id)) return [];
+  const kind = isFishery(id) ? 'river' : isPasture(id) ? 'outside' : 'town';
+  const known = groundCache.get(kind);
+  if (known) return known;
+  const tiles: Spot[] = [];
+  for (let x = 0; x < MAP_SIZE; x++) {
+    for (let y = 0; y < MAP_SIZE; y++) {
+      const ok = kind === 'river' ? riverside(x, y) && isOpenGround(x, y) : kind === 'outside' ? zoneAt(x, y) === 'enemy' && !onGateRoad(x, y) : isOpenGround(x, y);
+      if (ok) tiles.push({ x, y });
+    }
+  }
+  groundCache.set(kind, tiles);
+  return tiles;
+}
+
+/**
+ * Where a building may go now, tile by tile (lit while placing it): its kind of ground, off the other
+ * buildings and the roads — `clear`, or `rocky` (rocks to clear first).
+ */
+export function buildSpots(id: BuildingId, placements: Placements, road?: RoadTest, rocky?: RockyTest): { clear: Spot[]; rocky: Spot[] } {
+  const others = coveredTiles(Object.fromEntries(Object.entries(placements).filter(([other]) => other !== id)) as Placements);
+  const clear: Spot[] = [];
+  const rough: Spot[] = [];
+  for (const tile of buildingGround(id)) {
+    if (others.has(tileKey(tile.x, tile.y)) || road?.(tile.x, tile.y)) continue;
+    (rocky?.(tile.x, tile.y) ? rough : clear).push(tile);
+  }
+  return { clear, rocky: rough };
+}
+
 /** The free spot for a building closest to `near` (its footprint centred there if possible). */
-export function nearestFreeSpot(id: BuildingId, near: Spot, placements: Placements, names: Record<BuildingId, string>, rocky?: RockyTest): Spot | null {
+export function nearestFreeSpot(id: BuildingId, near: Spot, placements: Placements, names: Record<BuildingId, string>, rocky?: RockyTest, road?: RoadTest): Spot | null {
   const { w, d } = FOOTPRINTS[id];
   let best: Spot | null = null;
   let bestDistance = Infinity;
@@ -285,7 +333,7 @@ export function nearestFreeSpot(id: BuildingId, near: Spot, placements: Placemen
     for (let y = 0; y + d <= MAP_SIZE; y++) {
       const distance = (x + w / 2 - near.x) ** 2 + (y + d / 2 - near.y) ** 2;
       if (distance >= bestDistance) continue;
-      if (placementProblem(id, { x, y }, placements, names, rocky)) continue;
+      if (placementProblem(id, { x, y }, placements, names, rocky, road)) continue;
       best = { x, y };
       bestDistance = distance;
     }

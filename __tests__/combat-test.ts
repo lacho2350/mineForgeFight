@@ -1,4 +1,4 @@
-import { createBattle, resolveBattle } from '../src/game/combat';
+import { BATTLE_PACE, actionSeconds, createBattle, hexDistance, resolveBattle, stepAI, type Battle } from '../src/game/combat';
 import { emptyArmy } from '../src/game/units';
 
 const defences = {
@@ -51,5 +51,23 @@ describe('battles', () => {
 
   it('is lost at once with nobody to fight it', () => {
     expect(createBattle({ ...defences, army: emptyArmy(), kind: 'field' }).status).toBe('lost');
+  });
+
+  it('walks every move hex by hex, and takes its time over each action', () => {
+    let battle: Battle = { ...createBattle({ ...defences, army, kind: 'field' }), auto: true };
+    let moves = 0;
+    for (let step = 0; step < 200 && battle.status === 'active'; step++) {
+      battle = stepAI(battle);
+      for (const event of battle.last.filter((item) => item.kind === 'move')) {
+        const path = event.path ?? [];
+        expect(path[0]).toEqual(event.from);
+        expect(path[path.length - 1]).toEqual(event.to);
+        if (!event.flying) for (let i = 1; i < path.length; i++) expect(hexDistance(path[i - 1], path[i])).toBe(1);
+        moves += 1;
+      }
+      expect(actionSeconds(battle.last)).toBeGreaterThanOrEqual(BATTLE_PACE.beat);
+    }
+    expect(moves).toBeGreaterThan(0);
+    expect(battle.status).toBe('won');
   });
 });

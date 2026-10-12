@@ -1,9 +1,9 @@
-import { router } from 'expo-router';
+import { router, useIsFocused } from 'expo-router';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SIDE_NAMES } from '../game/cityMap';
 import { raidBattleKind } from '../game/state';
 import { describeParty, holdPowerOf } from '../game/hold';
-import { useGameStore } from '../game/gameStore';
+import { useGame } from '../game/gameStore';
 import { partyValue, raidKind, raidRelief, raidSide, raidStrength } from '../game/raids';
 import { GameButton } from './GameUI';
 
@@ -11,22 +11,16 @@ const clock = (seconds: number) => `${String(Math.floor(seconds / 60))}:${String
 
 // Raid status for the top of a screen, kept short: the countdown, raiders sighted (a raiding party in the
 // fields, or a siege army — which the hold can ride out to meet), a battle under way, or the result, with a
-// button to resolve a battle without opening it. The rules, the trap count and the auto-resolve switch are
-// in the War panel.
+// button to settle a battle at once without opening it. The rules, the trap count and the instant-battles
+// switch are in the War panel.
 export default function RaidBanner({ inPanel = false }: { inPanel?: boolean }) {
-  const elapsed = useGameStore((state) => state.elapsedSeconds);
-  const raid = useGameStore((state) => state.raid);
-  const battle = useGameStore((state) => state.battle);
-  const commanded = useGameStore((state) => state.battleCommanded);
-  const deadline = useGameStore((state) => state.battleDeadline);
-  const report = useGameStore((state) => state.raidReport);
-  const nextRaidAt = useGameStore((state) => state.nextRaidAt);
-  const raidsFought = useGameStore((state) => state.raidsFought);
-  const lostInARow = useGameStore((state) => state.raidsLostInARow);
+  // The clock changes every tick, so this follows the whole game (while its screen is in sight).
+  const game = useGame(useIsFocused());
+  const { elapsedSeconds: elapsed, raid, battle, battleCommanded: commanded, battleDeadline: deadline, raidReport: report, nextRaidAt, raidsFought } = game;
+  const lostInARow = game.raidsLostInARow;
   // Raids are sized to the hold's power: a siege to the army and the defences, a raid in the fields to the army alone.
-  const power = useGameStore((state) => holdPowerOf(state).total);
-  const armyPower = useGameStore((state) => holdPowerOf(state).army);
-  const { dismissRaidReport, setRideOut, quickResolveBattle } = useGameStore.getState();
+  const { total: power, army: armyPower } = holdPowerOf(game);
+  const { dismissRaidReport, setRideOut, quickResolveBattle } = game;
 
   if (battle?.status === 'active') {
     const field = battle.kind === 'field';
@@ -35,13 +29,14 @@ export default function RaidBanner({ inPanel = false }: { inPanel?: boolean }) {
         <View style={styles.copy}>
           <Text style={styles.alarmTitle}>{field ? 'BATTLE IN THE FIELD' : 'RAIDERS AT THE GATE'}</Text>
           <Text style={styles.detail}>
-            {raid ? describeParty(raid.party) : `Raid ${String(battle.raid)}`} · {commanded ? 'your orders' : `auto in ${String(Math.max(0, deadline - elapsed))} s`}
+            {raid ? describeParty(raid.party) : `Raid ${String(battle.raid)}`} ·{' '}
+            {commanded ? 'your orders' : battle.auto ? `round ${String(battle.round)}, the captains fight it` : `the captains take over in ${String(Math.max(0, Math.ceil(deadline - elapsed)))} s`}
           </Text>
         </View>
         <View style={styles.action}>
-          <GameButton label={commanded ? 'TO THE BATTLE' : 'COMMAND'} detail="" onPress={() => router.push('/battle')} />
+          <GameButton label={commanded ? 'TO THE BATTLE' : battle.auto ? 'WATCH' : 'COMMAND'} detail="" onPress={() => router.push('/battle')} />
           <View style={styles.gap} />
-          <GameButton label="AUTO-RESOLVE" detail="" onPress={quickResolveBattle} secondary />
+          <GameButton label="RESOLVE NOW" detail="" onPress={quickResolveBattle} secondary />
         </View>
       </View>
     );

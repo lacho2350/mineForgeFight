@@ -28,14 +28,17 @@ export type Barge = {
   leftAt?: number;
 };
 
-/** Berths (tile units): three nose-in at the harbour's quay, two on the river either side of its mouth. */
-export const BERTHS: { x: number; y: number; inHarbour: boolean }[] = [
-  { x: (HARBOUR.x0 + HARBOUR.x1 + 1) / 2, y: DOCKS_ROW - 0.75, inHarbour: true },
-  { x: HARBOUR.x0 + 0.5, y: DOCKS_ROW - 0.9, inHarbour: true },
-  { x: HARBOUR.x1 + 0.5, y: DOCKS_ROW - 0.9, inHarbour: true },
-  { x: HARBOUR.x0 - 2.5, y: RIVER_ROWS - 1.6, inHarbour: false },
-  { x: HARBOUR.x1 + 3.5, y: RIVER_ROWS - 1.6, inHarbour: false },
-];
+/**
+ * Berths (tile units): five nose-in along the harbour's quay, one a tile — the middle first, then out
+ * to either side (the outer ones a little further from the quay, so the hulls don't line up too neatly).
+ * `inHarbour: false` (a berth on the open river) is still understood by `bargeRoute`.
+ */
+const MIDDLE_BERTH = (HARBOUR.x0 + HARBOUR.x1 + 1) / 2;
+export const BERTHS: { x: number; y: number; inHarbour: boolean }[] = [0, -1, 1, -2, 2].map((offset) => ({
+  x: MIDDLE_BERTH + offset,
+  y: DOCKS_ROW - (offset === 0 ? 0.75 : 0.9),
+  inHarbour: true,
+}));
 
 const RIVER_MIDDLE = RIVER_ROWS / 2;
 /** A barge's course (flat tile points): in from downriver along the river, then to its berth. */
@@ -93,7 +96,7 @@ const DEMAND: Record<Resource, number> = {
  * asking for), about `hold` gold's worth at base prices, at a premium of 10–50% on top of the docks'
  * trade bonus.
  */
-export function bargeOrder(serial: number, warehouse: Stock, hold: number, tradeBonus: number, asked: Resource[]) {
+export function bargeOrder(serial: number, warehouse: Stock, hold: number, tradeBonus: number, asked: Resource[], discovered: readonly Resource[] = RESOURCES) {
   let seed = Math.imul(serial + 1, 2654435761) | 0;
   const random = () => {
     seed = (seed + 0x6d2b79f5) | 0;
@@ -101,8 +104,11 @@ export function bargeOrder(serial: number, warehouse: Stock, hold: number, trade
     t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
-  const weights = RESOURCES.map((resource) => DEMAND[resource] * (warehouse[resource] >= 1 ? 3 : 1) * (asked.includes(resource) ? 0.3 : 1));
-  let roll = random() * weights.reduce((sum, weight) => sum + weight, 0);
+  // Barges only come for what the hold has in the warehouse (and has mined or made).
+  const weights = RESOURCES.map((resource) => (discovered.includes(resource) && warehouse[resource] >= 1 ? DEMAND[resource] : 0) * (asked.includes(resource) ? 0.3 : 1));
+  const total = weights.reduce((sum, weight) => sum + weight, 0);
+  if (total <= 0) return null;
+  let roll = random() * total;
   let resource: Resource = 'coal';
   for (const [index, weight] of weights.entries()) {
     roll -= weight;

@@ -1,6 +1,8 @@
 import { MINE_SHAFT_COLUMN, getTunnelRow } from '../src/components/MineMapLayout';
 import { FOOTPRINTS, GATE_ROAD, MAP_SIZE, spotOf } from '../src/game/cityMap';
-import { buildingCost } from '../src/game/buildings';
+import { buildingCost, buildingStats } from '../src/game/buildings';
+import { isShownBuilding } from '../src/game/hold';
+import { WOODCUTTER_IDS } from '../src/game/woodcutters';
 import { TUNNEL_WOOD } from '../src/game/costs';
 import { ITEM_INFO } from '../src/game/items';
 import { STARTING_WOOD } from '../src/game/resources';
@@ -48,6 +50,21 @@ describe('wood', () => {
     if (!hut) throw new Error('the hut was not placed');
     const walk = walkBetween({ ...hut, ...FOOTPRINTS.woodcutter }, { ...FOREST_EXIT, w: 1, d: 1 }, game().placements, game().roads, game().clearedRocks);
     expect(walk).not.toBeNull();
+  });
+});
+
+describe('woodcutters’ huts', () => {
+  it('go up to five, offered one at a time, and their wood adds up', () => {
+    expect(WOODCUTTER_IDS).toHaveLength(5);
+    newGame({ population: 40 });
+    expect(isShownBuilding(game(), 'woodcutter2')).toBe(false);
+    build({ woodcutter: 2 });
+    expect(isShownBuilding(game(), 'woodcutter2')).toBe(true);
+    expect(isShownBuilding(game(), 'woodcutter3')).toBe(false);
+    const one = buildingStats({ ...game().buildings, woodcutter: 2 }).woodPerSecond;
+    const three = buildingStats({ ...game().buildings, woodcutter: 2, woodcutter2: 2, woodcutter3: 2 }).woodPerSecond;
+    expect(three).toBeCloseTo(3 * one, 5);
+    for (const id of WOODCUTTER_IDS) expect(buildingCost(id, 5).resources.wood).toBeUndefined();
   });
 });
 

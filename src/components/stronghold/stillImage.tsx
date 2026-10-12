@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState, type ReactElement } from 'react';
-import { Group, Skia, drawAsPicture, type SkImage, type SkPicture } from '@shopify/react-native-skia';
+import { ClipOp, Group, Skia, drawAsPicture, type SkImage, type SkPicture } from '@shopify/react-native-skia';
 import { Platform } from 'react-native';
 import { STILL_HEIGHT, STILL_TOP, SCENE_WIDTH as sceneWidth } from '../GameSceneLayout';
-import { collectPaths } from '../skiaPaths';
+import { collectPaths, freeAfterDrawn } from '../skiaPaths';
 
 // Render the still layer offscreen into an image whenever its key changes, but only while the screen
 // is in view: on web a screen in the background isn't really frozen — React keeps committing, yet its
@@ -12,15 +12,33 @@ import { collectPaths } from '../skiaPaths';
 // the screen are freed straight away.
 const FREE_AFTER_MS = 2000;
 
+// Rows of pixels drawn at a time on the CPU: about 15 ms of work each, so the game keeps moving while
+// the castle is drawn anew (the whole image at once froze it for ~200 ms).
+const STRIP_ROWS = 120;
+const nextTask = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+
 // A picture drawn into an image, on a surface that's freed straight after. Skia's own
 // `drawAsImageFromPicture` makes a new GPU surface every time and never frees it; on web each one is
 // a WebGL context of its own, and once a page has more than ~16 the browser drops the oldest — the
 // map's canvas — and the screen goes black. So on web the image is drawn on the CPU (no context at
-// all); on iOS/Android an offscreen GPU surface shares the app's one context, and is disposed here.
-function pictureToImage(picture: SkPicture, size: { width: number; height: number }): SkImage | null {
-  const surface = Platform.OS === 'web' ? Skia.Surface.Make(size.width, size.height) : Skia.Surface.MakeOffscreen(size.width, size.height);
+// all), a strip of rows per task; on iOS/Android an offscreen GPU surface shares the app's one context,
+// draws it at once, and is disposed here. Null if it was `cancelled` on the way.
+async function picturesToImage(pictures: SkPicture[], size: { width: number; height: number }, cancelled: () => boolean): Promise<SkImage | null> {
+  const web = Platform.OS === 'web';
+  const surface = web ? Skia.Surface.Make(size.width, size.height) : Skia.Surface.MakeOffscreen(size.width, size.height);
   if (!surface) return null;
-  surface.getCanvas().drawPicture(picture);
+  const canvas = surface.getCanvas();
+  for (let top = 0; top < size.height; top += web ? STRIP_ROWS : size.height) {
+    if (top > 0) await nextTask();
+    if (cancelled()) {
+      surface.dispose();
+      return null;
+    }
+    canvas.save();
+    canvas.clipRect(Skia.XYWHRect(0, top, size.width, web ? STRIP_ROWS : size.height), ClipOp.Intersect, false);
+    for (const picture of pictures) canvas.drawPicture(picture);
+    canvas.restore();
+  }
   surface.flush();
   const snapshot = surface.makeImageSnapshot();
   // A CPU copy outlives the GPU surface it came from.
@@ -30,7 +48,12 @@ function pictureToImage(picture: SkPicture, size: { width: number; height: numbe
   return image;
 }
 
-export function useStillImage(key: string, pixelScale: number, active: boolean, render: () => ReactElement) {
+/**
+ * The still layer as an image, made from `render`'s layers (drawn bottom to top) whenever `key` changes.
+ * Each layer is recorded in a step of its own, and the image is filled in a strip at a time, so making
+ * it never holds the game up for long.
+ */
+export function useStillImage(key: string, pixelScale: number, active: boolean, render: () => ReactElement[]) {
   const [image, setImage] = useState<SkImage | null>(null);
   const built = useRef(''); // key of the image in `image`
   const shown = useRef<SkImage | null>(null); // committed to the canvas
@@ -42,22 +65,33 @@ export function useStillImage(key: string, pixelScale: number, active: boolean, 
     let cancelled = false;
     // The image starts below the sky (nothing still is drawn up there), so it stays the same size.
     const size = { width: Math.ceil(sceneWidth * pixelScale), height: Math.ceil(STILL_HEIGHT * pixelScale) };
-    const scene = <Group transform={[{ scale: pixelScale }, { translateY: -STILL_TOP }]}>{render()}</Group>;
-    // The paths the scene's components parse (`svgPath`) are freed once the image is made.
-    void collectPaths(
-      // Drawings wait their turn; one already outdated by then isn't made at all.
-      () => (cancelled ? Promise.resolve(null) : drawAsPicture(scene, Skia.XYWHRect(0, 0, size.width, size.height))),
-      (picture) => {
-        if (!picture) return;
-        const next = cancelled ? null : pictureToImage(picture, size);
-        picture.dispose();
+    const bounds = Skia.XYWHRect(0, 0, size.width, size.height);
+    const record = (layer: ReactElement) =>
+      // The paths a layer's components parse (`svgPath`) are freed once it's recorded (the picture keeps
+      // what it drew). Recordings wait their turn; one already outdated by then isn't made at all.
+      collectPaths(
+        () => (cancelled ? Promise.resolve(null) : drawAsPicture(<Group transform={[{ scale: pixelScale }, { translateY: -STILL_TOP }]}>{layer}</Group>, bounds)),
+        (picture) => picture,
+      );
+    void (async () => {
+      const pictures: SkPicture[] = [];
+      try {
+        for (const layer of render()) {
+          if (pictures.length > 0) await nextTask();
+          const picture = await record(layer);
+          if (!picture) return;
+          pictures.push(picture);
+        }
+        const next = cancelled ? null : await picturesToImage(pictures, size, () => cancelled);
         if (!next) return;
         if (pending.current && pending.current !== shown.current) pending.current.dispose();
         pending.current = next;
         built.current = key;
         setImage(next);
-      },
-    );
+      } finally {
+        for (const picture of pictures) picture.dispose();
+      }
+    })();
     return () => {
       cancelled = true;
     };
@@ -77,12 +111,12 @@ export function useStillImage(key: string, pixelScale: number, active: boolean, 
     if (!active || queue.length === 0) return;
     const batch = queue.splice(0);
     let done = false;
-    const timer = setTimeout(() => {
+    const cancel = freeAfterDrawn(() => {
       done = true;
       for (const old of batch) old.dispose();
     }, FREE_AFTER_MS);
     return () => {
-      clearTimeout(timer);
+      cancel();
       if (!done) queue.push(...batch);
     };
   }, [image, active]);
@@ -94,7 +128,7 @@ export function useStillImage(key: string, pixelScale: number, active: boolean, 
     return () => {
       mounted.current = false;
       const leftovers = [shown.current, pending.current, ...queue];
-      setTimeout(() => {
+      freeAfterDrawn(() => {
         if (mounted.current) return;
         for (const old of new Set(leftovers)) old?.dispose();
       }, FREE_AFTER_MS);

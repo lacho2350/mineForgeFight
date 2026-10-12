@@ -14,6 +14,7 @@ import {
   type Site,
 } from '../game/mineLayout';
 import { RESOURCE_INFO } from '../game/resources';
+import { freeAfterDrawn } from './skiaPaths';
 
 // Deep Corp–style terrain: bright orange earth seen from the side, narrow dark tunnels,
 // and blocky darkness over everything that is not near a dug tile.
@@ -505,7 +506,19 @@ export const TERRAIN_BLOCK_COLUMNS = 16;
 export const TERRAIN_BLOCK_ROWS = 4;
 export const TERRAIN_BLOCK_COUNT_X = Math.ceil(MINE_COLUMNS / TERRAIN_BLOCK_COLUMNS);
 const BLOCK_REACH = FOG_ALPHA.length; // tiles around a change whose drawing may differ
-const MAX_CACHED_BLOCKS = 160;
+// Each block image is 768×192 px (~590 KB of the canvas engine's memory, which the browser never gives
+// back once it grows), so only a few more than are on screen are kept: zoomed all the way out (0.3)
+// the mine view — at most 850 px wide and 60% of the window tall — shows about 60 (~42 MB; 160 was
+// ~94 MB). A taller window shows more, and the cache never drops below what's on screen
+// (`keepBlocksInView`), or it would redraw blocks every frame.
+const MAX_CACHED_BLOCKS = 72;
+const SPARE_BLOCKS = 12;
+let blocksInView = 0;
+
+/** How many blocks the view is showing now: the cache keeps at least those (and a few spare). */
+export function keepBlocksInView(count: number) {
+  blocksInView = count;
+}
 
 let surfacePicture: SkPicture | null = null;
 
@@ -534,7 +547,10 @@ function disposeRetired() {
   const now = Date.now();
   let settled = Infinity;
   for (const last of views.values()) settled = Math.min(settled, last);
-  while (retired.length > 0 && now - retired[0].at > RETIRE_AFTER_MS && retired[0].commit < settled) retired.shift()?.image.dispose();
+  while (retired.length > 0 && now - retired[0].at > RETIRE_AFTER_MS && retired[0].commit < settled) {
+    const image = retired.shift()?.image;
+    if (image) freeAfterDrawn(() => image.dispose(), 0);
+  }
 }
 
 /** A terrain view (a mounted canvas drawing blocks) — call when it mounts, with the id from `newTerrainView`. */
@@ -643,7 +659,7 @@ export function getBlockImage(blockRow: number, blockColumn: number, layout: Min
   if (cached) retire(cached.image);
   blockCache.delete(key);
   blockCache.set(key, { stamp, image });
-  while (blockCache.size > MAX_CACHED_BLOCKS) {
+  while (blockCache.size > Math.max(MAX_CACHED_BLOCKS, blocksInView + SPARE_BLOCKS)) {
     const [oldestKey, oldest] = blockCache.entries().next().value as [string, CachedBlock];
     retire(oldest.image);
     blockCache.delete(oldestKey);

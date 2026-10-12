@@ -4,7 +4,7 @@ import { memo, useEffect, useMemo } from 'react';
 import { Circle, Group, Line, Path, Rect, vec } from '@shopify/react-native-skia';
 import { useDerivedValue, useSharedValue, type SharedValue } from 'react-native-reanimated';
 import type { Construction } from '../../game/state';
-import { useGameStore } from '../../game/gameStore';
+import { useGameSlice } from '../../game/gameStore';
 import type { BuildingId } from '../../game/buildings';
 import type { Placements } from '../../game/cityMap';
 import { BERTHS, bargePose, bargeRoute } from '../../game/ship';
@@ -133,9 +133,9 @@ function Wheel({ clock }: { clock: SharedValue<number> }) {
 // The depot's carts on their trips: each follows the roads from the depot to its first stop, on to the
 // second and back (the same walks the simulation timed, stretched to its legs), loaded on the middle leg.
 type WagonRoute = { points: number[]; times: number[] };
-export function Wagons({ clock, placements, roads, clearedRocks }: { clock: SharedValue<number>; placements: Placements; roads: Roads; clearedRocks: string[] }) {
-  const jobs = useGameStore((state) => state.wagonJobs);
-  const elapsed = useGameStore((state) => state.elapsedSeconds);
+export function Wagons({ clock, placements, roads, clearedRocks, live }: { clock: SharedValue<number>; placements: Placements; roads: Roads; clearedRocks: string[]; live: boolean }) {
+  const jobs = useGameSlice((state) => state.wagonJobs, live);
+  const elapsed = useGameSlice((state) => state.elapsedSeconds, live);
   const anchor = useSharedValue([elapsed, 0]);
   useEffect(() => {
     anchor.set([elapsed, clock.get()]);
@@ -220,9 +220,9 @@ const WagonSprite = memo(function WagonSprite({ job, anchor, clock, placements, 
 // The river barges: each sails in from downriver, along the river to its berth (in the harbour or on
 // the river by its mouth), waits there for its order to be filled, and sails off again — on the game
 // clock (`bargePose`), smoothed between ticks. Nearer berths are drawn over farther ones.
-export function Barges({ clock }: { clock: SharedValue<number> }) {
-  const elapsed = useGameStore((state) => state.elapsedSeconds);
-  const barges = useGameStore((state) => state.barges);
+export function Barges({ clock, live }: { clock: SharedValue<number>; live: boolean }) {
+  const elapsed = useGameSlice((state) => state.elapsedSeconds, live);
+  const barges = useGameSlice((state) => state.barges, live);
   // The game second, and the scene clock when it began.
   const anchor = useSharedValue([elapsed, 0]);
   useEffect(() => {

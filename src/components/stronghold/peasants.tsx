@@ -4,7 +4,7 @@ import { Atlas, Group, Rect, Skia, useRSXformBuffer, type SkImage } from '@shopi
 import type { SharedValue } from 'react-native-reanimated';
 import type { Construction } from '../../game/state';
 import type { BuildingId } from '../../game/buildings';
-import { HOUSE_IDS } from '../../game/houses';
+import { WOODCUTTER_IDS } from '../../game/woodcutters';
 import { FISHERY_IDS, ORCHARD_IDS, PASTURE_IDS } from '../../game/farms';
 import { FOOTPRINTS, MINE_SPOT, spotOf, type Placements } from '../../game/cityMap';
 import { FOREST_EXIT, parseSpot, standWay } from '../../game/forest';
@@ -81,7 +81,7 @@ const HAMMER = 2;
 type Spec = { mode: number; cell: number; route: number[]; times: number[]; speed: number; phase: number; x: number; y: number; load: boolean; carryBack: boolean };
 
 const MAX_WALKERS = 24;
-const STAFFED_SHOWN: BuildingId[] = [...HOUSE_IDS, 'docks', 'gate', 'foundry', 'research', 'armory', 'stables', 'balloonWorks', 'monastery', 'barracks', 'guardhouse', 'archery', 'chapel', 'sanctum', 'griffinEyrie', 'granary', ...ORCHARD_IDS, ...FISHERY_IDS, ...PASTURE_IDS];
+const STAFFED_SHOWN: BuildingId[] = ['docks', 'gate', 'foundry', 'research', 'armory', 'stables', 'balloonWorks', 'monastery', 'barracks', 'guardhouse', 'archery', 'chapel', 'sanctum', 'griffinEyrie', 'granary', ...ORCHARD_IDS, ...FISHERY_IDS, ...PASTURE_IDS];
 
 function peasantSpecs(
   workforce: Workforce,
@@ -123,12 +123,15 @@ function peasantSpecs(
   }
   // Woodcutters out through the gate and down the road to the forest, on to the stand being felled, and
   // home with logs on their shoulders.
-  const hut = footprint('woodcutter');
   const stand = felling ? parseSpot(felling) : null;
-  const road = hut && buildings.woodcutter > 0 && stand ? walkBetween(hut, { ...FOREST_EXIT, w: 1, d: 1 }, placements, roads, clearedRocks) : null;
-  const fell = road && stand ? walkOn(road, standWay(stand)) : null;
-  const cutters = fell ? Math.min(3, workforce.staff.woodcutter, MAX_WALKERS - walkers) : 0;
-  for (let i = 0; i < cutters && fell; i++) walker(fell, 0.8, i / Math.max(1, cutters), (i + 2) % TUNICS.length, LOGS_LOAD, true);
+  WOODCUTTER_IDS.forEach((id, index) => {
+    const hut = footprint(id);
+    const road = hut && buildings[id] > 0 && stand ? walkBetween(hut, { ...FOREST_EXIT, w: 1, d: 1 }, placements, roads, clearedRocks) : null;
+    const fell = road && stand ? walkOn(road, standWay(stand)) : null;
+    const cutters = fell ? Math.min(2, workforce.staff[id], MAX_WALKERS - walkers) : 0;
+    for (let i = 0; i < cutters && fell; i++) walker(fell, 0.8, (i + index * 0.3) / Math.max(1, cutters), (i + index + 2) % TUNICS.length, LOGS_LOAD, true);
+    walkers += cutters;
+  });
   for (const job of construction) {
     const plot = plotOf(job.building, placements);
     if (!plot) continue;
@@ -179,7 +182,7 @@ export function PeasantAtlas({ workforce, construction, clearOrders, clock, buil
     roads,
     clearedRocks.length,
     clearOrders.length > 0 ? clearOrders[0].tiles[0] : '',
-    Math.min(3, workforce.staff.woodcutter),
+    WOODCUTTER_IDS.map((id) => (buildings[id] > 0 ? Math.min(2, workforce.staff[id]) : 0)),
     felling,
   ]);
   // eslint-disable-next-line react-hooks/exhaustive-deps

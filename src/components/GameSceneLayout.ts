@@ -6,6 +6,7 @@ import { CASTLE, FOOTPRINTS, MAP_SIZE, MINE_SPOT, spotOf, type Placements } from
 import { FORGE_IDS, type ForgeId } from '../game/forges';
 import { HOUSE_IDS, type HouseId } from '../game/houses';
 import { FISHERY_IDS, ORCHARD_IDS, PASTURE_IDS, type FisheryId, type OrchardId, type PastureId } from '../game/farms';
+import { WOODCUTTER_IDS, type WoodcutterId } from '../game/woodcutters';
 
 export { CAMPFIRE, CASTLE, DOCK_TILES, DOCKS_ROW, GATE_ROAD, GATE_TILES, HARBOUR, MAP_SIZE, PARADE, PLAZA, RIVER_ROWS, TOWER_SPOTS, WALL_TILES, zoneAt } from '../game/cityMap';
 
@@ -43,12 +44,12 @@ export type Plot = { x: number; y: number; w: number; d: number; /** Tallest it 
 
 const TALL: Record<BuildingId, number> = {
   keep: 120,
-  ...(Object.fromEntries(HOUSE_IDS.map((id) => [id, 40])) as Record<HouseId, number>),
+  ...(Object.fromEntries(HOUSE_IDS.map((id) => [id, 26])) as Record<HouseId, number>),
   warehouse: 50,
   foundry: 80,
   research: 72,
   armory: 50,
-  woodcutter: 34,
+  ...(Object.fromEntries(WOODCUTTER_IDS.map((id) => [id, 34])) as Record<WoodcutterId, number>),
   granary: 44,
   ...(Object.fromEntries(ORCHARD_IDS.map((id) => [id, 22])) as Record<OrchardId, number>),
   ...(Object.fromEntries(FISHERY_IDS.map((id) => [id, 26])) as Record<FisheryId, number>),
@@ -78,7 +79,7 @@ export function plotOf(id: BuildingId, placements: Placements, at?: { x: number;
   return { ...spot, ...FOOTPRINTS[id], tall: TALL[id] };
 }
 
-/** The mine headframe (tap it to go down). */
+/** The mine headframe (the toolbar's MINE button goes down). */
 export const MINE_PLOT: Plot = { ...MINE_SPOT, tall: 70 };
 
 export type SceneRect = { x: number; y: number; width: number; height: number };

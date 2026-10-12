@@ -17,7 +17,6 @@ import {
   HARBOUR,
   MAP_SIZE,
   RIVER_ROWS,
-  TILE_HH,
   TILE_HW,
   WALL_TILES,
   iso,
@@ -25,7 +24,8 @@ import {
 import { spritePixels } from '../unitSprites';
 import { latest, parseSvg, svgPath, useSvgPaths, type Slot } from '../skiaPaths';
 import { ROAD_COLORS, poly, seg, type P } from './shapes';
-import { CROWNS, LAND, LAWN, STONE_DARK, STONE_LIGHT, TRUNK, WATER, crag } from './backdrop';
+import { CROWNS, LAND, STONE_DARK, STONE_LIGHT, TRUNK, WATER, crag } from './backdrop';
+import { GRASS_DARK, GRASS_LIGHT, TUFT, TUFT_LIGHT, emptyGrass, grassTile, groundBlob, hash01 } from './grass';
 
 // Trees: a few on open town ground, and thick woods on the raiders' ground beyond the traps.
 export const TREES: [number, number, number][] = (() => {
@@ -70,45 +70,11 @@ export function landRing(inset: number) {
 // odd flower, bare earth in the trap belt, and a dirt yard round the keep with a ragged edge. All of it is
 // derived from the tile position, so it's the same every time.
 
-const hash01 = (x: number, y: number, salt: number) => {
-  let h = Math.imul(Math.floor(x) * 374761393 + Math.floor(y) * 668265263 + salt * 1013904223, 1274126177);
-  h ^= h >>> 13;
-  h = Math.imul(h, 1103515245);
-  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
-};
-// Smooth value noise, `scale` tiles across.
-function smoothNoise(x: number, y: number, scale: number, salt: number) {
-  const fx = x / scale;
-  const fy = y / scale;
-  const ix = Math.floor(fx);
-  const iy = Math.floor(fy);
-  const tx = fx - ix;
-  const ty = fy - iy;
-  const u = tx * tx * (3 - 2 * tx);
-  const v = ty * ty * (3 - 2 * ty);
-  const a = hash01(ix, iy, salt);
-  const b = hash01(ix + 1, iy, salt);
-  const c = hash01(ix, iy + 1, salt);
-  const d = hash01(ix + 1, iy + 1, salt);
-  return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
-}
-// A circle on the ground (tile units) as an ellipse on screen.
-export function groundBlob(cx: number, cy: number, r: number) {
-  const c = iso(cx, cy);
-  const rx = r * TILE_HW * Math.SQRT2;
-  const ry = r * TILE_HH * Math.SQRT2;
-  return `M ${(c.x - rx).toFixed(1)} ${c.y.toFixed(1)} a ${rx.toFixed(1)} ${ry.toFixed(1)} 0 1 0 ${(2 * rx).toFixed(1)} 0 a ${rx.toFixed(1)} ${ry.toFixed(1)} 0 1 0 ${(-2 * rx).toFixed(1)} 0 Z`;
-}
-const GRASS_LIGHT = '#6c8748';
-const GRASS_DARK = '#526a39';
-const TUFT = '#435c2e';
-const TUFT_LIGHT = '#82a057';
+// The grass itself is shared with the land round the map (grass.ts), so the two meet without a seam.
+export { groundBlob };
 
 function buildGrass() {
-  const light: string[] = [];
-  const dark: string[] = [];
-  const tufts: string[] = [];
-  const tuftsLight: string[] = [];
+  const grass = emptyGrass();
   const flowers: string[] = [];
   const clods: string[] = [];
   for (let x = 0; x < MAP_SIZE; x++) {
@@ -120,19 +86,8 @@ function buildGrass() {
         continue;
       }
       if (zone !== 'town' && zone !== 'enemy') continue;
-      // Broad patches: the low-frequency noise decides lighter or darker grass here.
-      const n = smoothNoise(x, y, 7, 1) * 0.7 + smoothNoise(x, y, 3, 2) * 0.3;
-      const jx = x + 0.2 + hash01(x, y, 3) * 0.6;
-      const jy = y + 0.2 + hash01(x, y, 4) * 0.6;
-      const r = 0.55 + hash01(x, y, 5) * 0.55;
-      if (n > 0.56) light.push(groundBlob(jx, jy, r));
-      else if (n < 0.44) dark.push(groundBlob(jx, jy, r));
-      // Tufts of grass, and now and then a flower.
-      for (let i = 0; i < 3; i++) {
-        const p = iso(x + hash01(x, y, 10 + i), y + hash01(y, x, 20 + i));
-        const tuft = `M ${(p.x - 1.6).toFixed(1)} ${p.y.toFixed(1)} L ${(p.x - 0.3).toFixed(1)} ${(p.y - 3).toFixed(1)} L ${p.x.toFixed(1)} ${p.y.toFixed(1)} L ${(p.x + 0.4).toFixed(1)} ${(p.y - 2.6).toFixed(1)} L ${(p.x + 1.6).toFixed(1)} ${p.y.toFixed(1)}`;
-        (hash01(x, y, 30 + i) < 0.3 ? tuftsLight : tufts).push(tuft);
-      }
+      // Broad patches and tufts of grass, and now and then a flower.
+      grassTile(x, y, grass);
       if (zone === 'town' && hash01(x, y, 50) < 0.08) {
         const p = iso(x + hash01(x, y, 51), y + hash01(x, y, 52));
         flowers.push(`M ${(p.x - 0.9).toFixed(1)} ${(p.y - 1).toFixed(1)} h 1.8 v 1.8 h -1.8 Z`);
@@ -152,7 +107,7 @@ function buildGrass() {
   for (let v = y1; v > y0; v -= step) edge.push(iso(x0 + wobble(x0, v), v));
   const pebbles: string[] = [];
   for (let x = x0; x < x1; x++) for (let y = y0; y < y1; y++) for (let i = 0; i < 2; i++) pebbles.push(groundBlob(x + hash01(x, y, 70 + i), y + hash01(y, x, 72 + i), 0.04 + 0.04 * hash01(x, y, 74 + i)));
-  return { light: light.join(' '), dark: dark.join(' '), tufts: tufts.join(' '), tuftsLight: tuftsLight.join(' '), flowers: flowers.join(' '), clods: clods.join(' '), yard: poly(edge), pebbles: pebbles.join(' ') };
+  return { light: grass.light.join(' '), dark: grass.dark.join(' '), tufts: grass.tufts.join(' '), tuftsLight: grass.tuftsLight.join(' '), flowers: flowers.join(' '), clods: clods.join(' '), yard: poly(edge), pebbles: pebbles.join(' ') };
 }
 
 // The ground, rings and river (built once, on first use, after Skia has loaded).
@@ -162,7 +117,6 @@ function buildGround() {
   const svg = {
     ...buildGrass(),
     outline: ringPath(0),
-    wild: tilesPath((x, y) => zoneAt(x, y) === 'enemy'),
     traps: tilesPath((x, y) => zoneAt(x, y) === 'traps'),
     moat: tilesPath((x, y) => zoneAt(x, y) === 'moat'),
     river: tilesPath((x, y) => zoneAt(x, y) === 'water'),
@@ -196,9 +150,8 @@ export function Ground({ flooded }: { flooded: boolean }) {
   const ground = (groundPaths ??= buildGround());
   return (
     <Group>
-      <Path path={ground.outline} color={LAWN} />
-      {/* Raiders' ground: the wild land that runs on past the map */}
-      <Path path={ground.wild} color={LAND} />
+      {/* The same grass as the land round the map, inside the walls and out */}
+      <Path path={ground.outline} color={LAND} />
       {/* Grass in broad patches, with tufts and the odd flower */}
       <Path path={ground.light} color={GRASS_LIGHT} opacity={0.55} />
       <Path path={ground.dark} color={GRASS_DARK} opacity={0.55} />

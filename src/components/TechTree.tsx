@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { memo, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { BUILDING_INFO } from '../game/buildings';
 import type { GameState } from '../game/state';
@@ -42,17 +42,37 @@ export function TechTree({ game }: { game: TreeGame }) {
   );
 }
 
-/**
- * One branch: its tiers left to right, and the open tech's details below. Without `selected` /
- * `onSelect` it keeps its own selection (for a building's pop-up or the mine screen).
- */
-export function TechBranchView({ game, branch, selected, onSelect, showName = true }: {
+type BranchProps = {
   game: TreeGame;
   branch: TechBranch;
   selected?: TechId | null;
   onSelect?: (id: TechId | null) => void;
   showName?: boolean;
-}) {
+};
+
+// How many of a branch's techs the gold would pay for: what the gold changes about how the branch looks.
+const affordable = (game: TreeGame, branch: TechBranch) => techsOf(branch).reduce((count, id) => count + (techCost(game.techs, id) <= game.gold ? 1 : 0), 0);
+
+/**
+ * One branch: its tiers left to right, and the open tech's details below. Without `selected` /
+ * `onSelect` it keeps its own selection (for a building's pop-up or the mine screen). It's redrawn only
+ * when the techs, buildings or depth change, or the gold comes to pay for more or fewer of its techs —
+ * not on every tick's gold.
+ */
+export const TechBranchView = memo(
+  TechBranchBody,
+  (a, b) =>
+    a.branch === b.branch &&
+    a.selected === b.selected &&
+    a.onSelect === b.onSelect &&
+    a.showName === b.showName &&
+    a.game.techs === b.game.techs &&
+    a.game.buildings === b.game.buildings &&
+    a.game.depth === b.game.depth &&
+    affordable(a.game, a.branch) === affordable(b.game, b.branch),
+);
+
+function TechBranchBody({ game, branch, selected, onSelect, showName = true }: BranchProps) {
   const [own, setOwn] = useState<TechId | null>(null);
   const open = onSelect ? (selected ?? null) : own;
   const select = onSelect ?? setOwn;
@@ -76,14 +96,7 @@ export function TechBranchView({ game, branch, selected, onSelect, showName = tr
             {index > 0 && <View style={styles.link} />}
             <View style={styles.tier}>
               {column.map((id) => (
-                <TechNode
-                  key={id}
-                  id={id}
-                  state={techState(game, id)}
-                  cost={techCost(game.techs, id)}
-                  open={open === id}
-                  onPress={() => select(open === id ? null : id)}
-                />
+                <TechNode key={id} id={id} state={techState(game, id)} cost={techCost(game.techs, id)} open={open === id} onSelect={select} />
               ))}
             </View>
           </View>
@@ -94,14 +107,21 @@ export function TechBranchView({ game, branch, selected, onSelect, showName = tr
   );
 }
 
-function TechNode({ id, state, cost, open, onPress }: { id: TechId; state: TechState; cost: number; open: boolean; onPress: () => void }) {
+// A tech's card: redrawn only when its state, cost or openness changes (not on every tick's gold).
+const TechNode = memo(function TechNode({ id, state, cost, open, onSelect }: {
+  id: TechId;
+  state: TechState;
+  cost: number;
+  open: boolean;
+  onSelect: (id: TechId | null) => void;
+}) {
   const tech = TECHS[id];
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={`${tech.name}, tier ${tierName(tech.tier)}, ${state === 'owned' ? 'researched' : `${String(cost)} gold`}`}
       accessibilityState={{ expanded: open }}
-      onPress={onPress}
+      onPress={() => onSelect(open ? null : id)}
       style={({ pressed }) => [styles.node, nodeStyles[state], open && styles.nodeOpen, pressed && styles.pressed]}
     >
       <View style={styles.nodeTop}>
@@ -115,7 +135,7 @@ function TechNode({ id, state, cost, open, onPress }: { id: TechId; state: TechS
       </Text>
     </Pressable>
   );
-}
+});
 
 function TechDetail({ game, id }: { game: TreeGame; id: TechId }) {
   const tech = TECHS[id];

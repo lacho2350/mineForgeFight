@@ -1,6 +1,7 @@
 # Mine Forge Fight — current state (handover)
 
-_Last updated 2026-10-08. Read this before changing anything; then read the files it points to._
+_Last updated 2026-10-12. Read this before changing anything; then read the files it points to._
+_Releasing to Google Play, the App Store and PC: see [`RELEASE_PLAN.md`](RELEASE_PLAN.md)._
 
 ## What the game is
 
@@ -14,9 +15,9 @@ Two screens (Expo Router, `src/app/`):
 
 | Route | File | What it shows |
 |---|---|---|
-| `/` | `src/app/index.tsx` | Stronghold, full screen: the isometric castle map (`CityView`: drag to pan, pinch / wheel / +− to zoom, tap a building), a slim bar on top (gold, peasants, raid clock — the warehouse's resources are in the warehouse's pop-up and the Menu, not on screen), a ⚔️ **War** button on the right edge under it (red with "!" while raiders are sighted or a battle waits; otherwise a badge with the recruits that can be hired now) opening the War sheet (`CombatPanel`: the raid now via `RaidBanner inPanel` — with ride out / hold the walls, command, auto-resolve now, the next raid's kind and strength —, the auto-resolve switch, every unit with army / waiting / gear and RECRUIT ALL, the defences summary with traps per side, LAY TRAPS and links to the keep, wall, towers, gate, moat and armory, and the stakes), live raid alerts, a news toast, and a toolbar (Mine, Build, Buildings, Tech, Docks, Menu; Tech shows how many techs are ready to research, Docks shows how many barges are moored). Build opens a palette of unbuilt buildings, rock clearing, roads and traps; picking a building enters placement mode (drag the green/red footprint — a drag that starts on it moves it, any other drag pans — or tap where it should go, then Build here); picking Clear rocks, a road or a trap enters paint mode (one finger paints a stroke of tiles, laid on release; two fingers / right-drag pan; the bar switches kind; Done ends it). Tapping a building opens its pop-up (`Sheet` + `BuildingDetail`, with Destroy; the warehouse adds the haul-route table, the keep the defence summary); tapping a trap opens its sheet (effect, side, Take it up). |
-| `/mine` | `src/app/mine.tsx` | The mine map (pan/zoom camera), Dig toggle, deposit info panel (tap a tile), bin panel (tap a stockpile bin — at the mine exit or beside a miner — for that resource's stock at every stage: `BinPanel`), hauling chain, haulage, the mine's tech branch, Dig Deeper. |
-| `/battle` | `src/app/battle.tsx` | The battle — a siege at the walls or a battle in the field: hex board, orders, auto-battle / quick resolve, log, result. |
+| `/` | `src/app/index.tsx` | Stronghold, full screen: the isometric castle map (`CityView`: drag to pan, pinch / wheel / +− to zoom, tap a building), a slim bar on top (gold, peasants, raid clock — the warehouse's resources are in the warehouse's pop-up and the Menu, not on screen), a ⚔️ **War** button on the right edge under it (red with "!" while raiders are sighted or a battle waits; otherwise a badge with the recruits that can be hired now) opening the War sheet (`CombatPanel`: the raid now via `RaidBanner inPanel` — with ride out / hold the walls, command / watch, resolve now, the next raid's kind and strength —, the instant / fought-out battles switch, every unit with army / waiting / gear and RECRUIT ALL, the defences summary with traps per side, LAY TRAPS and links to the keep, wall, towers, gate, moat and armory, and the stakes), live raid alerts, a news toast, and a toolbar (Mine — the only way down; tapping the headframe does nothing —, Build, Buildings, Tech, Docks, Menu; Tech shows how many techs are ready to research, Docks shows how many barges are moored). Build opens a palette of unbuilt buildings, rock clearing, roads and traps; picking a building enters placement mode (the ground it may go on lit blue, yellow where rocks must be cleared first; drag the green/red footprint — a drag that starts on it moves it, any other drag pans — or tap where it should go, then Build here); picking Clear rocks, a road or a trap enters paint mode (one finger paints a stroke of tiles, laid on release; two fingers / right-drag pan; the bar switches kind; Done ends it). Tapping a building opens its pop-up (`Sheet` + `BuildingDetail`, with Destroy; the warehouse adds the haul-route table, the keep the defence summary); tapping a trap opens its sheet (effect, side, Take it up). |
+| `/mine` | `src/app/mine.tsx` | A 🏰 TO THE CITY button (the only way back up), the mine map (pan/zoom camera), Dig toggle, deposit info panel (tap a tile), bin panel (tap a stockpile bin — at the mine exit or beside a miner — for that resource's stock at every stage: `BinPanel`), hauling chain, haulage, the mine's tech branch, Dig Deeper. |
+| `/battle` | `src/app/battle.tsx` | The battle — a siege at the walls or a battle in the field: hex board where every action plays out at the battlefield's pace (stacks walk their path hex by hex, lunge, shots fly, hits flash and their damage shows as they land — `battlePlayback.ts`), orders (taken once the action has played), auto-battle / quick resolve, log, result. Opening it takes command of the battle (also of one that starts while it's open); leaving mid-battle hands it to the captains (`releaseBattle`). |
 
 The mine screen shows a `RaidBanner` (next raid countdown → raiders sighted → at the gate → result); the
 stronghold shows it only for live raids (sighted / at the gate); the full raid status, last result and every
@@ -49,18 +50,33 @@ game, and starts the 1-second simulation (`startSimulation()`).
   from tile position (hash), computed lazily and cached. Every gallery station's "ore column" tile is
   always a coal seam. Deposits **block digging**; a mined-out deposit becomes a hollow you can dig through.
 - **Peasants do every job** (`src/game/workforce.ts`, Stronghold-style). `population` = all peasants
-  (soldiers aren't counted). New ones arrive every 4 s while `population < beds` (the keep's hall `KEEP_BEDS` = 8, plus the houses).
-  **Workers' houses** (`src/game/houses.ts`): up to 8 (`HOUSE_IDS` — the first keeps the old `houses` id;
-  the rest unlock with the keep, `HOUSE_KEEP`), each placed and levelled on its own (2×2) and sleeping
-  `houseBeds(L)` = 4L + ⌊L²/2⌋; with the keep's 8 and the houses' techs the hold sleeps at most
-  `MAX_PEASANTS` = 200. Lists offer the next house only (`isShownBuilding`, like the forges); the houses'
-  tech branch follows the biggest house. Jobs, in
+  (soldiers aren't counted). New ones arrive every 4 s while `population < beds` (the keep's hall `KEEP_BEDS`
+  = 8, plus the cottages) and a kept cottage or the hall has room (`roomForNewcomer`, below).
+  **Workers' cottages** (`src/game/houses.ts`): up to 24 (`HOUSE_IDS` `houses`…`houses24` — the first keeps
+  the old `houses` id; six from the start, then four more with each keep level to the sixth, `HOUSE_KEEP`),
+  each one tile, placed and levelled on its own, named Cottage I–XXIV, sleeping `houseBeds(L)` = 4 + ⌊(L−1)·5/19⌋
+  (4 at level 1, 9 at 20); with the keep's 8 and the houses' techs the hold sleeps at most `MAX_PEASANTS` =
+  200. They need **no staff**: each is kept by **its woman** (not a worker) — `src/game/homes.ts`:
+  every built cottage has a `home` (`homes[id]`: water, food, her `errand`). She walks (`walkBetween`, the
+  same way back) to the river — the riverside tile nearest her cottage, just inside the river wall
+  (`waterSpot`) — for a load of water (`LOAD` 20), or to the store — the granary, else the warehouse
+  (`foodStore`) — for a load of food (10, taken from the store as she sets off; only while it has a unit
+  or more), whichever her home is shorter of, once it has room for a load (`PANTRY` 40 water, 20 food).
+  Its sleepers drink `WATER_PER_PEASANT` (1/60 s) and eat `FOOD_PER_PEASANT` from it. **Who sleeps where**
+  (`sleepers`): the kept cottages fill first, then the keep's hall (while the store has food; the hall
+  eats straight from the store), then cottages run dry. Anyone sleeping dry (or in the hall with the store
+  empty, `hungry`) works at `HUNGRY_WORK` (`workPace` = the share, applied to mining, digging, building,
+  forges and woodcutting), and nobody new moves into a dry cottage. New cottages start empty (their women
+  set off at once); a new game's first starts full. The map draws each cottage (plaster then stone,
+  chimney from tier 2) and each woman on her errand (`stronghold/housewives.tsx`: skirt and headscarf, a
+  bucket or a basket on the way home, on the game clock); the HUD's food reads "N HOMES DRY"; a cottage's
+  pop-up shows its sleepers, water, food and her errand (`HomeStatus`). Lists offer the next cottage only
+  (`isShownBuilding`, like the forges); the houses' tech branch follows the biggest. Jobs, in
   order: miners (`sites` + `pendingSites`), cart pushers (one per cart on each worked level), building
   crews (`crewSize(level)` = 2 + ⌊L/5⌋ per construction job), then building staff in `STAFF_PRIORITY`
-  order (houses first — without housekeepers only the keep's 8 beds are left, so a hold whose peasants are
-  all under orders still grows back to 8 and staffs its houses). **Every building but the keep, the
-  wall and the towers needs staff** (`UNSTAFFED`; `staffNeeded`: warehouse 2 + ⌊L/2⌋ haulers, gate
-  1 + ⌊L/10⌋, houses and all others 1 + ⌊L/5⌋); the rest idle at the campfire — and **go mining**
+  order. **Every building but the keep, the wall, the towers, the moat and the cottages needs staff**
+  (`UNSTAFFED`; `staffNeeded`: warehouse 2 + ⌊L/2⌋ haulers, gate 1 + ⌊L/10⌋, all others 1 + ⌊L/5⌋); the
+  rest idle at the campfire — and **go mining**
   (`idleToTheMine`, end of each tick): while every building has its staff, one idle peasant a second takes
   the next free face (`nextFreeSite`: a dug tile beside a deposit, coal first, then a gallery station),
   listed in `autoMiners`; while any building is short of staff (recruits, a new crew) the latest of them
@@ -84,7 +100,9 @@ game, and starts the 1-second simulation (`startSimulation()`).
   30 tiles, ≤40 tiles long), charges for it, and reserves the miner until it's dug. Gallery station
   seams open the station (chamber + ladder shaft, which then stay dug — `openedStations`).
 - **Digging by hand**: Dig mode; drag from any tunnel end across rock. Path follows the finger, backs
-  up when retraced, stops red at the first invalid tile (and quietly where it joins a tunnel). Cost `3 + floor(row/10)` gold/tile, paid on
+  up when retraced, stops red at the first invalid tile (and quietly where it joins a tunnel). Why it
+  stopped shows over the map while dragging, and after release the order's result (or why it was refused —
+  gold, wood) stays there for a few seconds. Cost `3 + floor(row/10)` gold/tile, paid on
   release; time `2 + 0.04·row` s/tile, one tile at a time (`digPlan`, `digProgress`).
 - **Hauling**: each level with miners has 1+ carts with red-shirted haulers (`carts[level]`, default 1,
   max one per miner; bought in the mine screen's Haulage section for coal + gold, ×1.6 per extra cart).
@@ -115,17 +133,22 @@ game, and starts the 1-second simulation (`startSimulation()`).
   games and older saves start with `STARTING_WOOD` 30.
 - **Food** (`src/game/farms.ts`): fish, apples and mutton (`FOOD_RESOURCES`), kept in the `warehouse`
   record but capped by the **Granary** (`granaryCapacity`: the keep's larder 60 of each without one, +120 a
-  level). Every peasant eats `FOOD_PER_PEASANT` (one food every two minutes), a little of each food in
-  proportion to what's in store; with none left the hold is `hungry`: no newcomers, and mining, digging,
-  building, forges and woodcutting run at `HUNGRY_WORK` 70% (the farms keep their full speed, so a hungry
-  hold can always feed itself again). Up to eight of each farm, built in order and unlocked with the keep
+  level). Every peasant eats `FOOD_PER_PEASANT` (one food every two minutes): those in the keep's hall
+  straight from the store, a little of each food in proportion to what's in, those in cottages from what
+  their women bring (homes, above). With none left in store the hold is `hungry`: the hall sleeps dry, no
+  cottage can be stocked with food, and whoever sleeps dry works at `HUNGRY_WORK` 70% (the farms keep their
+  full speed, so a hungry hold can always feed itself again). Up to eight of each farm, built in order and unlocked with the keep
   (`FARM_SERIES`, `farmKeep`): **Apple orchards** (3×3, in town, 0.1 apples/s per worked level),
-  **Fishing huts** (1×1, on the raiders' ground within a tile of the river at the map's two ends — outside
-  the walls; 0.12 fish/s per worked level; a raid won by raiders from its side burns it down a level) and
+  **Fishing huts** (1×1, only right next to the river, along the river wall inside the town — the row
+  y 7, x 7–51 but for the harbour's walls (x 26–32); safe from raids; none outside the walls; 0.12 fish/s per
+  worked level; huts saved on other ground move to the nearest allowed spot on load (`validPlacements`);
+  about a third of the riverside starts free of rocks; while placing, the
+  allowed ground is lit (`buildSpots`, as for every building) and the camera brings an off-screen start into view) and
   **Sheep pastures** (3×3, grazing on the raiders' ground; the flock (`flocks`) grows by lambs to 10 sheep a
   level and gives 0.01 mutton and 0.006 wool a sheep a second; every raid from its side drives off a tenth
   of it, three tenths if the raiders win — `ravage` in updates.ts). Barges buy fish and wool (not apples or
-  mutton). New games and older saves start with `STARTING_APPLES` 150. The top bar shows the food in store
+  mutton), and **barges only order resources in the warehouse now** (at least 1, and `discovered` — had in a
+  stockpile; with nothing they'd buy in store, no barge comes that time). New games and older saves start with `STARTING_APPLES` 150. The top bar shows the food in store
   (red with HUNGRY); the warehouse's piles on the map leave food out and the granary shows its own; the
   sheep are drawn live (`Flocks`). Farms and food are rounded to hundredths each tick (wood too), since
   tenths would swallow small rates.
@@ -139,9 +162,10 @@ game, and starts the 1-second simulation (`startSimulation()`).
   wall, x 28–30); the town is inside (7–51, 45×45). On the **far side from the gate there is no land** outside
   the wall: rows y 0–5 are **river** (`RIVER_ROWS`, zone `water`, flowing west → east), running right up
   to the wall, with the moat flowing into it at both ends. A walled **harbour** is cut into the castle
-  square from the river (`HARBOUR`: water at x 28–30, y 6–8; the wall steps in round it — columns x 27
-  and 31, back row y 9 = `DOCKS_ROW`), and the **docks** stand in the middle of its back wall
-  (`DOCKS_SPOT`, `DOCK_TILES`). Mountains ring the map on all four sides (the renderer's backdrop); the
+  square from the river (`HARBOUR`: water at x 27–31, y 6–8 — five wide, room for every barge; the wall
+  steps in round it — columns x 26 and 32, back row y 9 = `DOCKS_ROW`), and the **docks** are a quay
+  along its whole back wall (`DOCKS_SPOT`, `DOCK_TILES`, 5×1: a goods shed at one end, a second from tier 2,
+  a crane between). Mountains ring the map on all four sides (the renderer's backdrop); the
   river runs on through gorges in them (in at the back-left, out at the front-right), and the gate road
   leaves through a pass on the front-left. The **moat** ring is a building (see Buildings): a dry ditch until it's built, then
   flooded from the river (water, rims and the bridge at the gate are drawn only then). `WALL_TILES`
@@ -149,9 +173,12 @@ game, and starts the 1-second simulation (`startSimulation()`).
   raiders' ground exist on those sides only. None of the rings can be built on. Saves with traps where
   the river now runs get them paid back in full on load. Fixed in the town: the 5×5
   keep on its plaza, the 3×3 mine, the campfire and parade ground. Every other building is
-  **placed by the player**, once, on its footprint (`FOOTPRINTS`: houses 2×2, guardhouse and griffin
-  eyrie 2×2, stables 4×3, the rest 3×3), anywhere it fits (`placementProblem`). `placements` in the
-  store; `placeBuilding(id, spot)` places and starts level 1 (road tiles under it are taken up); later
+  **placed by the player**, once, on its footprint (`FOOTPRINTS`: cottages 1×1, guardhouse and griffin
+  eyrie 2×2, stables 4×3, the rest 3×3), anywhere it fits (`placementProblem`) — **never on roads**
+  (take them up first: BUILD → Take up roads) or rocks. While placing, the ground it may go on is lit
+  (`buildSpots`: its kind's ground — `buildingGround`: riverside for fishing huts, the raiders' ground for
+  pastures, open town ground for the rest — off other buildings and roads; blue where clear, yellow
+  under rocks). `placements` in the store; `placeBuilding(id, spot)` places and starts level 1; later
   levels are built in place — **built buildings never move**. `destroyBuilding(id)` pulls down **any
   building but the keep** (DESTROY in its pop-up, tapped twice): its level goes to 0, its plot is freed
   (`placements` entry removed — fixed ones keep their spot to be rebuilt), any construction cancelled and
@@ -216,14 +243,14 @@ game, and starts the 1-second simulation (`startSimulation()`).
   every round to raider companies beside a standing wall section, `oil` events). Shown in the Tech pop-up
   (`TechTree`), at the bottom of every building's pop-up and on the mine screen (`TechBranchView`).
 - **Buildings** (`src/game/buildings.ts`): 20 buildings, each level 0 (empty plot) to 20. Economy: Central
-  Keep, Workers' Houses, Warehouses, Foundry, Research Facility, Docks (fixed, outside the walls, starts at
+  Keep, Workers' Cottages (24), Warehouses, Foundry, Research Facility, Docks (fixed, outside the walls, starts at
   1). Defence: Armory, Wall, Towers, Gate, Moat (fixed ring, needs the keep at level 10 —
   `MOAT_KEEP_LEVEL` — and no staff, like the wall; tapped on its front stretch west of the gate). One
   dwelling per unit: Guardhouse, Archery Range, Barracks, Monastery, Balloon Works, Stables, Griffin Eyrie,
   Paladin Chapel, Celestial Sanctum. Start: keep/houses/warehouse/foundry/guardhouse at 1, the rest 0.
   Effects come from `buildingStats(levels, staff?)` (staff omitted = fully staffed, for previews): keep =
-  level cap for everything else, building sites at once `1 + ⌊L/5⌋`, taxes L gold per 5 s; houses = beds
-  `8 + 4L + ⌊L²/2⌋` for peasants (the 8 is the keep's hall, there even with no housekeepers);
+  level cap for everything else, building sites at once `1 + ⌊L/5⌋`, taxes L gold per 5 s; cottages = beds
+  `8 + Σ houseBeds(L)` for peasants (the 8 is the keep's hall);
   warehouses = capacity `100·1.3^(L−1)` per resource + mine stockpiles; foundry = miner rate and cart load;
   research = dig speed/cost and trap damage; stables = haulers' carts (and cavalry); gate = gate HP;
   moat = `10 + 6L` damage a round to raider companies wading in it (battle, below);
@@ -310,10 +337,15 @@ game, and starts the 1-second simulation (`startSimulation()`).
   (`setRideOut`, RIDE OUT / HOLD THE WALLS on the raid banner; `raidBattleKind`). Stakes in the field:
   beaten, the raiders only reach the outskirts and take half as much (`FIELD_PLUNDER_SHARE` 15%); won,
   the bounty is half again (`FIELD_BOUNTY` ×1.5). The battle board shows open grass in the field.
-  **Auto-resolver**: `autoResolveRaids` (switch on the raid banner and in the War sheet) fights each raid out the
-  moment it arrives (`resolveBattle`, settled at once, the result left on the battlefield); otherwise the
-  banner's AUTO-RESOLVE button settles a battle waiting for orders (`quickResolveBattle`), and an
-  uncommanded battle still fights itself after `RAID_AUTO_AFTER` (30 s). Reports say which kind it was.
+  **Battles: instant or fought out** (`autoResolveRaids`, the switch in the War sheet): instant settles each
+  raid the moment it arrives (`resolveBattle`, the result left on the battlefield) — how every battle went
+  before 2026-10-12. Fought out (the default): the battle waits `RAID_AUTO_AFTER` (30 s) for the player to
+  take command (COMMAND on the banner opens the battle screen); after that the **captains** fight it in the
+  tick, both sides by the AI, one action at a time at the battlefield's pace (`battleDeadline` then holds
+  when the next action is due: `actionSeconds` of the last one), and the banner says "round n, the captains
+  fight it" with WATCH. RESOLVE NOW (banner) / QUICK RESOLVE (battle screen) settle it at once
+  (`quickResolveBattle`). A save with a battle the captains were fighting goes straight on when loaded.
+  Reports say which kind it was.
 - **Raids** (`src/game/raids.ts`): first raiders arrive at 6:00, then 5 min after each raid ends; sighted
   60 s ahead. **Raids are sized to the hold**: at sighting, `holdPowerOf(state)` = army value +
   defences at half their worth (`holdPower`: towers × damage × shots × 5 rounds × 11 value/HP, wall HP
@@ -327,7 +359,7 @@ game, and starts the 1-second simulation (`startSimulation()`).
   strength)` into 2–7 stacks of goblins, wolf riders, orc archers, harpies, ogres (2× wall damage),
   cyclopes (shoot walls), behemoths (ignore 40% defence), stronger types joining with n. Each comes from
   one side of the map and crosses that side's traps first (see Traps). At arrival a `battle` starts;
-  open the battle screen to command it, otherwise it quick-resolves after 30 s. Win: bounty 30% of the
+  open the battle screen to command it, otherwise the captains fight it from 30 s on (above). Win: bounty 30% of the
   raiders' strength (`raiderStrength(battle)`) in gold. Lose: 30% of gold and of every warehouse
   resource is plundered. Survivors (and healed/resurrected) rejoin the army; the dead are lost. Saves
   with a raid sighted under the old exponential rules (> 1.5× the new strength) get it re-sized on load.
@@ -343,9 +375,12 @@ game, and starts the 1-second simulation (`startSimulation()`).
   start of every round they stand in it (`moat` events); the AI prefers the dry bridge. The Drawbridge
   tech raises the bridge (`moatAtGate`). The moat counts in the hold's power.
   `act(battle, action)` returns a new battle; `chooseAction` is the AI; `resolveBattle` = quick combat.
+  Moves record the hexes walked (`pathTo`; fliers just from and to). **Pace** (`BATTLE_PACE`): 0.32 s a hex
+  walked, 0.12 s a hex flown, 0.6 s a blow / shot / spell / tower shot / oil / moat, 0.3 s defending, 0.6 s
+  a new round, and a 0.3 s beat after every action (`eventSeconds`, `actionSeconds`).
 - **Economy**: carts and digging cost warehouse **coal** + gold; buildings also cost ores. Trade is with
   **river barges** (`src/game/ship.ts`): up to `MAX_BARGES` (5) wait at the docks at once, each at a
-  berth (`BERTHS`: three nose-in at the harbour's quay, two on the river by its mouth) with an order —
+  berth (`BERTHS`: all five nose-in along the harbour's quay, the middle first) with an order —
   so many units of one resource at a price 10–50% over `RESOURCE_PRICE` × (1 + trade bonus) (coal 1,
   granite 1, copper 3, iron 4, gold 12, diamond 30, tin 3, silver 8, sulfur 5, salt 4, emeralds 20,
   mithril 40). `bargeOrder` draws it (seeded by `bargeSerial`):
@@ -370,7 +405,7 @@ src/
     mine.tsx               mine screen (layout + live state → MineScene, panels)
   game/                    simulation + pure model (no React Native / Skia)
     gameStore.ts           Zustand store: the starting state, the actions, persistence, loadGame,
-                           startSimulation
+                           startSimulation; `useGame(live)` / `useGameSlice(selector, live)` for screens
     state.ts               the state's types (GameState, Raid, RaidReport, …) and `raidBattleKind`
     tick.ts                `tickGame(state)`: one second of the game (the store's `tick`)
     hold.ts                pure reads of the state: workforce, walks, mine layout, hold power, forge and
@@ -388,7 +423,9 @@ src/
     cityMap.ts             the stronghold's tile map: rings (raiders, traps, moat, wall), map sides,
                            footprints, fixed ground, placement checks, save-migration helpers
     traps.ts               trap kinds, costs, damage, belt placement checks, traps facing a side
-    houses.ts              the workers' houses: ids, keep levels, names, beds per level, the 200 cap
+    houses.ts              the workers' cottages: ids, keep levels, names, beds per level, the 200 cap
+    homes.ts               the cottages' homes: water and food, the women's errands, who sleeps where,
+                           the work pace and room for newcomers
     forest.ts              the forest on the near mountains: stands, felling the nearest, regrowth elsewhere
     farms.ts               food: orchard / fishing hut / pasture ids, food rates, eating and hunger, raid losses
     save.ts                batched localStorage storage for the persisted store, flushSave()
@@ -440,7 +477,8 @@ src/
                            towers with an archer; a gatehouse of two round towers and a portcullis;
                            a low wattle fence marks the wall's line until it's built (no defence).
                            The ground has no grid (the placement ghost shows it only while placing or
-                           painting): grass in broad lighter/darker patches from value noise with
+                           painting, on land; the grid on the river and harbour only while placing a
+                           fishing hut — `gridLines`, `Ghost.water`): grass in broad lighter/darker patches from value noise with
                            tufts and flowers, bare earth in the trap belt, a ragged dirt yard round
                            the keep (`buildGrass`), and soft blurred shadows from every building,
                            wall, tower and tree. Army on parade. Round it a backdrop drawn live (a few paths):
@@ -451,14 +489,18 @@ src/
                            and the rocks on the map are all the same two-tone crag (`crag`) in one
                            stone (`STONE_LIGHT`/`STONE_DARK`; the ranges hazier with distance). The back part is drawn under the castle image,
                            the front part (woods and ranges in front of the near sides) over it. The
-                           map and the backdrop share the land colours (`LAND`, `LAWN`, `CROWNS`) and
-                           the map has no outline, so the hold sits in its valley. It uses extra room
+                           map and the backdrop share the land colour (`LAND`, inside the walls and out),
+                           the grass (`grass.ts`: the same noise patches and tufts on the map and, in
+                           the backdrop's `MEADOW`, on the land round it, seamless across the edge) and
+                           the trees (`CROWNS`), and the map has no outline, so the hold sits in its valley. It uses extra room
                            above and below the map (`SKY_ROOM`, `FOOT_ROOM`); the castle image covers
                            only the map part (`STILL_TOP`, `STILL_HEIGHT`), so it didn't grow. Two layers for speed: everything still is
                            rendered offscreen into ONE image (`useStillImage`, keyed on building levels,
                            placements, traps, parade sizes, building sites and raiders
-                           (traps are drawn flat on the ground there) — rebuilding costs ~100 ms,
-                           so keep fast-changing things out of the key); the live layer on top has the
+                           (traps are drawn flat on the ground there), from two layers — `StaticGround`
+                           and `StaticScene` — each recorded in a step of its own and rasterised a strip
+                           of rows per task, so a rebuild never freezes the game (keep fast-changing
+                           things out of the key all the same); the live layer on top has the
                            warehouse piles, progress bars, selection, a few animated bits (smoke,
                            balloons, flame, mine wheel, the river barges) and every peasant as one `Atlas` moved by a
                            single `useRSXformBuffer` worklet (haulers, staff errands, crews, idlers).
@@ -469,8 +511,9 @@ src/
                            roads, traps, trees, raiders), `fortifications` (wall, towers, gatehouse),
                            `buildingArt` (every building, campfire, headframe, scaffolds, parade),
                            `live` (piles, smoke, balloons, wheel, carts, barges, progress bars),
-                           `peasants` (the sprite atlas), `overlays` (plots, selection, placement
-                           ghost) and `stillImage` (`useStillImage`, `pictureToImage`).
+                           `peasants` (the sprite atlas), `housewives` (the cottages' women on their
+                           errands), `overlays` (plots, selection, placement
+                           ghost) and `stillImage` (`useStillImage`, `picturesToImage`).
     GameSceneLayout.ts     drawing the tile map: `iso()` / `groundAt()` projection, `plotOf()` (plots from
                            placements), doors and peasant routes, silhouettes and the depth-ordered
                            tap list (the wall is tapped at the front end of its left run);
@@ -479,6 +522,7 @@ src/
     TechTree.tsx           the tech tree (all branches) and one branch with its tiers, details, Research
     BattleBoard(.web).tsx, BattleBoardCanvas.tsx   battlefield (Skia): hexes, wall/gate, towers, sprites
     battleLayout.ts        hex geometry for the board, taps and labels (Skia-free)
+    battlePlayback.ts      an action laid out in time: walk tracks, lunges, shots, hits (Skia-free; worklet poses)
     skiaPaths.ts           who owns a Skia path: parse once, held by a component, or freed with a drawing
     unitSprites.ts         12×12 pixel sprites for all 16 creatures (also the army on parade)
     RaidBanner.tsx         raid status banner on both main screens, kept to a title and one line (kind ·
@@ -535,6 +579,11 @@ src/
   picture and old recordings freed, offscreen drawings freed on unmount). Expo SDK 57 pins 2.6.2; drop the
   patch when an SDK ships a fixed Skia. To check: count CanvasKit objects made vs deleted (wrap the classes'
   `delete` and factories) — every type should balance within a few seconds.
+- **Free Skia images only after frames are drawn** (`freeAfterDrawn` in skiaPaths.ts): a hidden browser
+  tab keeps running timers but draws no frames, so its canvas still had the old drawing queued; freeing on a
+  timer alone made it draw a deleted image when the tab came back ("Cannot pass deleted object as a pointer
+  of type Image const*", seen in Firefox). The castle image and the mine terrain wait for two frames, the
+  delay, and two more frames.
 - **Freeing Skia images** (the castle's still image, the mine's terrain blocks): never `dispose()` an
   image the canvas might still draw. A canvas keeps replaying its last drawing for animations, and on
   web a screen in the background is not really frozen — React keeps committing while its canvas keeps
@@ -545,13 +594,39 @@ src/
 - **Offscreen images on web — never `drawAsImageFromPicture`**: on web it makes a new WebGL context
   (an OffscreenCanvas) for every image and never frees it; browsers keep ~16 per page and then drop the
   oldest — the map's canvas — so the stronghold went black after enough castle redraws. The castle image
-  is drawn with `pictureToImage` (`stronghold/stillImage.tsx`): a CPU raster surface on web (no context; ~30
-  ms for the whole castle), an offscreen GPU surface on iOS/Android, both disposed straight away. As a
+  is drawn with `picturesToImage` (`stronghold/stillImage.tsx`): a CPU raster surface on web (no context),
+  filled `STRIP_ROWS` (120) rows per task, an offscreen GPU surface on iOS/Android drawn at once, both
+  disposed straight away. As a
   safety net, `CityView` remounts the scene if its canvas ever fires `webglcontextlost`.
 - **Castle redraw cost**: the still image is rebuilt from a fresh React tree each time, so anything
   computed inside it is redone too. Big static paths are parsed into Skia paths once (`buildGround`),
   rocks and roads keep one parsed set for their current state (`latest` in `skiaPaths.ts`, freeing the replaced set a few
-  seconds later). A rebuild is ~35–45 ms recording + ~30 ms rasterising on web (was ~95 + leaks).
+  seconds later). Measured 2026-10-12 (desktop Chromium, DPR 1, 2360×1333 image): recording ~80 ms in a
+  dev build (~14 ms in production), rasterising ~165–185 ms in one go — a quarter-second freeze on every
+  cleared rock, building site or raid. Now recorded as two layers (ground, then the rest) in separate
+  tasks and rasterised a strip per task: no task over 50 ms; the image appears a few hundred ms later.
+- **Re-rendering per tick** (the store changes every second): screens use `useGame(useIsFocused())`, so
+  one out of sight (the stronghold under the mine or the battle, the mine under the battle) skips the
+  ticks and catches up when shown; the map's slices use `useGameSlice(…, active)`. Lists that would redraw
+  everything every tick are memoised on what they show: tech branches (`TechBranchView` re-renders only
+  when the techs, buildings, depth or the number of its techs the gold pays for change), tech cards,
+  build-palette entries, the toolbar and side buttons, the toast. Measured per tick in a dev build:
+  stronghold 7.7 → 4.9 ms, with the build palette open 18 → 9.8, the tech sheet 23 → 7.4, the mine 18
+  → 8.8 (it no longer re-renders the hidden stronghold too). While the **page** is hidden (another tab,
+  a minimised window) `useGame` / `useGameSlice` pass no changes on at all — the game keeps ticking and
+  the screens catch up when it's shown — so a background tab costs only the tick (~0.5 ms a second).
+- **Browser load** (main-thread busy time, measured with a MessageChannel probe whose own floor is
+  ~4%): filling the mountains, sky, river and forest (`Backdrop`, `ForestTrees` — big, complex paths) on
+  every animation frame took ~22% of the main thread on its own. So the stronghold draws on **two
+  stacked canvases** (`GameSceneCanvas`): below, everything still (backdrop, castle image, forest),
+  redrawn only when the camera moves or they change; over it, see-through, the live layer (piles,
+  flocks, smoke, barges, carts, progress bars, peasants, selection, ghost) at the clock's 30 fps.
+  Stronghold idle 27% → ~8%, panning still 60 fps. The pulsing `LiveSignal` dots are a Reanimated CSS
+  animation (`css.create` / `css.keyframes` — not React Native's StyleSheet, which rejects
+  `animationName` on web), so the browser runs them with no script per frame (mine 8.7% → 7.1%).
+  Memory: CanvasKit's heap is a fixed 128 MiB unless something grows it; the mine's terrain block cache
+  (768×192 px, ~590 KB each) keeps `MAX_CACHED_BLOCKS` 72 (was 160, ~94 MB) but never fewer than the
+  blocks on screen plus 12 (`keepBlocksInView`), or zooming out would redraw blocks every frame.
 - **Web quirks**: Skia's web `<Canvas style>` must be a plain object (not an array). Modules imported
   by non-lazy web code must not touch Skia at module load (hence `MineHaulerSteps.ts`). Avoid
   `__destroyWebGLContextAfterRender` (broke hidden screens).
@@ -575,7 +650,9 @@ src/
   **Metro doesn't watch folders created after it started** (it serves their first version forever, even
   after `touch`): after adding a folder (e.g. `src/components/stronghold/`), restart the dev server. To
   check what's served: `curl` the module's `.bundle` URL (as in the browser's network list) and grep it.
-- **Saving**: the store is wrapped in Zustand `persist` (key `mineforge-save`, `SAVE_VERSION` 3). Storage is
+- **Saving**: the store is wrapped in Zustand `persist` (key `mineforge-save`, `SAVE_VERSION` 4 — 4 split
+  the old 2×2 workers' houses into cottages on their tiles, `splitHouses`, enough to sleep as many, up to
+  four each, stocked; a house job under way is paid back). Storage is
   `localStorage`: the browser's on web; on iOS/Android `import 'expo-sqlite/localStorage/install'` (first line
   of `_layout.tsx`) provides a synchronous SQLite-backed one. `_layout.tsx` calls `loadGame()` at module load
   (before any render), then starts the clock. Writes are batched (latest state ~3 s after a change) and
@@ -595,8 +672,9 @@ src/
   `gameStore.ts` used to make a second, blank store that never loaded or ticked — the screen froze on it
   (raid clock stuck at "RAID 1 6:00") while the real game ran on unseen. In development the running store
   and its clock now live on `globalThis` (`mineforgeStore`, `mineforgeClock`) and are kept across a
-  refresh, and `loadGame` only loads once; but the kept store's actions are the code it was made with, so
-  **reload the page to run edited game logic**.
+  refresh, and `loadGame` only loads once. A refresh hands the kept store the edited actions (`gameState`
+  bound to its `setState`) plus any new fields, so edited game logic runs at once; save migrations
+  (`saveMigration.ts`) still only run when the page loads.
 - Fast logic tests without the UI: compile the store to CommonJS and drive it from Node, e.g.
   ```bash
   OUT=/tmp/sim && npx tsc src/game/gameStore.ts --ignoreConfig --outDir $OUT --rootDir src \
@@ -629,7 +707,7 @@ src/
    at a gate whichever side they come from). Traps are never used up. Food / popularity (Stronghold's peasant arrival rules) don't exist yet.
 3. Balance pass: building costs, recruit prices, tech prices, road speeds and the raid share/floor vs.
    mining output are first guesses. Techs are bought instantly (no research time or queue).
-4. Battle polish: movement animation (stacks jump), Heroes-style "wait", morale/luck, hero commander,
+4. Battle polish: Heroes-style "wait", morale/luck, hero commander, a speed setting for the playback,
    two-hex units; going out to attack raider camps.
 5. The wall is tapped at the front end of its left run (or from the Buildings list).
 6. No feedback text when a hand-drawn dig is released on an invalid tile (it just doesn't order).

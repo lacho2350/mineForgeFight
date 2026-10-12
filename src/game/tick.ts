@@ -1,8 +1,8 @@
 import { cartEventsBetween, getCartRoutes } from './haulage';
-import { RESOURCE_INFO, emptyStock, type Resource } from './resources';
+import { RESOURCES, RESOURCE_INFO, emptyStock, type Resource } from './resources';
 import { BUILDING_IDS, BUILDING_INFO, DWELLING_UNIT, buildingStats, workedLevel, type BuildingId } from './buildings';
 import { ARMY_RECRUITING, ARMY_UNITS, MAX_MUSTERS_WAITING, MUSTER_SECONDS, unitGrowth, type ArmyUnit } from './units';
-import { createBattle, resolveBattle } from './combat';
+import { actionSeconds, createBattle, resolveBattle, stepAI, type Battle } from './combat';
 import { RAID_AUTO_AFTER, RAID_WARNING, raidKind, raidParty, raidSide, raidStrength } from './raids';
 import { BERTHS, MAX_BARGES, bargeOrder, isWaiting, BARGE_SAIL } from './ship';
 import { ROCK_INFO, startingRock } from './rocks';
@@ -10,7 +10,8 @@ import { ITEM_INFO, UNIT_GEAR, type ItemId } from './items';
 import { FORGE_IDS, FORGE_OUTPUT_CAP, addLoad, isForge, loadUnits, shelfMissing, type ForgeId, type ForgeTask, type Load } from './forges';
 import { isHouse } from './houses';
 import { fellWood } from './forest';
-import { FOODS, FOOD_PER_PEASANT, HUNGRY_WORK, LAMBS_PER_LEVEL, MUTTON_PER_SHEEP, PASTURE_IDS, SHEEP_PER_LEVEL, WOOL_PER_SHEEP } from './farms';
+import { FOODS, LAMBS_PER_LEVEL, MUTTON_PER_SHEEP, PASTURE_IDS, SHEEP_PER_LEVEL, WOOL_PER_SHEEP } from './farms';
+import { roomForNewcomer, tickHomes, workPace } from './homes';
 import { gearComing, gearWanted, incomingTo, supplyLoad, wagonBackAt, wagonDropAt, type WagonJob } from './wagons';
 import { SIDE_NAMES } from './cityMap';
 import { haulFactor } from './roads';
@@ -39,8 +40,8 @@ import { buildingFields, roundCoal, settleBattle, transfer, withSite } from './u
 const hundredths = (value: number) => Math.round(value * 100) / 100;
 
 export function tickGame(state: GameState): Partial<GameState> {
-  // A hungry hold works slower (but its farms bring food in at full speed).
-  const work = state.hungry ? HUNGRY_WORK : 1;
+  // Peasants sleeping where there's no water or food work slower (but the farms bring food in at full speed).
+  const work = workPace(state);
   // Each miner cuts from their own deposit into that resource's stockpile beside the miners,
   // until the deposit is mined out (or the stockpile is full).
   const vein = { ...state.vein };
@@ -148,13 +149,16 @@ export function tickGame(state: GameState): Partial<GameState> {
     add('mutton', flock * MUTTON_PER_SHEEP, land.granaryCapacity);
     add('wool', flock * WOOL_PER_SHEEP, state.warehouseCapacity);
   }
-  // Every peasant eats, a little from each food in proportion to what's in store; short of food, the hold
-  // goes hungry.
-  const hunger = FOOD_PER_PEASANT * state.population;
-  const stored = FOODS.reduce((sum, food) => sum + stock[food], 0);
-  const eaten = Math.min(hunger, stored);
-  if (stored > 0) for (const food of FOODS) stock[food] = hundredths(Math.max(0, stock[food] - (eaten * stock[food]) / stored));
-  const hungry = stored < hunger - 1e-9;
+  // The cottages' women fetch water from the river and food from the store, the peasants sleeping in the
+  // cottages drink and eat what's in, and those in the keep's hall eat from the store; with no food left
+  // in store, the hold is hungry.
+  const kept = tickHomes(state, stock, state.elapsedSeconds + 1);
+  for (const food of FOODS) stock[food] = kept.stock[food];
+  const { homes, hungry } = kept;
+  // Every resource the hold has had in any stockpile so far: what barges may come for.
+  let { discovered } = state;
+  const found = RESOURCES.filter((resource) => !discovered.includes(resource) && (vein[resource] > 0 || state.mineExit[resource] > 0 || toMine.to[resource] > 0 || stock[resource] > 0));
+  if (found.length > 0) discovered = [...discovered, ...found];
 
   // Diggers work through the plan one tile at a time.
   let { digPlan, digProgress, playerDug, pendingSites } = state;
@@ -351,9 +355,12 @@ export function tickGame(state: GameState): Partial<GameState> {
   const taken = new Set(barges.map((barge) => barge.berth));
   const berth = BERTHS.findIndex((_, index) => !taken.has(index));
   if (docks.interval > 0 && state.elapsedSeconds >= nextBargeAt && berth >= 0 && barges.filter(isWaiting).length < MAX_BARGES) {
-    const order = bargeOrder(bargeSerial, toStore.to, docks.hold, docks.tradeBonus, barges.filter(isWaiting).map((barge) => barge.resource));
-    barges = [...barges, { id: bargeSerial, berth, arrivedAt: state.elapsedSeconds, ...order }];
-    bargeSerial += 1;
+    const order = bargeOrder(bargeSerial, toStore.to, docks.hold, docks.tradeBonus, barges.filter(isWaiting).map((barge) => barge.resource), discovered);
+    // Nothing in store a barge would buy: none comes this time.
+    if (order) {
+      barges = [...barges, { id: bargeSerial, berth, arrivedAt: state.elapsedSeconds, ...order }];
+      bargeSerial += 1;
+    }
     nextBargeAt = state.elapsedSeconds + docks.interval;
   }
 
@@ -366,7 +373,7 @@ export function tickGame(state: GameState): Partial<GameState> {
   const before = { sites, pendingSites, carts: state.carts, construction, clearOrders, buildings, paused: state.paused };
   const beds = buildingStats(buildings, workforceOf({ ...before, population: state.population }).staff, techs).beds;
   let population = state.population;
-  if (elapsedSeconds % structure.arrivalSeconds === 0 && population < beds && !state.hungry) population += 1;
+  if (elapsedSeconds % structure.arrivalSeconds === 0 && population < beds && roomForNewcomer({ population, buildings, techs, homes, hungry })) population += 1;
 
   // Staff the buildings from whoever isn't under orders; what each building does follows its staff.
   const workforce = workforceOf({ ...before, population });
@@ -419,7 +426,7 @@ export function tickGame(state: GameState): Partial<GameState> {
       unitBonus: stats.unitBonus,
     });
     if (created.status !== 'active' || state.autoResolveRaids) {
-      // Decided before it began (no army to defend the hold), or the auto-resolver is on: fight it out and
+      // Decided before it began (no army to defend the hold), or battles are instant: fight it out and
       // settle the raid at once (the result stays on the battlefield to look at).
       const fought = created.status === 'active' ? resolveBattle(created) : created;
       const settled = settleBattle({ ...state, gold, warehouse: toStore.to, elapsedSeconds, buildings, flocks, battleArmy: state.army }, fought);
@@ -434,13 +441,25 @@ export function tickGame(state: GameState): Partial<GameState> {
       };
       notice =
         kind === 'field'
-          ? `Battle in the field! Command it, or it's auto in ${String(RAID_AUTO_AFTER)} s.`
-          : `Raiders at the gate! Command it, or it's auto in ${String(RAID_AUTO_AFTER)} s.`;
+          ? `Battle in the field! Take command within ${String(RAID_AUTO_AFTER)} s, or the captains fight it.`
+          : `Raiders at the gate! Take command within ${String(RAID_AUTO_AFTER)} s, or the captains fight it.`;
     }
   } else if (battle && battleRunning && !state.battleCommanded && elapsedSeconds >= state.battleDeadline) {
-    const settled = settleBattle({ ...state, gold, warehouse: toStore.to, elapsedSeconds, buildings, flocks }, resolveBattle(battle));
-    raidFields = { ...settled, battle: null };
-    notice = settled.notice;
+    // Nobody took command: the captains fight it out, an action at a time at the battlefield's pace (the
+    // battle screen can watch it, or take command, any time). `battleDeadline` is when the next action is due.
+    let fought: Battle = battle.auto ? battle : { ...battle, auto: true };
+    let due = state.battleDeadline;
+    for (let guard = 0; fought.status === 'active' && due <= elapsedSeconds && guard < 50; guard++) {
+      fought = stepAI(fought);
+      due += actionSeconds(fought.last);
+    }
+    if (fought.status === 'active') {
+      raidFields = { battle: fought, battleDeadline: due };
+    } else {
+      const settled = settleBattle({ ...state, gold, warehouse: toStore.to, elapsedSeconds, buildings, flocks }, fought);
+      raidFields = { ...settled, battle: fought };
+      notice = settled.notice;
+    }
   }
 
   const next: Partial<GameState> = {
@@ -449,6 +468,8 @@ export function tickGame(state: GameState): Partial<GameState> {
     forestSerial,
     flocks,
     hungry,
+    homes,
+    discovered,
     population,
     construction,
     gold,

@@ -1,12 +1,12 @@
 import { useMemo, useRef, useState } from 'react';
-import { router } from 'expo-router';
+import { router, useIsFocused } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { ScrollView } from 'react-native-gesture-handler';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { freeHands, haulWalk, selectMineLayout, workforceOf } from '../game/hold';
 import { TUNNEL_WOOD, getDepthCost, tileDigCost, tunnelCost } from '../game/costs';
-import { MAX_DEPTH, MINE_STATIONS_PER_GALLERY, VEIN_CAPACITY_PER_DEPTH, useGameStore } from '../game/gameStore';
+import { MAX_DEPTH, MINE_STATIONS_PER_GALLERY, VEIN_CAPACITY_PER_DEPTH, useGame } from '../game/gameStore';
 import { haulFactor } from '../game/roads';
 import { buildingStats } from '../game/buildings';
 import { findDigRoute, getDepositInfo, standingTargets, tileKey } from '../game/mineLayout';
@@ -21,7 +21,8 @@ import RaidBanner from '../components/RaidBanner';
 import { TechBranchView } from '../components/TechTree';
 
 export default function MineScreen() {
-  const game = useGameStore();
+  // Out of sight (under the battle), the mine skips the ticks.
+  const game = useGame(useIsFocused());
   const depthCost = getDepthCost(game.depth, game.techs);
   const atBedrock = game.depth >= MAX_DEPTH;
   const layout = selectMineLayout(game);
@@ -58,11 +59,11 @@ export default function MineScreen() {
             <View style={styles.headerTitle}>
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel="Return to the surface stronghold"
+                accessibilityLabel="Go up to the city"
                 onPress={goToSurface}
                 style={({ pressed }) => [styles.backButton, pressed && styles.backButtonPressed]}
               >
-                <Text style={styles.backLink}>‹  SURFACE</Text>
+                <Text style={styles.backLink}>🏰  TO THE CITY</Text>
               </Pressable>
               <Text style={styles.title}>The mine</Text>
             </View>
@@ -220,9 +221,9 @@ const styles = StyleSheet.create({
   page: { width: '100%', maxWidth: 850 },
   header: { minHeight: 56, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 },
   headerTitle: { gap: 5 },
-  backButton: { minHeight: 32, justifyContent: 'center', paddingRight: 12, alignSelf: 'flex-start' },
+  backButton: { minHeight: 40, justifyContent: 'center', paddingHorizontal: 14, alignSelf: 'flex-start', borderWidth: 1, borderColor: '#d2a45f', backgroundColor: '#25231a' },
   backButtonPressed: { opacity: 0.65 },
-  backLink: { color: '#d3a366', fontFamily: 'monospace', fontSize: 9 },
+  backLink: { color: '#e9c475', fontFamily: 'monospace', fontSize: 13, fontWeight: '700' },
   title: { color: '#f0ead8', fontFamily: 'Georgia', fontSize: 27, fontWeight: 'bold' },
   shiftStatus: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 9, paddingHorizontal: 11, borderWidth: 1, borderColor: '#394238' },
   shiftText: { color: '#b8c58a', fontFamily: 'monospace', fontSize: 9 },

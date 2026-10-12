@@ -6,8 +6,11 @@
 import type { PersistStorage, StorageValue } from 'zustand/middleware';
 
 export const SAVE_KEY = 'mineforge-save';
-/** 2: the stronghold map grew outer rings (placements moved 7 tiles in). 3: it grew from 47 to 59 tiles. */
-export const SAVE_VERSION = 3;
+/**
+ * 2: the stronghold map grew outer rings (placements moved 7 tiles in). 3: it grew from 47 to 59 tiles.
+ * 4: the eight 2×2 workers' houses became up to 24 one-tile cottages, each kept by its woman.
+ */
+export const SAVE_VERSION = 4;
 const SAVE_DELAY_MS = 3000;
 
 type Pending = { name: string; value: StorageValue<unknown> };

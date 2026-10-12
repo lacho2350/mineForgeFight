@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { router, useIsFocused } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
@@ -7,13 +7,15 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { GameState } from '../game/state';
 import { BUILDING_NAMES, haulWalk, isShownBuilding, orderedRocks, workforceOf } from '../game/hold';
 import { roadCostText, trapBlocker, trapCostText, upgradeBlocker } from '../game/costs';
-import { useGameStore } from '../game/gameStore';
+import { useGame, useGameStore } from '../game/gameStore';
 import { BUILDING_IDS, BUILDING_INFO, MAX_BUILDING_LEVEL, buildingCost, buildingStats, type BuildingId } from '../game/buildings';
-import { HOUSE_IDS } from '../game/houses';
+import { HOUSE_IDS, isHouse, type HouseId } from '../game/houses';
+import { PANTRY, errandText, isKept, sleepers } from '../game/homes';
 import { fellingStand, forestWood } from '../game/forest';
-import { FOODS } from '../game/farms';
-import { DEFAULT_SPOTS, FOOTPRINTS, MAP_SIZE, SIDE_NAMES, coveredTiles, isPlaceable, nearestFreeSpot, placementProblem, sidesOf, type Spot } from '../game/cityMap';
-import { ROAD_INFO, ROAD_KINDS, haulFactor, roadProblem, roadsUnder, type RoadKind } from '../game/roads';
+import { FOODS, isFishery, isPasture } from '../game/farms';
+import { isWoodcutter } from '../game/woodcutters';
+import { DEFAULT_SPOTS, FOOTPRINTS, MAP_SIZE, SIDE_NAMES, buildSpots, coveredTiles, isPlaceable, nearestFreeSpot, placementProblem, sidesOf, tileKey, type Spot } from '../game/cityMap';
+import { ROAD_INFO, ROAD_KINDS, haulFactor, roadProblem, type RoadKind, type Roads } from '../game/roads';
 import { CLEAR_CREW, rockAt, rockyTest, rocksLeft } from '../game/rocks';
 import { isMoored } from '../game/ship';
 import { TRAP_DAMAGE, TRAP_INFO, TRAP_KINDS, TRAP_REFUND, trapAt, trapCounts, trapProblem, trapsFacing, type TrapKind } from '../game/traps';
@@ -61,12 +63,16 @@ function stepsBetween(from: Spot, to: Spot): Spot[] {
 
 const clock = (seconds: number) => `${String(Math.floor(Math.max(0, seconds) / 60))}:${String(Math.max(0, seconds) % 60).padStart(2, '0')}`;
 
+/** Tells whether a road runs over a tile (buildings can't stand on roads). */
+const roadTest = (roads: Roads) => (x: number, y: number) => !!roads[tileKey(x, y)];
+
 // The stronghold, full screen: the castle map under a resource bar, a toolbar at the bottom, and
 // pop-ups for buildings, the market, the building list and the menu.
 export default function StrongholdScreen() {
-  const game = useGameStore();
-  const insets = useSafeAreaInsets();
   const focused = useIsFocused();
+  // Out of sight (under the mine or the battle), the stronghold skips the ticks.
+  const game = useGame(focused);
+  const insets = useSafeAreaInsets();
   const [popup, setPopup] = useState<Popup>(null);
   const [placing, setPlacing] = useState<Placing>(null);
   const [painting, setPainting] = useState<Painting | null>(null);
@@ -81,22 +87,30 @@ export default function StrongholdScreen() {
   const moored = game.barges.filter((barge) => isMoored(barge, game.elapsedSeconds)).length;
 
   const openBuilding = useCallback((id: BuildingId) => setPopup({ kind: 'building', id }), []);
+  const openWar = useCallback(() => setPopup({ kind: 'combat' }), []);
+  const openBuild = useCallback(() => setPopup({ kind: 'build' }), []);
+  const openBuildings = useCallback(() => setPopup({ kind: 'buildings' }), []);
+  const openTech = useCallback(() => setPopup({ kind: 'tech' }), []);
+  const openDocks = useCallback(() => setPopup({ kind: 'market' }), []);
+  const openMenu = useCallback(() => setPopup({ kind: 'menu' }), []);
   const openMine = useCallback(() => router.push('/mine'), []);
   const close = () => setPopup(null);
 
   // Placement: start at the building's usual spot (or the nearest free one), move it with taps.
-  const startPlacing = (id: BuildingId) => {
+  const startPlacing = useCallback((id: BuildingId) => {
+    const { clearedRocks, roads, placements } = useGameStore.getState();
     const preferred = DEFAULT_SPOTS[id] ?? { x: Math.floor(MAP_SIZE / 2), y: MAP_SIZE - 6 };
-    const rocky = rockyTest(game.clearedRocks);
-    const spot = placementProblem(id, preferred, game.placements, BUILDING_NAMES, rocky) ? nearestFreeSpot(id, preferred, game.placements, BUILDING_NAMES, rocky) : preferred;
+    const rocky = rockyTest(clearedRocks);
+    const road = roadTest(roads);
+    const spot = placementProblem(id, preferred, placements, BUILDING_NAMES, rocky, road) ? nearestFreeSpot(id, preferred, placements, BUILDING_NAMES, rocky, road) : preferred;
     setPopup(null);
     setPlacing({ id, ...(spot ?? preferred) });
-  };
-  const startPainting = (next: Painting) => {
+  }, []);
+  const startPainting = useCallback((next: Painting) => {
     setPopup(null);
     setPainting(next);
     setPaintResult(null);
-  };
+  }, []);
   // Painting: every tile the finger crosses joins the stroke; lifting it lays (or takes up) the lot.
   const paintTile = useCallback((x: number, y: number) => {
     const current = strokeRef.current;
@@ -142,9 +156,12 @@ export default function StrongholdScreen() {
     const trap = trapAt(useGameStore.getState().traps, Math.floor(x), Math.floor(y));
     if (trap) setPopup({ kind: 'trap', x: trap.x, y: trap.y });
   }, []);
-  const spotProblem = placing ? placementProblem(placing.id, placing, game.placements, BUILDING_NAMES, rockyTest(game.clearedRocks)) : null;
-  const covered = useMemo(() => coveredTiles(game.placements), [game.placements]);
-  const { roads, traps, clearedRocks, clearOrders } = game;
+  const { roads, traps, clearedRocks, clearOrders, placements } = game;
+  const spotProblem = placing ? placementProblem(placing.id, placing, placements, BUILDING_NAMES, rockyTest(clearedRocks), roadTest(roads)) : null;
+  const covered = useMemo(() => coveredTiles(placements), [placements]);
+  // Where the building being placed may go: lit while placing, yellow where rocks must be cleared first.
+  const placingId = placing?.id;
+  const spots = useMemo(() => (placingId ? buildSpots(placingId, placements, roadTest(roads), rockyTest(clearedRocks)) : null), [placingId, placements, roads, clearedRocks]);
   const ghost = useMemo(() => {
     if (painting) {
       const ordered = orderedRocks(clearOrders);
@@ -155,8 +172,8 @@ export default function StrongholdScreen() {
       };
       return { plot: null, valid: true, belt: painting.tool === 'trap', tiles: stroke.map((tile) => ({ ...tile, ok: ok(tile) })) };
     }
-    return placing ? { plot: plotOf(placing.id, {}, placing), valid: !spotProblem } : null;
-  }, [painting, stroke, roads, traps, clearedRocks, clearOrders, covered, placing, spotProblem]);
+    return placing ? { plot: plotOf(placing.id, {}, placing), valid: !spotProblem, allowed: spots?.clear, rocky: spots?.rocky, water: isFishery(placing.id) } : null;
+  }, [painting, stroke, roads, traps, clearedRocks, clearOrders, covered, placing, spotProblem, spots]);
   const confirmPlacing = () => {
     if (!placing) return;
     game.placeBuilding(placing.id, { x: placing.x, y: placing.y });
@@ -181,7 +198,6 @@ export default function StrongholdScreen() {
         selected={popup?.kind === 'building' ? popup.id : null}
         onSelect={openBuilding}
         onTapGround={tapGround}
-        onMine={openMine}
         active={focused}
         insetTop={hudHeight}
         insetBottom={barHeight}
@@ -203,7 +219,7 @@ export default function StrongholdScreen() {
           <SideButton
             icon="⚔️"
             label="War: raids, the army and the defences"
-            onPress={() => setPopup({ kind: 'combat' })}
+            onPress={openWar}
             alarm={!!game.raid || game.battle?.status === 'active'}
             badge={hireable > 0 ? String(hireable) : undefined}
           />
@@ -218,7 +234,6 @@ export default function StrongholdScreen() {
           <PlacementBar
             game={game}
             id={placing.id}
-            spot={placing}
             problem={spotProblem ?? upgradeBlocker(game, placing.id, workforce)}
             onConfirm={confirmPlacing}
             onCancel={() => setPlacing(null)}
@@ -228,11 +243,11 @@ export default function StrongholdScreen() {
             <Toast notice={game.notice} />
             <View style={styles.toolbar}>
               <ToolButton icon="⛏" label="MINE" onPress={openMine} />
-              <ToolButton icon="🔨" label="BUILD" onPress={() => setPopup({ kind: 'build' })} />
-              <ToolButton icon="🏰" label="BUILDINGS" onPress={() => setPopup({ kind: 'buildings' })} badge={game.construction.length > 0 ? String(game.construction.length) : undefined} />
-              <ToolButton icon="📜" label="TECH" onPress={() => setPopup({ kind: 'tech' })} badge={techReady > 0 ? String(techReady) : undefined} />
-              <ToolButton icon="⚓" label="DOCKS" onPress={() => setPopup({ kind: 'market' })} badge={moored > 0 ? String(moored) : undefined} />
-              <ToolButton icon="☰" label="MENU" onPress={() => setPopup({ kind: 'menu' })} />
+              <ToolButton icon="🔨" label="BUILD" onPress={openBuild} />
+              <ToolButton icon="🏰" label="BUILDINGS" onPress={openBuildings} badge={game.construction.length > 0 ? String(game.construction.length) : undefined} />
+              <ToolButton icon="📜" label="TECH" onPress={openTech} badge={techReady > 0 ? String(techReady) : undefined} />
+              <ToolButton icon="⚓" label="DOCKS" onPress={openDocks} badge={moored > 0 ? String(moored) : undefined} />
+              <ToolButton icon="☰" label="MENU" onPress={openMenu} />
             </View>
           </>
         )}
@@ -254,7 +269,8 @@ export default function StrongholdScreen() {
           />
           {popup.id === 'keep' && <DefenceSummary game={game} workforce={workforce} />}
           {popup.id === 'warehouse' && <Stockpiles game={game} />}
-          {popup.id === 'woodcutter' && <ForestStatus game={game} />}
+          {isWoodcutter(popup.id) && <ForestStatus game={game} />}
+          {isHouse(popup.id) && game.buildings[popup.id] > 0 && <HomeStatus game={game} id={popup.id} />}
           {popup.id === 'docks' && <BargesPanel game={game} />}
           {popup.id === 'armory' && <GearStore game={game} />}
           {isForge(popup.id) && <ForgePanel game={game} forge={popup.id} />}
@@ -309,12 +325,18 @@ export default function StrongholdScreen() {
 function Hud({ game, workforce }: { game: GameState; workforce: Workforce }) {
   const beds = buildingStats(game.buildings, workforce.staff, game.techs).beds;
   const raidIn = game.raid ? null : game.nextRaidAt - game.elapsedSeconds;
+  // Cottages out of water or food: their sleepers work slower.
+  const dry = HOUSE_IDS.filter((id) => game.buildings[id] > 0 && !isKept(game.homes[id])).length;
   return (
     <View style={styles.hud}>
       <View style={styles.hudRow}>
         <Stat label="GOLD" value={Math.floor(game.gold).toLocaleString()} tone="#e5a565" />
         <Stat label={`PEASANTS · ${String(workforce.idle)} IDLE`} value={`${String(game.population)}/${String(beds)}`} tone="#c0cd83" />
-        <Stat label={game.hungry ? 'FOOD · HUNGRY' : 'FOOD'} value={Math.floor(FOODS.reduce((sum, food) => sum + game.warehouse[food], 0)).toLocaleString()} tone={game.hungry ? '#e08a72' : '#d6bb79'} />
+        <Stat
+          label={game.hungry ? 'FOOD · HUNGRY' : dry > 0 ? `FOOD · ${String(dry)} HOME${dry === 1 ? '' : 'S'} DRY` : 'FOOD'}
+          value={Math.floor(FOODS.reduce((sum, food) => sum + game.warehouse[food], 0)).toLocaleString()}
+          tone={game.hungry || dry > 0 ? '#e08a72' : '#d6bb79'}
+        />
         {raidIn !== null && <Stat label={`RAID ${String(game.raidsFought + 1)}`} value={clock(raidIn)} tone="#e08a72" />}
       </View>
     </View>
@@ -334,7 +356,7 @@ function Stat({ label, value, tone }: { label: string; value: string; tone: stri
 // ——— News and the toolbar ———
 
 // The latest notice, shown for a few seconds whenever it changes.
-function Toast({ notice }: { notice: string }) {
+const Toast = memo(function Toast({ notice }: { notice: string }) {
   const [expired, setExpired] = useState<string | null>(null);
   useEffect(() => {
     const timer = setTimeout(() => setExpired(notice), 5000);
@@ -346,9 +368,10 @@ function Toast({ notice }: { notice: string }) {
       <Text style={styles.toastText}>{notice}</Text>
     </Animated.View>
   );
-}
+});
 
-function ToolButton({ icon, label, onPress, badge }: { icon: string; label: string; onPress: () => void; badge?: string }) {
+// The toolbar's and the side's buttons are redrawn only when their badges change.
+const ToolButton = memo(function ToolButton({ icon, label, onPress, badge }: { icon: string; label: string; onPress: () => void; badge?: string }) {
   return (
     <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress} style={({ pressed }) => [styles.tool, pressed && styles.pressed]}>
       <Text style={styles.toolIcon}>{icon}</Text>
@@ -356,31 +379,29 @@ function ToolButton({ icon, label, onPress, badge }: { icon: string; label: stri
       {badge && <Text style={styles.toolBadge}>{badge}</Text>}
     </Pressable>
   );
-}
+});
 
 // A round button on the side of the map; `alarm` lights it red with a "!" (raiders sighted or a battle
 // waiting), otherwise `badge` shows a count.
-function SideButton({ icon, label, onPress, alarm, badge }: { icon: string; label: string; onPress: () => void; alarm: boolean; badge?: string }) {
+const SideButton = memo(function SideButton({ icon, label, onPress, alarm, badge }: { icon: string; label: string; onPress: () => void; alarm: boolean; badge?: string }) {
   return (
     <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress} style={({ pressed }) => [styles.sideButton, alarm && styles.sideAlarm, pressed && styles.pressed]}>
       <Text style={styles.sideIcon}>{icon}</Text>
       {alarm ? <Text style={[styles.sideBadge, styles.sideBadgeAlarm]}>!</Text> : badge && <Text style={styles.sideBadge}>{badge}</Text>}
     </Pressable>
   );
-}
+});
 
 // While placing: what's being built, whether it fits here, and Build / Cancel.
-function PlacementBar({ game, id, spot, problem, onConfirm, onCancel }: {
+function PlacementBar({ game, id, problem, onConfirm, onCancel }: {
   game: GameState;
   id: BuildingId;
-  spot: Spot;
   problem: string | null;
   onConfirm: () => void;
   onCancel: () => void;
 }) {
   const { w, d } = FOOTPRINTS[id];
   const cost = buildingCost(id, 1);
-  const under = roadsUnder({ ...spot, w, d }, game.roads).length;
   return (
     <View style={styles.placement}>
       <View style={styles.placementHead}>
@@ -391,7 +412,7 @@ function PlacementBar({ game, id, spot, problem, onConfirm, onCancel }: {
           </Text>
           <Text style={[styles.placementHint, problem && styles.placementProblem]}>
             {problem ??
-              `Drag it where it should go, or tap there. ${String(cost.gold)} gold${cost.resources.coal ? ` · ${String(cost.resources.coal)} coal` : ''}.${under > 0 ? ` Takes up ${String(under)} road tile${under === 1 ? '' : 's'}.` : ''}`}
+              `${isFishery(id) ? 'It goes right next to the river, along the river wall inside the town. ' : isPasture(id) ? 'It grazes outside the walls. ' : ''}Lit: where it can go (yellow: rocks to clear first; never on roads). Drag it there, or tap. ${String(cost.gold)} gold${cost.resources.coal ? ` · ${String(cost.resources.coal)} coal` : ''}.`}
           </Text>
         </View>
       </View>
@@ -409,40 +430,44 @@ function PlacementBar({ game, id, spot, problem, onConfirm, onCancel }: {
 
 // Everything that can still be built: icon, size, first-level cost, and why not if it can't yet; then
 // the traps for the belt.
+// A building in the palette: redrawn only when what stops it being built changes.
+const PaletteBuilding = memo(function PaletteBuilding({ id, blocker, onPick }: { id: BuildingId; blocker: string | null; onPick: (id: BuildingId) => void }) {
+  const { w, d } = FOOTPRINTS[id];
+  const cost = buildingCost(id, 1);
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`Build the ${BUILDING_INFO[id].name}`}
+      onPress={() => onPick(id)}
+      style={({ pressed }) => [styles.paletteItem, pressed && styles.pressed]}
+    >
+      <Text style={styles.paletteIcon}>{BUILDING_ICONS[id]}</Text>
+      <View style={styles.paletteCopy}>
+        <Text style={styles.paletteName}>{BUILDING_INFO[id].name}</Text>
+        <Text style={styles.paletteDetail}>
+          {String(w)}×{String(d)} · {String(cost.gold)} gold{cost.resources.coal ? ` · ${String(cost.resources.coal)} coal` : ''}
+        </Text>
+        <Text style={[styles.paletteStatus, blocker ? styles.placementProblem : styles.paletteReady]} numberOfLines={2}>
+          {blocker ?? 'Ready to build'}
+        </Text>
+      </View>
+    </Pressable>
+  );
+});
+
 function BuildPalette({ game, onPick, onPaint }: { game: GameState; onPick: (id: BuildingId) => void; onPaint: (painting: Painting) => void }) {
   const workforce = workforceOf(game);
   const options = BUILDING_IDS.filter((id) => isPlaceable(id) && game.buildings[id] === 0 && !game.construction.some((job) => job.building === id) && isShownBuilding(game, id));
   const laid = trapCounts(game.traps);
+  const rocks = useMemo(() => rocksLeft(game.clearedRocks).length, [game.clearedRocks]);
   return (
     <>
       <SectionLabel>BUILDINGS</SectionLabel>
       {options.length === 0 && <Text style={styles.body}>Every building is on the map. Tap one to upgrade it.</Text>}
       <View style={styles.palette}>
-        {options.map((id) => {
-          const { w, d } = FOOTPRINTS[id];
-          const cost = buildingCost(id, 1);
-          const blocker = upgradeBlocker(game, id, workforce);
-          return (
-            <Pressable
-              key={id}
-              accessibilityRole="button"
-              accessibilityLabel={`Build the ${BUILDING_INFO[id].name}`}
-              onPress={() => onPick(id)}
-              style={({ pressed }) => [styles.paletteItem, pressed && styles.pressed]}
-            >
-              <Text style={styles.paletteIcon}>{BUILDING_ICONS[id]}</Text>
-              <View style={styles.paletteCopy}>
-                <Text style={styles.paletteName}>{BUILDING_INFO[id].name}</Text>
-                <Text style={styles.paletteDetail}>
-                  {String(w)}×{String(d)} · {String(cost.gold)} gold{cost.resources.coal ? ` · ${String(cost.resources.coal)} coal` : ''}
-                </Text>
-                <Text style={[styles.paletteStatus, blocker ? styles.placementProblem : styles.paletteReady]} numberOfLines={2}>
-                  {blocker ?? 'Ready to build'}
-                </Text>
-              </View>
-            </Pressable>
-          );
-        })}
+        {options.map((id) => (
+          <PaletteBuilding key={id} id={id} blocker={upgradeBlocker(game, id, workforce)} onPick={onPick} />
+        ))}
       </View>
       <SectionLabel>LAND · THE TOWN STARTS UNDER ROCKS</SectionLabel>
       <Text style={styles.note}>BUILDINGS AND ROADS NEED CLEAR GROUND, AND PEASANTS ARE SLOW OVER ROCKS. CLEARED STONE BECOMES GRANITE.</Text>
@@ -457,7 +482,7 @@ function BuildPalette({ game, onPick, onPaint }: { game: GameState; onPick: (id:
           <View style={styles.paletteCopy}>
             <Text style={styles.paletteName}>Clear rocks</Text>
             <Text style={styles.paletteDetail}>
-              {String(rocksLeft(game.clearedRocks).length)} rocks left · a crew of {String(CLEAR_CREW)} peasants · free
+              {String(rocks)} rocks left · a crew of {String(CLEAR_CREW)} peasants · free
             </Text>
             <Text style={[styles.paletteStatus, styles.paletteReady]}>
               {game.clearOrders.length > 0 ? `Clearing: ${String(clearingLeft(game))} s of work ordered` : 'Drag across rocks to order them cleared'}
@@ -624,6 +649,34 @@ function TrapSheet({ game, x, y, onClose }: { game: GameState; x: number; y: num
 // ——— Pop-up contents ———
 
 // The forest beyond the gate the woodcutters fell (see game/forest.ts).
+// A cottage's home: who sleeps there, the water and food in, and what its woman is doing.
+function HomeStatus({ game, id }: { game: GameState; id: HouseId }) {
+  const home = game.homes[id];
+  const { residents, beds } = sleepers(game, !game.hungry);
+  const store = game.buildings.granary > 0 ? 'granary' : 'warehouse';
+  const dry = !isKept(home);
+  return (
+    <View style={styles.block}>
+      <View style={styles.blockHeader}>
+        <SectionLabel>THE HOME</SectionLabel>
+        <Text style={styles.note}>
+          {String(residents[id])} / {String(beds[id])} SLEEP HERE
+        </Text>
+      </View>
+      <Text style={styles.note}>
+        WATER {String(Math.floor(home?.water ?? 0))} / {String(PANTRY.water)} · FOOD {String(Math.floor(home?.food ?? 0))} / {String(PANTRY.food)}
+      </Text>
+      <Text style={styles.body}>Its woman: {errandText(home?.errand ?? null, game.elapsedSeconds, store)}</Text>
+      {dry && (
+        <Text style={[styles.body, styles.placementProblem]}>
+          {(home?.water ?? 0) <= 0 ? 'No water' : 'No food'} in: whoever sleeps here works slower, and nobody new moves in until she brings some.
+          {(home?.food ?? 0) <= 0 && game.hungry ? ' The store has no food either.' : ''}
+        </Text>
+      )}
+    </View>
+  );
+}
+
 function ForestStatus({ game }: { game: GameState }) {
   const stand = fellingStand(game.forest);
   const left = stand ? Math.floor(game.forest[stand] ?? 0) : 0;
@@ -670,19 +723,19 @@ function Stockpiles({ game }: { game: GameState }) {
 
 function Menu({ game, workforce }: { game: GameState; workforce: Workforce }) {
   const beds = buildingStats(game.buildings, workforce.staff, game.techs).beds;
-  const unkept = HOUSE_IDS.some((id) => workforce.staff[id] < workforce.needed[id]);
+  const dry = HOUSE_IDS.filter((id) => game.buildings[id] > 0 && !isKept(game.homes[id])).length;
   return (
     <>
       <View style={styles.block}>
         <SectionLabel>PEASANTS {String(game.population)}/{String(beds)}</SectionLabel>
         <Text style={styles.body}>
           {String(workforce.miners)} mining · {String(workforce.pushers)} pushing carts · {String(workforce.builders)} building · {String(workforce.staffTotal)} staffing buildings · {String(workforce.idle)} at the campfire
-          {game.population < beds ? ' · a newcomer every few seconds' : unkept ? ' · the houses are short of housekeepers' : ' · houses full'}
+          {dry > 0 ? ` · ${String(dry)} cottage${dry === 1 ? '' : 's'} out of water or food` : game.population < beds ? ' · a newcomer every few seconds' : ' · cottages full'}
         </Text>
       </View>
       <View style={styles.block}>
         <SectionLabel>RAIDS</SectionLabel>
-        <Text style={styles.body}>Raids, the army, recruiting, auto-resolve and the defences: the ⚔️ button on the side of the map.</Text>
+        <Text style={styles.body}>Raids, the army, recruiting, instant or fought-out battles and the defences: the ⚔️ button on the side of the map.</Text>
       </View>
       <Stockpiles game={game} />
       <NewGameButton onConfirm={game.resetGame} />
