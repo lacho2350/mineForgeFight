@@ -1,12 +1,24 @@
-import type { ReactNode } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useRef, type ReactNode } from 'react';
+import { BackHandler, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeIn, FadeOut, SlideInDown, SlideOutDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 // A pop-up panel over the map: slides up from the bottom, scrolls if it's long, and closes from the
-// ✕ or a tap on the dimmed map behind it.
+// ✕, a tap on the dimmed map behind it, or Android's Back (which would otherwise leave the game).
 export default function Sheet({ title, subtitle, onClose, children }: { title: string; subtitle?: string; onClose: () => void; children: ReactNode }) {
   const insets = useSafeAreaInsets();
+  // The latest `onClose` (a new function on every render), so Back is listened for once.
+  const close = useRef(onClose);
+  useEffect(() => {
+    close.current = onClose;
+  });
+  useEffect(() => {
+    const back = BackHandler.addEventListener('hardwareBackPress', () => {
+      close.current();
+      return true;
+    });
+    return () => back.remove();
+  }, []);
   return (
     <View style={[StyleSheet.absoluteFill, { pointerEvents: 'box-none' }]}>
       <Animated.View entering={FadeIn.duration(150)} exiting={FadeOut.duration(150)} style={StyleSheet.absoluteFill}>

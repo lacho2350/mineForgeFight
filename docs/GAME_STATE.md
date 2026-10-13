@@ -15,8 +15,8 @@ Two screens (Expo Router, `src/app/`):
 
 | Route | File | What it shows |
 |---|---|---|
-| `/` | `src/app/index.tsx` | Stronghold, full screen: the isometric castle map (`CityView`: drag to pan, pinch / wheel / +− to zoom, tap a building), a slim bar on top (gold, peasants, raid clock — the warehouse's resources are in the warehouse's pop-up and the Menu, not on screen), a ⚔️ **War** button on the right edge under it (red with "!" while raiders are sighted or a battle waits; otherwise a badge with the recruits that can be hired now) opening the War sheet (`CombatPanel`: the raid now via `RaidBanner inPanel` — with ride out / hold the walls, command / watch, resolve now, the next raid's kind and strength —, the instant / fought-out battles switch, every unit with army / waiting / gear and RECRUIT ALL, the defences summary with traps per side, LAY TRAPS and links to the keep, wall, towers, gate, moat and armory, and the stakes), live raid alerts, a news toast, and a toolbar (Mine — the only way down; tapping the headframe does nothing —, Build, Buildings, Tech, Docks, Menu; Tech shows how many techs are ready to research, Docks shows how many barges are moored). Build opens a palette of unbuilt buildings, rock clearing, roads and traps; picking a building enters placement mode (the ground it may go on lit blue, yellow where rocks must be cleared first; drag the green/red footprint — a drag that starts on it moves it, any other drag pans — or tap where it should go, then Build here); picking Clear rocks, a road or a trap enters paint mode (one finger paints a stroke of tiles, laid on release; two fingers / right-drag pan; the bar switches kind; Done ends it). Tapping a building opens its pop-up (`Sheet` + `BuildingDetail`, with Destroy; the warehouse adds the haul-route table, the keep the defence summary); tapping a trap opens its sheet (effect, side, Take it up). |
-| `/mine` | `src/app/mine.tsx` | A 🏰 TO THE CITY button (the only way back up), the mine map (pan/zoom camera), Dig toggle, deposit info panel (tap a tile), bin panel (tap a stockpile bin — at the mine exit or beside a miner — for that resource's stock at every stage: `BinPanel`), hauling chain, haulage, the mine's tech branch, Dig Deeper. |
+| `/` | `src/app/index.tsx` | **Prologue first** on a new game (`Prologue`: six pages of the story — Aldmere lost to the Horde of the Red Hand, the flight north, the abandoned mining town of Greyhollow, what the mountain still holds, the Horde's scouts finding the valley, "the hold is yours" — with Next / Back / Skip and Android's Back turning back a page; `prologueSeen` in the store, `seePrologue()`; saves from before it count as seen, and the Menu's THE STORY SO FAR replays it). Stronghold, full screen: the isometric castle map (`CityView`: drag to pan, pinch / wheel / +− to zoom, tap a building), a slim bar on top (gold, peasants, raid clock — the warehouse's resources are in the warehouse's pop-up and the Menu, not on screen), a ⚔️ **War** button on the right edge under it (red with "!" while raiders are sighted or a battle waits; otherwise a badge with the recruits that can be hired now) opening the War sheet (`CombatPanel`: the raid now via `RaidBanner inPanel` — with ride out / hold the walls, command / watch, resolve now, the next raid's kind and strength —, the instant / fought-out battles switch, every unit with army / waiting / gear and RECRUIT ALL, the defences summary with traps per side, LAY TRAPS and links to the keep, wall, towers, gate, moat and armory, and the stakes), live raid alerts, a news toast, and a toolbar (Mine — the only way down; tapping the headframe does nothing —, Build, Buildings, Tech, Docks, Menu; Tech shows how many techs are ready to research, Docks shows how many barges are moored). Build opens a palette of unbuilt buildings, rock clearing, roads and traps; picking a building enters placement mode (the ground it may go on lit blue, yellow where rocks must be cleared first; drag the green/red footprint — a drag that starts on it moves it, any other drag pans — or tap where it should go, then Build here); picking Clear rocks, a road or a trap enters paint mode (one finger paints a stroke of tiles, laid on release; two fingers / right-drag pan; the bar switches kind; Done ends it). Tapping a building opens its pop-up (`Sheet` + `BuildingDetail`, with Destroy; the warehouse adds the haul-route table, the keep the defence summary); tapping a trap opens its sheet (effect, side, Take it up); tapping a road tile opens `RoadSheet` (its speed, CLEAR ROAD for that tile — free, no refund — or CLEAR MORE… for the eraser); tapping rocks or open ground inside the wall opens `GroundSheet`: rocks show their size, clearing time and granite with CLEAR ROCK (an order for the crew; shown as ordered after) and CLEAR MORE…, open ground offers LAY DIRT / STONE / GRANITE ROAD on that tile, LAY MORE ROAD…, and BUILD HERE… (the Build palette; the building picked starts centred on that tile). |
+| `/mine` | `src/app/mine.tsx` | The mine, full screen: the map (pan/zoom camera) fills it, and everything else floats over it or pops up. Top: a 🏰 CITY button (the only way back up, besides Android's Back), the mine's HUD (gold, wood, miners · free peasants, the raid clock) and, only while raiders are sighted or a battle is on, the raid banner; the zoom buttons sit under them. Bottom: a toolbar — ⛏ DIG and 🔦 SURVEY (modes that switch each other off; Survey counts down while the surveyors are out), 📜 UPGRADES (badge: mine techs ready) and CARTS (a drawn mining cart, `MineCartIcon`; badge: levels where a cart can be added now) — with the mode's hint and the news toast (`Toast`, new notices only) above it. A tapped tile (`DepositPanel`) or stockpile bin (`BinPanel`: that resource's stock at every stage) opens as a card above the toolbar; with a mouse, resting on a pile (a miner's bin or an exit bin) shows every resource the mine holds — in the miners' bins, at the exit, in the mine stockpile, and the total — with that pile's resource picked out (`MinePileTip`). UPGRADES opens a sheet with Dig Deeper and the mine's tech branch; CARTS a sheet with the haulage (Add Cart per level), the hauling chain and the warehouse's coal and gold. Android's Back leaves a mode, then closes the card, then goes up. The map scrolls clear of the bars (`insetTop` / `insetBottom` on `MineScene`). |
 | `/battle` | `src/app/battle.tsx` | The battle — a siege at the walls or a battle in the field: hex board where every action plays out at the battlefield's pace (stacks walk their path hex by hex, lunge, shots fly, hits flash and their damage shows as they land — `battlePlayback.ts`), orders (taken once the action has played), auto-battle / quick resolve, log, result. Opening it takes command of the battle (also of one that starts while it's open); leaving mid-battle hands it to the captains (`releaseBattle`). |
 
 The mine screen shows a `RaidBanner` (next raid countdown → raiders sighted → at the gate → result); the
@@ -49,6 +49,21 @@ game, and starts the 1-second simulation (`startSimulation()`).
   (precious ones less). Deterministic
   from tile position (hash), computed lazily and cached. Every gallery station's "ore column" tile is
   always a coal seam. Deposits **block digging**; a mined-out deposit becomes a hollow you can dig through.
+- **Dark rock and surveys** (`src/game/survey.ts`): only rock within `FOG_REACH` (4) tiles of something
+  dug (or of the surface) is known (`fogDistance` / `isRevealed` in mineLayout.ts); deeper rock is dark —
+  `getDepositInfo` says `unknown` (the panel: "Unknown rock") and no miner can be sent there. **🔦 SURVEY**
+  (beside DIG in the mine's toolbar; the two switch each other off) then a tap on a **tunnel** (any dug tile —
+  a tap on rock is refused, and the mode stays on until the surveyors set out; while it's on, the patch a
+  survey would map follows the mouse — or shows where a finger last tapped — shaded **green** where they
+  can set out from, **red** where `surveyProblem` says they can't: `survey` prop → `SurveyPatch` in
+  MineViewport.tsx) maps the rock `surveyRadius`
+  (6, a 13 × 13 patch, so 3 tiles past what the tunnel shows) all round it: `surveys` in the state,
+  `isSurveyed`; the deposits there show and can be dug to and assigned like any known ones. It costs
+  `surveyCost` = 25 + ⌊(row − 2)/2⌋ gold and the surveyors are then out for `surveyCooldown` = 240 s
+  (`surveyReadyAt`; the button counts down). A patch with no dark tiles left (`darkTiles`) is refused
+  (free). The mine's survey techs: Survey lanterns (I, −30% time), Dowsing rods (II, +2 radius, −25% cost),
+  Seismic charges (III, −40% time, +2 radius) — 240 → 168 → 72 s and 13 × 13 → 21 × 21. Surveyed rock is
+  drawn half-shaded (`SURVEYED_ALPHA` in mineTerrain.ts).
 - **Peasants do every job** (`src/game/workforce.ts`, Stronghold-style). `population` = all peasants
   (soldiers aren't counted). New ones arrive every 4 s while `population < beds` (the keep's hall `KEEP_BEDS`
   = 8, plus the cottages) and a kept cottage or the hall has room (`roomForNewcomer`, below).
@@ -62,11 +77,15 @@ game, and starts the 1-second simulation (`startSimulation()`).
   (`waterSpot`) — for a load of water (`LOAD` 20), or to the store — the granary, else the warehouse
   (`foodStore`) — for a load of food (10, taken from the store as she sets off; only while it has a unit
   or more), whichever her home is shorter of, once it has room for a load (`PANTRY` 40 water, 20 food).
-  Its sleepers drink `WATER_PER_PEASANT` (1/60 s) and eat `FOOD_PER_PEASANT` from it. **Who sleeps where**
-  (`sleepers`): the kept cottages fill first, then the keep's hall (while the store has food; the hall
-  eats straight from the store), then cottages run dry. Anyone sleeping dry (or in the hall with the store
-  empty, `hungry`) works at `HUNGRY_WORK` (`workPace` = the share, applied to mining, digging, building,
-  forges and woodcutting), and nobody new moves into a dry cottage. New cottages start empty (their women
+  Its sleepers drink `WATER_PER_PEASANT` (1/60 s) and eat `FOOD_PER_PEASANT` from it. **Happy homes**
+  (`isHappy`): water and food in (`isKept`) **and a road at the door joined to the keep and the main gate**
+  (`hasHomeRoad`, the same test as placing a building — but kept up all the time: a cottage whose road is
+  taken up turns unhappy). **Who sleeps where** (`sleepers`): the happy cottages fill first, then the
+  keep's hall (while the store has food; the hall eats straight from the store), then the unhappy ones.
+  Anyone sleeping in an unhappy cottage (or in the hall with the store empty, `hungry`) works at
+  `HUNGRY_WORK` (`workPace` = the share, applied to mining, digging, building, forges and woodcutting), and
+  nobody new moves into an unhappy cottage. The HUD's peasants label says "N HOMES NO ROAD" (red) while
+  any are cut off; the cottage's pop-up and the Menu say so too. New cottages start empty (their women
   set off at once); a new game's first starts full. The map draws each cottage (plaster then stone,
   chimney from tier 2) and each woman on her errand (`stronghold/housewives.tsx`: skirt and headscarf, a
   bucket or a basket on the way home, on the game clock); the HUD's food reads "N HOMES DRY"; a cottage's
@@ -80,7 +99,11 @@ game, and starts the 1-second simulation (`startSimulation()`).
   (`idleToTheMine`, end of each tick): while every building has its staff, one idle peasant a second takes
   the next free face (`nextFreeSite`: a dug tile beside a deposit, coal first, then a gallery station),
   listed in `autoMiners`; while any building is short of staff (recruits, a new crew) the latest of them
-  goes back each second. Miners the player placed are never moved. `workforceOf(state)`
+  goes back each second. Miners the player placed are never moved. **One miner to a standing tile**: free
+  deposit faces and free stations (`freeStationSites`) both skip a tile any miner already stands on (a
+  station miner could once be put on a deposit miner's tile — the two drew as one, React logged duplicate
+  keys every frame, and calling the auto-miner back would have sent both away); the mine's sprites are keyed
+  by tile and face. `workforceOf(state)`
   computes it; `freeHands` = staff + idle (what new orders and recruits can take — staff are pulled off
   buildings). A building short of staff works at `workedLevel` = level × staff/needed, with nobody at
   0: houses' beds, the gate's health (unmanned = an open gap) and trade bonus, foundry, research,
@@ -110,8 +133,12 @@ game, and starts the 1-second simulation (`startSimulation()`).
   miners in turn: load beside the miner → path through dug tiles to the lift (BFS) → up the lift →
   pushed out to that resource's bin at the mine exit → tip → back down to the next miner. Coal only
   moves on load/tip events — the simulation and the renderer share one schedule (`haulage.ts`) driven
-  by `haulTime`, so numbers change exactly when the cart is seen loading/tipping. Carts stop when a
-  resource's exit bin can't take another load.
+  by `haulTime`, so numbers change exactly when the cart is seen loading/tipping. A cart loads only what
+  its resource's exit bin will have room for, counting the loads already on their way (so a bin never
+  overflows); a miner whose ore has no room gets an empty trip, and the carts keep rolling for the rest —
+  they stop only when nothing is on board and no bin with ore has room. (Until 2026-10-12 one full bin
+  stopped every cart: a warehouse full of coal backed coal up to the exit and stalled the whole mine,
+  granite and iron too — `haulage-test`.)
 - **Wood** (`wood`, a resource kept in the warehouse but never mined — `MINE_RESOURCES` is the rest):
   the **Woodcutter's Hut** (2×2, staffed: 1 + ⌊L/5⌋ woodcutters) brings in `WOOD_PER_LEVEL` 0.25 wood/s per
   worked level (+30/50/70% with its techs: Sharp axes, Ox sledges, Sawpits) to the warehouse (only as much
@@ -150,7 +177,13 @@ game, and starts the 1-second simulation (`startSimulation()`).
   mutton), and **barges only order resources in the warehouse now** (at least 1, and `discovered` — had in a
   stockpile; with nothing they'd buy in store, no barge comes that time). New games and older saves start with `STARTING_APPLES` 150. The top bar shows the food in store
   (red with HUNGRY); the warehouse's piles on the map leave food out and the granary shows its own; the
-  sheep are drawn live (`Flocks`). Farms and food are rounded to hundredths each tick (wood too), since
+  sheep are drawn live and graze their way about the field (`Flocks`, stronghold/flocks.tsx: one atlas,
+  each sheep ambling to a spot near its patch every 6–11 s, grazing there, turning to face its way).
+  **Fishing huts' boats** (`src/game/boats.ts`): from level 5 a hut fishes from a boat on the river in
+  front of it, a better one every five levels — Rowboat (5), Sailing skiff (10), Fishing smack (15, its
+  net out), Fishing ketch (20, two masts); `fishingBoat(level)`, `nextBoat`. Only the look changes (the
+  catch grows with the level as before): drawn drifting about the water in front of the hut, further the
+  bigger it is (`FishingBoats`, stronghold/boats.tsx), and named in the hut's pop-up (`BoatStatus`). Farms and food are rounded to hundredths each tick (wood too), since
   tenths would swallow small rates.
 - **Stockpiles, per resource**: `vein` (miners' bins) → `mineExit` (surface bins) → `mineStock` →
   `warehouse`. Capacities apply per resource. Surface carts move exit→mine→warehouse each tick
@@ -199,15 +232,21 @@ game, and starts the 1-second simulation (`startSimulation()`).
   outlined on the map and the crew hammers at the first one. Older saves get the rocks too, with the
   ground under every building, building site and road counted as cleared.
 - **Roads** (`src/game/roads.ts`): the player lays tiles of road on open town ground (not under a
-  building): dirt (2 gold, walking ×1.5), stone (6 gold, ×2), granite (4 gold + 2 granite, ×2.5); bare
-  ground is ×1. `roads` in the store (tile key → kind), `layRoads(kind | 'erase', tiles)` lays a stroke
+  building): dirt (2 gold, walking 1.5 tiles/s), stone (6 gold, 2), granite (4 gold + 2 granite, 2.5);
+  **off the roads people walk 70% slower than on dirt** (`GROUND_SPEED` 0.45 tiles/s; over rocks
+  `ROCK_SPEED` 0.18 — both were 1 and 0.4 until 2026-10-12), so they take a road wherever it's quicker. `roads` in the store (tile key → kind), `layRoads(kind | 'erase', tiles)` lays a stroke
   in order while it can be paid for (taking up is free, no refund). A new game (and older saves) start
   with dirt on `STARTING_ROAD_RUNS` (the old fixed roads); the road out of the gate (`GATE_ROAD`) stays
   fixed. **Walking**: `walkBetween(from, to, placements, roads)` = Dijkstra over town tiles and the land
   outside the walls, reached through the gateway and over the gate road (4 directions; every building
   footprint, the keep and the mine block; water and the wall don't), cost per tile 1/speed; cached per
-  (placements, roads) object. Effects: hauling — `haulFactor(walk mine → warehouse)` = 6 s / walk time,
-  clamped 0.5–3 (no way through: 0.5), multiplies `surfaceHaul` (default layout: 6 s → ×1.0);
+  (placements, roads) object. **Carts keep to the roads**: `roadBetween` is the same search on road tiles
+  alone (a road tile beside each stop); `cartWay` = that, or — only where no road joins the stops (one
+  taken up) — the walkers' way, so a delivery never stalls. The depot's carts (`wagonLegs`, timed by the
+  simulation, and drawn by `Wagons`) and the decorative handcarts use it. Effects: hauling —
+  `haulFactor(walk mine → warehouse)` = `HAUL_REFERENCE` 5 s / walk time, clamped 0.5–3 (no way
+  through: 0.5), multiplies `surfaceHaul` (a new game: 5.1 s → ×0.98; the reference was 6 s at first,
+  7.5 s once walking off the roads got slower, 5 s since the warehouse grew to 5 × 5 next to the mine);
   construction — `buildFactor(walk warehouse → site)` = 1 + (12 − time)/40, clamped 0.7–1.3, multiplies
   each job's progress. Peasant walkers follow the same paths with per-tile timing (`times`), so they
   speed up on roads. Saves: version 1 (the
@@ -217,6 +256,28 @@ game, and starts the 1-second simulation (`startSimulation()`).
   ran (nearly) down to the gate is carried on to it. Rocks are hashed from where a tile lay on the 47-tile
   map, so they didn't move either. Any spot that no longer fits is dropped and re-placed
   (`validPlacements` + `fillPlacements`).
+- **A road at the door** (user rule, 2026-10-12): every building the player places — all but the
+  pastures, out on the raiders' ground — needs a road at its **door** joined to **both the keep and the
+  main gate** before it can be placed. Doors face the front-left (the row just outside the side along
+  y + d); the barracks' faces the front-right (the column along x + w) — `doorSide`, `doorTiles`,
+  `needsRoad` in cityMap.ts. `accessRoads(roads)` (roads.ts, cached per roads object) = every stretch of
+  road (tiles joined side by side) that touches both the keep's footprint and the gate's; `placementProblem`
+  and `nearestFreeSpot` take it as `access` (the store's `placeBuilding`, the placing screen; callers
+  without it skip the rule, e.g. older tests). **The main road** (`MAIN_ROAD`, `onMainRoad` in
+  cityMap.ts: the middle column from the keep's front, y 26, down to the gate, y 51 — the starting road)
+  always joins the two: it can be paved better but never taken up (`roadProblem` refuses, the road's
+  pop-up has no CLEAR ROAD, the eraser says it stays) or built over (`placementProblem`, so a saved
+  building on it is moved on load), and loading a save lays any stretch of it that's missing
+  (`withMainRoad`).
+  It's checked only when placing: a building keeps working if its road is taken up later. While placing,
+  the door tiles are marked on the footprint — green where a joined road reaches them, red where not —
+  and the bar says so; `startPlacing` starts at the nearest spot that fits with a road (else the nearest
+  off the roads, to be moved). **Laid free**: `joinBuildings(placements, roads)` lays dirt from each
+  building's door that lacks a road to the nearest joined road (breadth-first over open town
+  ground; the merge clears the rocks under every road). Used for a new game's first buildings
+  (`startingWays` in gameStore.ts, their rocks cleared) and once for saves from before the rule
+  (`SAVE_VERSION` 5: `migrateSave` marks a save below 5 `joinRoads`, `mergeSave` lays the roads once
+  every spot is known and says how many tiles it laid; the marker isn't kept).
 - **Traps** (`src/game/traps.ts`): 1-tile traps laid anywhere in the trap belt except the gate road
   (`trapProblem`); `traps` in the store, `layTrap(kind, spot)` pays at once, `removeTrap(spot)` refunds
   half the gold. Spike pit (30 gold, 10 coal): 15 damage to one random raider company on foot. Pitch
@@ -229,8 +290,26 @@ game, and starts the 1-second simulation (`startSimulation()`).
   fire in `createBattle` before round 1 (`springTraps`: pitch, then spikes, then snares; fliers pass
   over), logged as `trap` events; kills are `battle.trapKills` → `RaidReport.trapKills`. Traps stay
   after a raid. The sighting notice and the raid banner name the side and its trap count.
-- **Tech tree** (`src/game/techs.ts`): 66 upgrades bought once with **gold only**, separate from building
-  levels — a branch per building (3 tiers: I, II, III) and a 6-tech branch for the mine (2 per tier).
+- **Shop and ads** (`src/game/shop.ts`; the store and ad SDKs in `src/components/purchases.ts` and
+  `ads.ts`, with do-nothing `*.web.ts` twins for the web/PC build): Google Play Billing through **expo-iap**
+  sells **No more ads** (`remove_ads`, €2, kept) and packs of **1,000 / 10,000 / 100,000 of everything**
+  (`resources_1000` / `_10000` / `_100000`, €1 / €5 / €20, consumed so they can be bought again): the
+  amount in gold plus the amount of every ore the mine yields (`MINE_RESOURCES`), delivered whole even
+  past the warehouse's limit. Prices come from the store (Play Console); the euro ones in `PRODUCTS` only
+  show where it can't be reached. `creditPurchase(id, key)` credits a purchase once per store token
+  (`creditedPurchases`, the last 100), only once the store says *purchased* (pending payments wait), and
+  then the purchase is finished with the store; at start-up `startStore()` fetches the prices and collects
+  purchases paid but not yet credited (a crash mid-purchase, a reinstall); RESTORE PURCHASES does the same
+  on demand. **Ads** (react-native-google-mobile-ads): consent first (Google's UMP form, `gatherConsent`;
+  a PRIVACY CHOICES button where the law asks), then an **interstitial at most every
+  `AD_INTERVAL_SECONDS` (180)**, shown only at a natural pause — `adBreak()` from going down the mine or up
+  to the city, closing a pop-up and leaving a battle — never during a battle and never once `adsRemoved`.
+  Development builds use Google's test ad unit; release builds show none until the real AdMob unit id
+  replaces the placeholder in `ads.ts` (and the sample app ids in `app.json`'s plugin). Both SDKs are
+  loaded with a guarded `require`, so **Expo Go** (no native modules) runs the game without ads or
+  purchases. The shop is in the Menu (`ShopPanel`).
+- **Tech tree** (`src/game/techs.ts`): 78 upgrades bought once with **gold only**, separate from building
+  levels — a branch per building (3 tiers: I, II, III) and a 9-tech branch for the mine (3 per tier).
   A tech needs the one before it (`requires`, sometimes a tech from another branch too, e.g. Steam drills
   needs the foundry's Tempered steel) and its building at level 1 / 3 / 6 (`TIER_LEVEL`; the mine:
   1 / 2 / 4 galleries, `TIER_DEPTH`). `techs` in the store, `buyTech(id)`, `techBlocker` / `techNeeds`;
@@ -249,9 +328,9 @@ game, and starts the 1-second simulation (`startSimulation()`).
   dwelling per unit: Guardhouse, Archery Range, Barracks, Monastery, Balloon Works, Stables, Griffin Eyrie,
   Paladin Chapel, Celestial Sanctum. Start: keep/houses/warehouse/foundry/guardhouse at 1, the rest 0.
   Effects come from `buildingStats(levels, staff?)` (staff omitted = fully staffed, for previews): keep =
-  level cap for everything else, building sites at once `1 + ⌊L/5⌋`, taxes L gold per 5 s; cottages = beds
+  level cap for everything else, building sites at once `1 + ⌊L/5⌋`, taxes = keep level × peasants gold a minute (`taxPerPeasant` = L × the tax techs, `taxPerMinute`; collected every 5 s, shown in the keep's pop-up — until 2026-10-13 it was L gold per 5 s whatever the population); cottages = beds
   `8 + Σ houseBeds(L)` for peasants (the 8 is the keep's hall);
-  warehouses = capacity `100·1.3^(L−1)` per resource + mine stockpiles; foundry = miner rate and cart load;
+  warehouses (5 × 5 since 2026-10-13, was 3 × 3; default spot 30,34) = capacity `300·1.3^(L−1)` per resource (100·… until 2026-10-13) + mine stockpiles; foundry = miner rate and cart load;
   research = dig speed/cost and trap damage; stables = haulers' carts (and cavalry); gate = gate HP;
   moat = `10 + 6L` damage a round to raider companies wading in it (battle, below);
   docks = the barges (one comes every `120 − 4(L−1)` s, at least `MIN_BARGE_INTERVAL` 40; orders worth
@@ -402,7 +481,8 @@ src/
   app/                     routes (Expo Router)
     _layout.tsx            gesture root, safe area, loads the save, starts the simulation, flushes saves
     index.tsx              stronghold screen
-    mine.tsx               mine screen (layout + live state → MineScene, panels)
+    mine.tsx               mine screen: the full-screen map, its top bar and toolbar, the tile/bin card,
+                           the upgrades and carts sheets
   game/                    simulation + pure model (no React Native / Skia)
     gameStore.ts           Zustand store: the starting state, the actions, persistence, loadGame,
                            startSimulation; `useGame(live)` / `useGameSlice(selector, live)` for screens
@@ -416,7 +496,9 @@ src/
     saveMigration.ts       `migrateSave` / `mergeSave`: older saves moved onto the current map and laid
                            over a fresh game
     mineLayout.ts          the tile model: dug tiles & kinds, deposits/clusters, sites, dig rules,
-                           deposit info, auto-dig route finder
+                           deposit info, dark rock (fog, surveyed patches), auto-dig route finder
+    survey.ts              surveys of the dark rock from a tunnel: cost, cooldown, reach (and their
+                           techs), the dark tiles in reach, refusals
     haulage.ts             cart routes (BFS to lift), trip schedule, cart pose (worklet), events
     resources.ts           RESOURCES list, Stock type, names/colours, market prices
     workforce.ts           peasant pool: allocation of miners/pushers/crews/staff/idle, arrival rate
@@ -428,6 +510,8 @@ src/
                            the work pace and room for newcomers
     forest.ts              the forest on the near mountains: stands, felling the nearest, regrowth elsewhere
     farms.ts               food: orchard / fishing hut / pasture ids, food rates, eating and hunger, raid losses
+    boats.ts               the fishing huts' boats by level (rowboat, skiff, smack, ketch)
+    shop.ts                the products, their prices and what each credits (once per store token)
     save.ts                batched localStorage storage for the persisted store, flushSave()
     buildings.ts           stronghold buildings: ids, start levels, stats per level, costs, build time
     units.ts               army + raider stats/abilities, dwellings, recruit gold and growth
@@ -436,16 +520,18 @@ src/
     wagons.ts              the depot's carts: trips, what to bring a forge, goods on the move
     combat.ts              hex battle engine: setup, turns, damage, walls/towers, AI, quick resolve
     raids.ts               raid timing, strength, composition, side, bounty/plunder constants
-    techs.ts               the tech tree: 66 gold upgrades in branches (mine + every building), bonuses
+    techs.ts               the tech tree: 78 gold upgrades in branches (mine + every building), bonuses
     ship.ts                river barges: berths, orders (`bargeOrder`), course and pose (`bargePose`)
     rocks.ts               the rocks the town starts under: where they lie, sizes, clearing work and yield
     roads.ts               road kinds/costs/speeds, road placement checks, walking paths (Dijkstra),
-                           haul and construction speed factors
+                           haul and construction speed factors,
+                           the roads joined to the keep and the gate (`accessRoads`) and laying the
+                           missing ones free (`joinBuildings`)
   components/
     MineMapLayout.ts       grid constants (tile size, columns, levels, 12 stations a gallery, exit bins)
     MineScene(.web).tsx    platform wrapper; web loads Skia (CanvasKit) lazily via WithSkiaWeb
-    MineViewport.tsx       camera (pan/pinch/wheel/keys), view culling, dig drag, taps, labels,
-                           haul clock, pickaxe layer
+    MineViewport.tsx       camera (pan/pinch/wheel/keys; scrolls clear of the bars over the map), view
+                           culling, dig drag, taps, labels, haul clock, pickaxe layer, zoom buttons
     MineSceneCanvas.tsx    the Skia canvas: terrain chunks, carts, miners, bins, dig overlay
     mineTerrain.ts         terrain renderer: tiles, fog, and cached block images (16 × 4 tiles) with
                            dirty tracking so a change only redraws nearby blocks
@@ -455,7 +541,8 @@ src/
                            the viewport can import it on web)
     BinPanel.tsx           a tapped bin's resource: miners' bins, mine exit, mine stockpile, warehouse
     MinePickaxe(.web).tsx  animated pickaxe (Reanimated on native, CSS on web)
-    MineSceneReadout.tsx   small readout labels on the map
+    MinePileTip.tsx        the mouse's tip on a pile: every resource in the miners' bins, at the exit,
+                           in the mine stockpile, and its total
     DepositPanel.tsx       tapped-tile info + Assign / Release / Dig & Assign
     HaulagePanel.tsx       carts per level + Add Cart
     StockpileTable.tsx     resources × stages table (the stronghold; the mine shows bins instead)
@@ -503,7 +590,14 @@ src/
                            things out of the key all the same); the live layer on top has the
                            warehouse piles, progress bars, selection, a few animated bits (smoke,
                            balloons, flame, mine wheel, the river barges) and every peasant as one `Atlas` moved by a
-                           single `useRSXformBuffer` worklet (haulers, staff errands, crews, idlers).
+                           single `useRSXformBuffer` worklet (haulers, staff errands, crews, idlers, and the
+                           handcarts: a third of the mine's haulers, up to 3, push carts heaped with
+                           what the mine stockpile holds; each woodcutter's hut carts logs to the
+                           warehouse; orchards cart apples, fishing huts' hands carry baskets of fish
+                           and shepherds bring mutton in on foot (no roads outside the walls), to the
+                           granary — or the warehouse without one; the carts keep to the roads;
+                           a store with no room keeps its carts home — `peasants.tsx`, all decoration:
+                           the simulation moves the goods per tick).
                            One frame-callback clock at ≤30 fps, paused when the screen isn't focused.
                            `GameSceneCanvas.tsx` puts the scene together (the still image's contents,
                            the live layer); its parts are in `stronghold/`: `shapes` (materials, iso
@@ -533,6 +627,14 @@ src/
                            traps), dragging the building being placed (judged by the press point,
                            `onBegin`), paint strokes for roads/traps, right/middle-drag pan, level badges
     Sheet.tsx              pop-up panel (slides up, scrolls, closes on ✕ or backdrop)
+    Prologue.tsx           the story before a new game (and from the Menu), a page at a time
+    ShopPanel.tsx          the shop in the Menu: No more ads, the packs, restore, privacy choices
+    purchases(.web).ts     the store (expo-iap): prices, buying, crediting and finishing purchases
+    ads(.web).ts           the ads (Google Mobile Ads): consent, the interstitial at pauses every 3 min
+    Toolbar.tsx            `Toast` (the latest notice for a few seconds) and `ToolButton` (a toolbar button
+                           with a badge, lit while its mode is on; an emoji or a drawn icon), shared by the
+                           stronghold and the mine
+    MineCartIcon.tsx       the mine toolbar's mining cart, drawn with plain views (no emoji for one)
     BuildingsPanel.tsx     pop-up pieces: `BuildingDetail` (effects now → next, cost, Upgrade, staff +
                            Stop, unit card + Recruit, the building's tech branch), `BuildingGrid` (all
                            buildings), `DefenceSummary`
@@ -646,6 +748,18 @@ src/
   need hands) and `save-test` (v2→v3 map growth, the old armory refund, the save guard, new houses on load) — the save tests load a fresh copy of the store over an in-memory
   `localStorage`, so they never touch a real save.
 - Web dev server: `npx expo start --web --port 8081` (`.claude/launch.json` has an `expo-web` config).
+- **Android** (tested 2026-10-12 in an emulator with Expo Go 57.0.9 — no native build needed): JDK 21 and
+  the Android SDK live in `~/Android` (`jdk-21.0.12.1+1`, `Sdk` with platform-tools, emulator and the
+  `system-images;android-36;google_apis;x86_64` image; AVD `mff_pixel`, a Pixel 7). Run
+  `~/Android/Sdk/emulator/emulator -avd mff_pixel -gpu host` (on Wayland the host GPU path has crashed the
+  emulator — `-gpu swiftshader_indirect` is steadier but slow; heavy host load can trip its watchdog),
+  then `adb reverse tcp:8081 tcp:8081` and `adb shell am start -a android.intent.action.VIEW -d
+  exp://127.0.0.1:8081` (the running web dev server serves the Android bundle too); screenshots with
+  `adb exec-out screencap -p`. Everything worked: the stronghold, placing (lit ground), cottages and their
+  women, the mine, the War panel and recruiting, raids and a commanded, animated battle, saving across a cold
+  restart. Fixed then: Android's **Back** closes an open pop-up (`Sheet`) and cancels placing or painting
+  instead of leaving the game. To do: the mine's terrain blocks draw on the CPU when first seen (a moment
+  of black on entering the mine); Back on the bare stronghold still leaves the app (a "quit?" prompt).
   **Never set `CI=1`** — Metro then stops watching files and serves stale lazy chunks.
   **Metro doesn't watch folders created after it started** (it serves their first version forever, even
   after `touch`): after adding a folder (e.g. `src/components/stronghold/`), restart the dev server. To

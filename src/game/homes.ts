@@ -1,14 +1,15 @@
 // The cottages' homes. Each is kept by a woman of its own (not one of the workers): she walks to the
 // river for water and to the store (the granary, or the warehouse) for food, a load at a time, and the
 // peasants who sleep there drink and eat what she brings. Peasants sleep where there's water and food
-// if there's room — the kept cottages first, then the keep's hall (fed straight from the store), and
-// only then cottages run dry — so a cottage run dry slows its sleepers down (they work at HUNGRY_WORK)
-// and nobody new moves into it. Pure TS.
+// if there's room — the happy cottages first, then the keep's hall (fed straight from the store), and
+// only then the unhappy ones. A cottage's people are happy with water and food in and a road at its door
+// joined to the keep and the main gate; an unhappy one (run dry, or cut off) slows its sleepers down
+// (they work at HUNGRY_WORK) and nobody new moves into it. Pure TS.
 import { KEEP_BEDS, type BuildingLevels } from './buildings';
 import { FOOTPRINTS, MAP_SIZE, RIVER_ROWS, spotOf, zoneAt, type Footprint, type Placements, type Spot } from './cityMap';
 import { FOODS, FOOD_PER_PEASANT, HUNGRY_WORK } from './farms';
 import { HOUSE_IDS, houseBeds, type HouseId } from './houses';
-import { walkBetween, type Roads } from './roads';
+import { hasRoadAccess, walkBetween, type Roads } from './roads';
 import { techBonuses, type TechId } from './techs';
 import type { Stock } from './resources';
 
@@ -36,14 +37,25 @@ const hundredths = (value: number) => Math.round(value * 100) / 100;
 /** Does a home have both water and food in? */
 export const isKept = (home: Home | undefined) => !!home && home.water > 0 && home.food > 0;
 
-type Sleeping = Pick<{ population: number; buildings: BuildingLevels; techs: readonly TechId[]; homes: Homes }, 'population' | 'buildings' | 'techs' | 'homes'>;
+/** What the sleeping arrangements follow; without the layout (`placements`, `roads`) every cottage counts as having its road. */
+type Sleeping = { population: number; buildings: BuildingLevels; techs: readonly TechId[]; homes: Homes; placements?: Placements; roads?: Roads };
+
+/** Has a cottage its road: one at its door joined to the keep and the main gate (roads.ts)? */
+export const hasHomeRoad = (id: HouseId, { placements, roads }: Pick<Sleeping, 'placements' | 'roads'>) => {
+  const spot = placements?.[id];
+  return !spot || !roads || hasRoadAccess(id, spot, roads);
+};
+
+/** Are a cottage's people happy: water and food in, and its road? */
+export const isHappy = (id: HouseId, state: Pick<Sleeping, 'homes' | 'placements' | 'roads'>) => isKept(state.homes[id]) && hasHomeRoad(id, state);
 
 /**
  * Who sleeps where: in each cottage (by id) and in the keep's hall, and how many beds each has. The kept
  * cottages fill first, then the hall (while the store has food), then the cottages run dry, then the
  * hall again; anyone left over (beds pulled down) sleeps in the hall.
  */
-export function sleepers({ population, buildings, techs, homes }: Sleeping, storeHasFood: boolean) {
+export function sleepers(state: Sleeping, storeHasFood: boolean) {
+  const { population, buildings, techs } = state;
   const bonus = 1 + techBonuses(techs).beds;
   const beds = Object.fromEntries(HOUSE_IDS.map((id) => [id, Math.floor(houseBeds(buildings[id]) * bonus)])) as Record<HouseId, number>;
   const residents = Object.fromEntries(HOUSE_IDS.map((id) => [id, 0])) as Record<HouseId, number>;
@@ -57,8 +69,8 @@ export function sleepers({ population, buildings, techs, homes }: Sleeping, stor
       left -= take;
     }
   };
-  const kept = HOUSE_IDS.filter((id) => beds[id] > 0 && isKept(homes[id]));
-  const dry = HOUSE_IDS.filter((id) => beds[id] > 0 && !isKept(homes[id]));
+  const kept = HOUSE_IDS.filter((id) => beds[id] > 0 && isHappy(id, state));
+  const dry = HOUSE_IDS.filter((id) => beds[id] > 0 && !isHappy(id, state));
   const intoHall = () => {
     const take = Math.min(left, hallBeds - hall);
     hall += take;
@@ -72,18 +84,18 @@ export function sleepers({ population, buildings, techs, homes }: Sleeping, stor
   return { residents, beds, hall, hallBeds };
 }
 
-/** How fast the hold works: everyone sleeping in a cottage run dry (or in the hall with no food in store) works at HUNGRY_WORK. */
+/** How fast the hold works: everyone sleeping in an unhappy cottage — run dry, or with no road — (or in the hall with no food in store) works at HUNGRY_WORK. */
 export function workPace(state: Sleeping & { hungry: boolean }) {
   if (state.population <= 0) return 1;
   const { residents, hall } = sleepers(state, !state.hungry);
-  const dry = HOUSE_IDS.reduce((sum, id) => sum + (isKept(state.homes[id]) ? 0 : residents[id]), 0) + (state.hungry ? hall : 0);
+  const dry = HOUSE_IDS.reduce((sum, id) => sum + (isHappy(id, state) ? 0 : residents[id]), 0) + (state.hungry ? hall : 0);
   return Math.round((1 - ((1 - HUNGRY_WORK) * dry) / state.population) * 1000) / 1000;
 }
 
 /** Is there a bed a newcomer can move into: in a kept cottage, or in the keep's hall while the store has food? */
 export function roomForNewcomer(state: Sleeping & { hungry: boolean }) {
   const { residents, beds, hall, hallBeds } = sleepers(state, !state.hungry);
-  return HOUSE_IDS.some((id) => isKept(state.homes[id]) && residents[id] < beds[id]) || (!state.hungry && hall < hallBeds);
+  return HOUSE_IDS.some((id) => isHappy(id, state) && residents[id] < beds[id]) || (!state.hungry && hall < hallBeds);
 }
 
 /** Where a cottage's woman draws water: the riverside tile nearest the cottage, just inside the river wall. */

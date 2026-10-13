@@ -15,10 +15,10 @@ import type { LevelCarts } from '../game/haulage';
 import { RESOURCES, type Resource, type Stock } from '../game/resources';
 import { checkDigStep, depositRemaining, findDigParent, isDug, parseKey, tileKey, type MineLayout } from '../game/mineLayout';
 import MinePickaxe from './MinePickaxe';
-import MineSceneReadout from './MineSceneReadout';
+import MinePileTip from './MinePileTip';
 import type { DigOverlayState, MineSceneCanvasProps, MineView } from './MineSceneCanvas';
 import { EXIT_PILE_STEPS, MINER_PILE_STEPS, binAt } from './MineHaulerSteps';
-import { MINE_MAP_WIDTH, MINE_SHAFT_X, MINE_TILE_SIZE } from './MineMapLayout';
+import { MINE_COLUMNS, MINE_MAP_WIDTH, MINE_SHAFT_X, MINE_SURFACE_ROWS, MINE_TILE_SIZE } from './MineMapLayout';
 
 const T = MINE_TILE_SIZE;
 const MIN_ZOOM = 0.3;
@@ -30,7 +30,6 @@ const VIEW_STEP = T * 3;
 
 export type MineSceneProps = {
   layout: MineLayout;
-  coal: number;
   viewportHeight: number;
   /** Each resource's stockpile beside the miners, and its capacity. */
   vein: Stock;
@@ -38,6 +37,8 @@ export type MineSceneProps = {
   /** Each resource's stockpile at the mine exit, and its capacity. */
   mineExit: Stock;
   mineExitCapacity: number;
+  /** Each resource in the mine stockpile (for the totals shown while the mouse rests on a pile). */
+  mineStock: Stock;
   /** The simulation's haul time; carts are drawn where the shared schedule puts them. */
   haulTime: number;
   /** What each cart carries, keyed by cart. */
@@ -60,6 +61,14 @@ export type MineSceneProps = {
   onAssignTile: (key: string) => void;
   /** The page's gesture-handler scroll view; gestures on the map take priority over it. */
   pageScrollRef?: Parameters<PanGesture['blocksExternalGesture']>[0];
+  /** Screen pixels covered by bars floating over the top and bottom of the map: the map can scroll its
+   * top edge down below the top bar and its bottom edge up above the bottom one; the zoom buttons sit
+   * under the top bar and the dig messages above the bottom one. */
+  insetTop?: number;
+  insetBottom?: number;
+  /** Survey mode: the patch a survey would map round the tile under the mouse (or the last one tapped)
+   * is shaded green where the surveyors can set out from, red where they can't. */
+  survey?: { radius: number; canSurveyFrom: (key: string) => boolean } | null;
 };
 
 type MineViewportProps = MineSceneProps & {
@@ -80,12 +89,12 @@ function clamp(value: number, min: number, max: number) {
 // hears about the camera when it moves far enough to change which chunks of rock are drawn.
 export default function MineViewport({
   layout,
-  coal,
   viewportHeight,
   vein,
   veinCapacity,
   mineExit,
   mineExitCapacity,
+  mineStock,
   haulTime,
   cartLoads,
   carts,
@@ -99,6 +108,9 @@ export default function MineViewport({
   onSelectBin,
   onAssignTile,
   pageScrollRef,
+  insetTop = 0,
+  insetBottom = 0,
+  survey = null,
   renderCanvas,
 }: MineViewportProps) {
   const mapWidth = MINE_MAP_WIDTH;
@@ -107,6 +119,7 @@ export default function MineViewport({
   const viewWidth = useSharedValue(0);
   const viewHeight = useSharedValue(viewportHeight);
   const mapHeightValue = useSharedValue(mapHeight);
+  const insets = useSharedValue({ top: insetTop, bottom: insetBottom });
   const camX = useSharedValue(0);
   const camY = useSharedValue(0);
   const zoom = useSharedValue(1);
@@ -116,6 +129,12 @@ export default function MineViewport({
     viewHeight.set(viewportHeight);
     mapHeightValue.set(mapHeight);
   }, [viewportHeight, mapHeight, viewHeight, mapHeightValue]);
+  // While the camera is at the top, keep the surface just below the top bar as the bar's height settles.
+  useEffect(() => {
+    const atTop = camY.get() <= 0;
+    insets.set({ top: insetTop, bottom: insetBottom });
+    if (atTop) camY.set(-insetTop / zoom.get());
+  }, [insetTop, insetBottom, insets, camY, zoom]);
 
   // Start centred on the lift at the surface.
   const onLayout = (event: LayoutChangeEvent) => {
@@ -132,7 +151,8 @@ export default function MineViewport({
     const nextZoom = clamp(z, MIN_ZOOM, MAX_ZOOM);
     zoom.set(nextZoom);
     camX.set(clamp(x, 0, Math.max(0, mapWidth - viewWidth.get() / nextZoom)));
-    camY.set(clamp(y, 0, Math.max(0, mapHeightValue.get() - viewHeight.get() / nextZoom)));
+    const { top, bottom } = insets.get();
+    camY.set(clamp(y, -top / nextZoom, Math.max(-top / nextZoom, mapHeightValue.get() - (viewHeight.get() - bottom) / nextZoom)));
   };
 
   // Zoom keeping the map point under (fx, fy) — a screen position in the viewport — in place.
@@ -227,6 +247,12 @@ export default function MineViewport({
   // double tap to fail, so a double tap never also counts as a selection toggle.
   const tileAt = (mapX: number, mapY: number) => tileKey(Math.floor(mapY / T), Math.floor(mapX / T));
   const selectAt = (mapX: number, mapY: number) => {
+    if (survey) {
+      // A tap (the only pointer on a touch screen) shows its patch too: red stays up if it was refused.
+      setSurveyTile(tileAt(mapX, mapY));
+      onSelectTile(tileAt(mapX, mapY));
+      return;
+    }
     const bin = binAt(layout.sites, mapX, mapY);
     if (bin) onSelectBin(bin);
     else onSelectTile(tileAt(mapX, mapY));
@@ -259,6 +285,62 @@ export default function MineViewport({
   // Web: the mouse wheel zooms around the pointer instead of scrolling the page, and right-click
   // drags the map rather than opening the browser menu.
   const container = useRef<View>(null);
+  // The tile under the mouse while surveying (only then: tracking it re-renders the viewport).
+  const [surveyTile, setSurveyTile] = useState<string | null>(null);
+  // Survey mode switched on or off: start with no patch until the mouse moves or a tile is tapped.
+  const [surveyWasOn, setSurveyWasOn] = useState(false);
+  if (!!survey !== surveyWasOn) {
+    setSurveyWasOn(!!survey);
+    setSurveyTile(null);
+  }
+  const surveying = useRef(false);
+  // The pile (a miner's bin or an exit bin) under the mouse, and where the mouse is (for its tip).
+  const [pile, setPile] = useState<Resource | null>(null);
+  const tipX = useSharedValue(0);
+  const tipY = useSharedValue(0);
+  const sites = useRef(layout.sites);
+  useEffect(() => {
+    surveying.current = !!survey;
+    sites.current = layout.sites;
+  });
+  useEffect(() => {
+    if (Platform.OS !== 'web') return undefined;
+    const node = container.current as unknown as HTMLElement | null;
+    if (!node) return undefined;
+    const onMove = (event: PointerEvent) => {
+      if (event.pointerType !== 'mouse') return;
+      const rect = node.getBoundingClientRect();
+      const screenX = event.clientX - rect.left;
+      const screenY = event.clientY - rect.top;
+      const z = zoom.get();
+      const mapX = camX.get() + screenX / z;
+      const mapY = camY.get() + screenY / z;
+      if (surveying.current) {
+        const key = tileKey(Math.floor(mapY / T), Math.floor(mapX / T));
+        setSurveyTile((current) => (current === key ? current : key));
+        setPile(null);
+        return;
+      }
+      // Not while a button is held (dragging the map or digging).
+      const resource = event.buttons === 0 ? binAt(sites.current, mapX, mapY) : null;
+      tipX.set(screenX);
+      tipY.set(screenY);
+      setPile((current) => (current === resource ? current : resource));
+    };
+    // Off the map (onto the toolbar, say): no patch, no tip.
+    const onLeave = () => {
+      setSurveyTile(null);
+      setPile(null);
+    };
+    node.addEventListener('pointermove', onMove);
+    node.addEventListener('pointerleave', onLeave);
+    return () => {
+      node.removeEventListener('pointermove', onMove);
+      node.removeEventListener('pointerleave', onLeave);
+    };
+    // The camera is shared values, which are stable.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   useEffect(() => {
     if (Platform.OS !== 'web') return undefined;
     const node = container.current as unknown as HTMLElement | null;
@@ -381,18 +463,19 @@ export default function MineViewport({
             selectedKey,
           })}
         <CameraLayer camX={camX} camY={camY} zoom={zoom} mapHeight={mapHeight}>
+          {survey && surveyTile && <SurveyPatch tile={surveyTile} radius={survey.radius} ok={survey.canSurveyFrom(surveyTile)} />}
           <Pickaxes layout={layout} view={view} />
           <DepositLabels layout={layout} view={view} depositMined={depositMined} />
-          <MineSceneReadout miners={layout.sites.length} depth={layout.depth} coal={coal} />
         </CameraLayer>
+        {pile && !survey && <MinePileTip resource={pile} vein={vein} mineExit={mineExit} mineStock={mineStock} x={tipX} y={tipY} width={width} height={viewportHeight} />}
         {(drag.reason ?? message) && (
-          <View style={[styles.digMessage, drag.reason ? styles.digMessageStop : null]}>
+          <View style={[styles.digMessage, { bottom: insetBottom + 12 }, drag.reason ? styles.digMessageStop : null]}>
             <Text style={styles.digMessageText}>{drag.reason ?? message}</Text>
           </View>
         )}
       </View>
     </GestureDetector>
-    <View style={styles.zoomControls}>
+    <View style={[styles.zoomControls, { top: insetTop + 8 }]}>
       <ZoomButton label="+" onPress={() => zoomButton(1.4)} />
       <ZoomButton label="−" onPress={() => zoomButton(1 / 1.4)} />
     </View>
@@ -410,6 +493,23 @@ function ZoomButton({ label, onPress }: { label: string; onPress: () => void }) 
     >
       <Text style={styles.zoomButtonText}>{label}</Text>
     </Pressable>
+  );
+}
+
+// The patch a survey from `tile` would map (inside the mine), with the tile itself picked out: green where
+// the surveyors can set out from, red where they can't.
+function SurveyPatch({ tile, radius, ok }: { tile: string; radius: number; ok: boolean }) {
+  const { row, column } = parseKey(tile);
+  const top = Math.max(MINE_SURFACE_ROWS, row - radius);
+  const left = Math.max(0, column - radius);
+  const bottom = row + radius + 1;
+  const right = Math.min(MINE_COLUMNS, column + radius + 1);
+  if (bottom <= top || right <= left) return null;
+  return (
+    <>
+      <View style={[styles.surveyPatch, ok ? styles.surveyOk : styles.surveyBad, { left: left * T, top: top * T, width: (right - left) * T, height: (bottom - top) * T }]} />
+      <View style={[styles.surveyCentre, ok ? styles.surveyCentreOk : styles.surveyCentreBad, { left: column * T, top: row * T, width: T, height: T }]} />
+    </>
   );
 }
 
@@ -555,7 +655,7 @@ function Pickaxes({ layout, view }: { layout: MineLayout; view: MineView }) {
     const x = site.column * T;
     const y = site.row * T;
     if (x + T < view.left || x > view.right || y + T < view.top || y > view.bottom) return null;
-    return <MinePickaxe key={`pickaxe-${String(site.row)}-${String(site.column)}`} x={x} y={y} index={index} scale={1} offsetX={0} />;
+    return <MinePickaxe key={`pickaxe-${String(site.row)}-${String(site.column)}-${String(site.faceRow)}-${String(site.faceColumn)}`} x={x} y={y} index={index} scale={1} offsetX={0} />;
   });
 }
 
@@ -575,7 +675,7 @@ function DepositLabels({ layout, view, depositMined }: { layout: MineLayout; vie
 }
 
 const styles = StyleSheet.create({
-  digMessage: { pointerEvents: 'none', position: 'absolute', left: 12, right: 12, bottom: 12, padding: 10, backgroundColor: 'rgba(25, 31, 27, 0.92)', borderLeftWidth: 3, borderLeftColor: '#c3ce87' },
+  digMessage: { pointerEvents: 'none', position: 'absolute', left: 12, right: 12, padding: 10, backgroundColor: 'rgba(25, 31, 27, 0.92)', borderLeftWidth: 3, borderLeftColor: '#c3ce87' },
   digMessageStop: { borderLeftColor: '#e5484d' },
   digMessageText: { color: '#f0ead8', fontFamily: 'monospace', fontSize: 13 },
   depositLabel: { position: 'absolute', minWidth: T - 4, paddingHorizontal: 2, backgroundColor: 'rgba(13, 10, 8, 0.75)' },
@@ -589,7 +689,13 @@ const styles = StyleSheet.create({
     transformOrigin: 'left top',
     pointerEvents: 'none',
   },
-  zoomControls: { position: 'absolute', right: 8, bottom: 8, gap: 6 },
+  zoomControls: { position: 'absolute', right: 8, gap: 6 },
+  surveyPatch: { position: 'absolute', borderWidth: 2 },
+  surveyOk: { borderColor: 'rgba(132, 226, 120, 0.9)', backgroundColor: 'rgba(96, 200, 90, 0.24)' },
+  surveyBad: { borderColor: 'rgba(240, 104, 88, 0.9)', backgroundColor: 'rgba(214, 70, 56, 0.24)' },
+  surveyCentre: { position: 'absolute', borderWidth: 2 },
+  surveyCentreOk: { borderColor: '#b6f0a4', backgroundColor: 'rgba(96, 200, 90, 0.4)' },
+  surveyCentreBad: { borderColor: '#ffb0a4', backgroundColor: 'rgba(214, 70, 56, 0.4)' },
   zoomButton: {
     width: 36,
     height: 36,

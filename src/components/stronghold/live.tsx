@@ -9,7 +9,7 @@ import type { BuildingId } from '../../game/buildings';
 import type { Placements } from '../../game/cityMap';
 import { BERTHS, bargePose, bargeRoute } from '../../game/ship';
 import { wagonStops, type WagonJob } from '../../game/wagons';
-import { walkBetween, type Roads } from '../../game/roads';
+import { cartWay, type Roads } from '../../game/roads';
 import { RESOURCE_INFO, type Resource } from '../../game/resources';
 import { CAMPFIRE, TILE_HH, TILE_HW, iso, plotOf, type Plot } from '../GameSceneLayout';
 import { parseSvg, useSvgPaths } from '../skiaPaths';
@@ -23,14 +23,21 @@ export const PILE_STEPS = 6;
 // They change often, so they're drawn live instead of making the still image redraw.
 export const Piles = memo(function Piles({ resources, steps, plot }: { resources: readonly Resource[]; steps: string; plot: Plot }) {
   const piles = steps.split(',').map(Number);
+  // In rows in front of the shed: four to a row on a small plot, spread over the yard (and a little
+  // bigger) on the warehouse's wide one.
+  const wide = plot.w >= 5;
+  const columns = wide ? Math.floor((plot.w - 0.3) / 0.75) : 4;
+  const across = wide ? (plot.w - 0.3) / columns : 0.7;
+  const scale = wide ? 1.2 : 1;
   // Each pile a little pyramid: its two lit faces in the resource's colour, the two shaded ones darker.
   const svgs = resources.flatMap((resource, index) => {
     const fill = piles[index] / PILE_STEPS;
     if (fill <= 0) return ['', ''];
-    const x = plot.x + 0.15 + (index % 4) * 0.7;
-    const y = plot.y + 1.45 + Math.floor(index / 4) * 0.5;
-    const [A, B, C, D] = [iso(x, y), iso(x + 0.55, y), iso(x + 0.55, y + 0.4), iso(x, y + 0.4)];
-    const apex = iso(x + 0.275, y + 0.2, 3 + 9 * fill);
+    const x = plot.x + 0.15 + (index % columns) * across;
+    const y = plot.y + (wide ? 2.5 : 1.45) + Math.floor(index / columns) * (wide ? 0.75 : 0.5);
+    const [w, d] = [0.55 * scale, 0.4 * scale];
+    const [A, B, C, D] = [iso(x, y), iso(x + w, y), iso(x + w, y + d), iso(x, y + d)];
+    const apex = iso(x + w / 2, y + d / 2, (3 + 9 * fill) * scale);
     return [`${poly([A, D, apex])} ${poly([D, C, apex])}`, `${poly([A, B, apex])} ${poly([B, C, apex])}`];
   });
   const paths = useSvgPaths(svgs);
@@ -130,7 +137,7 @@ function Wheel({ clock }: { clock: SharedValue<number> }) {
   );
 }
 
-// The depot's carts on their trips: each follows the roads from the depot to its first stop, on to the
+// The depot's carts on their trips: each keeps to the roads (`cartWay`) from the depot to its first stop, on to the
 // second and back (the same walks the simulation timed, stretched to its legs), loaded on the middle leg.
 type WagonRoute = { points: number[]; times: number[] };
 export function Wagons({ clock, placements, roads, clearedRocks, live }: { clock: SharedValue<number>; placements: Placements; roads: Roads; clearedRocks: string[]; live: boolean }) {
@@ -151,7 +158,7 @@ function wagonRoute(job: WagonJob, placements: Placements, roads: Roads, cleared
   for (let leg = 0; leg < 3; leg++) {
     const [from, to] = [stops[leg], stops[leg + 1]];
     if (!from || !to) return null;
-    const walk = walkBetween(from, to, placements, roads, clearedRocks);
+    const walk = cartWay(from, to, placements, roads, clearedRocks);
     if (!walk || walk.points.length === 0) return null;
     const scale = walk.time > 0 ? job.legs[leg] / walk.time : 0;
     walk.points.forEach(([px, py], index) => {
@@ -341,29 +348,3 @@ export function ProgressBar({ job, plot }: { job: Construction; plot: Plot }) {
     </Group>
   );
 }
-
-// The sheep on the pastures (`look`: "x,y,sheep;…" per pasture, the plot's corner and its flock), scattered
-// over the field clear of the shepherd's shed. Live, because the flock grows and raiders drive sheep off.
-export const Flocks = memo(function Flocks({ look }: { look: string }) {
-  const sheep: P[] = [];
-  for (const pasture of look ? look.split(';') : []) {
-    const [px, py, count] = pasture.split(',').map(Number);
-    for (let i = 0; i < count; i++) {
-      // A golden-angle scatter over the field, keeping off the shed in its back corner.
-      const a = i * 2.39996;
-      const r = 0.35 + 0.95 * Math.sqrt((i + 0.5) / 30);
-      sheep.push(iso(px + 1.75 + Math.cos(a) * r * 0.9, py + 1.75 + Math.sin(a) * r * 0.9));
-    }
-  }
-  return (
-    <Group>
-      {sheep.map((at, index) => (
-        <Group key={index}>
-          <Circle cx={at.x} cy={at.y - 2} r={2.3} color="#eeeae0" />
-          <Circle cx={at.x + (index % 2 === 0 ? 2.2 : -2.2)} cy={at.y - 2.6} r={1} color="#2e2a26" />
-        </Group>
-      ))}
-    </Group>
-  );
-});
-

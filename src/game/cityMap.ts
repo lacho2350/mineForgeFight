@@ -132,7 +132,8 @@ export type Placements = Partial<Record<BuildingId, Spot>>;
 export const FOOTPRINTS: Record<BuildingId, Footprint> = {
   keep: { w: 5, d: 5 },
   ...(Object.fromEntries(HOUSE_IDS.map((id) => [id, { w: 1, d: 1 }])) as Record<HouseId, Footprint>),
-  warehouse: { w: 3, d: 3 },
+  // Three times the ground it had (it was 3 × 3 until 2026-10-13).
+  warehouse: { w: 5, d: 5 },
   foundry: { w: 3, d: 3 },
   research: { w: 3, d: 3 },
   armory: { w: 3, d: 3 },
@@ -171,6 +172,11 @@ export const FIXED_SPOTS: Partial<Record<BuildingId, Spot>> = {
 };
 export const isPlaceable = (id: BuildingId) => !(id in FIXED_SPOTS);
 
+/** The main road, straight down the middle from the keep's front to the main gate: there from the start,
+ * it can be paved better but never taken up or built over (roads.ts, `withMainRoad`). */
+export const MAIN_ROAD = { x: MIDDLE, y0: (FIXED_SPOTS.keep as Spot).y + FOOTPRINTS.keep.d, y1: CASTLE.y1 - 1 };
+export const onMainRoad = (x: number, y: number) => x === MAIN_ROAD.x && y >= MAIN_ROAD.y0 && y <= MAIN_ROAD.y1;
+
 export const MINE_SPOT = { x: 38, y: 38, w: 3, d: 3 };
 /** The paved plaza round the keep (anyone may build on it). */
 export const PLAZA = { x0: 23, y0: 20, x1: 35, y1: 32 };
@@ -195,7 +201,7 @@ export const STARTING_ROAD_RUNS: [number, number, number, number][] = [
 /** Where buildings stand that exist before the player places them (a new game's start, older saves). */
 export const DEFAULT_SPOTS: Partial<Record<BuildingId, Spot>> = {
   houses: { x: 18, y: 35 },
-  warehouse: { x: 31, y: 34 },
+  warehouse: { x: 30, y: 34 },
   foundry: { x: 35, y: 35 },
   guardhouse: { x: 24, y: 29 },
   research: { x: 17, y: 22 },
@@ -242,8 +248,35 @@ const overlaps = (a: Spot & Footprint, b: Spot & Footprint) => a.x < b.x + b.w &
 export type RockyTest = (x: number, y: number) => boolean;
 export type RoadTest = (x: number, y: number) => boolean;
 
-/** Why a building can't stand at `spot`, or null if it can. */
-export function placementProblem(id: BuildingId, spot: Spot, placements: Placements, names: Record<BuildingId, string>, rocky?: RockyTest, road?: RoadTest): string | null {
+// ——— Doors ———
+// Every building the player places (but the pastures, out on the raiders' ground) needs a road at its door
+// joined to the keep and the main gate before it can be placed (roads.ts, `accessRoads`). Doors face the
+// front-left (the side along y + d); the barracks' faces the front-right (along x + w).
+
+/** Does this building need a road at its door to be placed? */
+export const needsRoad = (id: BuildingId) => isPlaceable(id) && !isPasture(id);
+
+/** Which way a building's door faces, as the player sees it. */
+export const doorSide = (id: BuildingId): 'front-left' | 'front-right' => (id === 'barracks' ? 'front-right' : 'front-left');
+
+/** The tiles in front of a building's door, just outside its footprint: a road on one of them reaches it. */
+export function doorTiles(id: BuildingId, spot: Spot): Spot[] {
+  const { w, d } = FOOTPRINTS[id];
+  if (doorSide(id) === 'front-right') return Array.from({ length: d }, (_, i) => ({ x: spot.x + w, y: spot.y + i }));
+  return Array.from({ length: w }, (_, i) => ({ x: spot.x + i, y: spot.y + d }));
+}
+
+/** Why a building can't stand at `spot`, or null if it can. `access`: the road tiles joined to the keep and
+ * the main gate (roads.ts, `accessRoads`); without it the door isn't checked. */
+export function placementProblem(
+  id: BuildingId,
+  spot: Spot,
+  placements: Placements,
+  names: Record<BuildingId, string>,
+  rocky?: RockyTest,
+  road?: RoadTest,
+  access?: ReadonlySet<string>,
+): string | null {
   if (!isPlaceable(id)) return 'It has a fixed place.';
   const { w, d } = FOOTPRINTS[id];
   if (spot.x < 0 || spot.y < 0 || spot.x + w > MAP_SIZE || spot.y + d > MAP_SIZE) return 'Off the edge of the map.';
@@ -266,6 +299,7 @@ export function placementProblem(id: BuildingId, spot: Spot, placements: Placeme
         if (zone === 'water') return 'That’s the river.';
         return 'In the way of the keep, the campfire or the mine.';
       }
+      if (onMainRoad(x, y)) return 'The main road from the keep to the gate runs there.';
     }
   }
   for (const [other, at] of Object.entries(placements) as [BuildingId, Spot][]) {
@@ -279,6 +313,10 @@ export function placementProblem(id: BuildingId, spot: Spot, placements: Placeme
   }
   if (rocky) {
     for (let x = spot.x; x < spot.x + w; x++) for (let y = spot.y; y < spot.y + d; y++) if (rocky(x, y)) return 'Rocks in the way: clear them first (BUILD → Clear rocks).';
+  }
+  if (access && needsRoad(id) && !doorTiles(id, spot).some((tile) => access.has(tileKey(tile.x, tile.y)))) {
+    if (access.size === 0) return 'No road joins the keep to the main gate: lay one first (BUILD → roads), then build along it.';
+    return `Needs a road at its door (the ${doorSide(id)} side) joined to the keep and the main gate.`;
   }
   return null;
 }
@@ -325,7 +363,15 @@ export function buildSpots(id: BuildingId, placements: Placements, road?: RoadTe
 }
 
 /** The free spot for a building closest to `near` (its footprint centred there if possible). */
-export function nearestFreeSpot(id: BuildingId, near: Spot, placements: Placements, names: Record<BuildingId, string>, rocky?: RockyTest, road?: RoadTest): Spot | null {
+export function nearestFreeSpot(
+  id: BuildingId,
+  near: Spot,
+  placements: Placements,
+  names: Record<BuildingId, string>,
+  rocky?: RockyTest,
+  road?: RoadTest,
+  access?: ReadonlySet<string>,
+): Spot | null {
   const { w, d } = FOOTPRINTS[id];
   let best: Spot | null = null;
   let bestDistance = Infinity;
@@ -333,7 +379,7 @@ export function nearestFreeSpot(id: BuildingId, near: Spot, placements: Placemen
     for (let y = 0; y + d <= MAP_SIZE; y++) {
       const distance = (x + w / 2 - near.x) ** 2 + (y + d / 2 - near.y) ** 2;
       if (distance >= bestDistance) continue;
-      if (placementProblem(id, { x, y }, placements, names, rocky, road)) continue;
+      if (placementProblem(id, { x, y }, placements, names, rocky, road, access)) continue;
       best = { x, y };
       bestDistance = distance;
     }

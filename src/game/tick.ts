@@ -1,6 +1,6 @@
 import { cartEventsBetween, getCartRoutes } from './haulage';
 import { RESOURCES, RESOURCE_INFO, emptyStock, type Resource } from './resources';
-import { BUILDING_IDS, BUILDING_INFO, DWELLING_UNIT, buildingStats, workedLevel, type BuildingId } from './buildings';
+import { BUILDING_IDS, BUILDING_INFO, DWELLING_UNIT, buildingStats, taxPerMinute, workedLevel, type BuildingId } from './buildings';
 import { ARMY_RECRUITING, ARMY_UNITS, MAX_MUSTERS_WAITING, MUSTER_SECONDS, unitGrowth, type ArmyUnit } from './units';
 import { actionSeconds, createBattle, resolveBattle, stepAI, type Battle } from './combat';
 import { RAID_AUTO_AFTER, RAID_WARNING, raidKind, raidParty, raidSide, raidStrength } from './raids';
@@ -84,36 +84,52 @@ export function tickGame(state: GameState): Partial<GameState> {
   const mineExitIn = { ...state.mineExit };
   let cartLoads = state.cartLoads;
   let toMineExit = 0;
+  // What the carts have on board: a cart only loads what its resource's bin at the exit will have room
+  // for when it gets there (counting the loads already on their way), so a full bin never overflows —
+  // and a resource backed up to the exit (its warehouse full) doesn't stop the carts for the others: a
+  // cart whose miner's ore has no room runs that trip empty.
+  const inFlight = emptyStock();
+  for (const load of Object.values(cartLoads)) inFlight[load.resource] += load.amount;
+  const room = (resource: Resource) => Math.max(0, state.mineExitCapacity - mineExitIn[resource] - inFlight[resource]);
   const routes = getCartRoutes(selectMineLayout(state), state.carts);
   for (const [cart, route] of routes) {
     const tips = cartEventsBetween(route, from, to, 'tip');
     const loads = cartEventsBetween(route, from, to, 'load');
     if (tips.length === 0 && loads.length === 0) continue;
     cartLoads = cartLoads === state.cartLoads ? { ...cartLoads } : cartLoads;
+    let kept = false;
     if (tips.length > 0) {
       const carried = cartLoads[cart] as CartLoad | undefined;
-      if (carried && carried.amount > 0) {
-        mineExitIn[carried.resource] = roundCoal(mineExitIn[carried.resource] + carried.amount);
-        toMineExit = roundCoal(toMineExit + carried.amount);
-      }
       delete cartLoads[cart];
+      if (carried && carried.amount > 0) {
+        inFlight[carried.resource] = roundCoal(inFlight[carried.resource] - carried.amount);
+        // (A save from before loads were held back may still carry more than fits: the rest stays on board.)
+        const tipped = roundCoal(Math.min(carried.amount, Math.max(0, state.mineExitCapacity - mineExitIn[carried.resource])));
+        mineExitIn[carried.resource] = roundCoal(mineExitIn[carried.resource] + tipped);
+        toMineExit = roundCoal(toMineExit + tipped);
+        if (carried.amount - tipped > 0) {
+          cartLoads[cart] = { resource: carried.resource, amount: roundCoal(carried.amount - tipped) };
+          inFlight[carried.resource] = roundCoal(inFlight[carried.resource] + carried.amount - tipped);
+          kept = true;
+        }
+      }
     }
+    if (kept) continue;
     for (const trip of loads) {
       const resource = route.resources[trip];
-      const take = Math.min(vein[resource], state.mineCartCapacity);
+      const take = roundCoal(Math.min(vein[resource], state.mineCartCapacity, room(resource)));
+      if (take <= 0) continue;
       vein[resource] = roundCoal(vein[resource] - take);
+      inFlight[resource] = roundCoal(inFlight[resource] + take);
       cartLoads[cart] = { resource, amount: take };
     }
   }
 
-  // Carts keep rolling only while every bin they deliver to at the mine exit has room for a load.
-  const carried = emptyStock();
-  for (const load of Object.values(cartLoads)) carried[load.resource] += load.amount;
+  // Carts keep rolling while there's anything to carry: a load on board, or ore in a miner's bin with room
+  // for it at the exit.
   const served = new Set<Resource>();
   for (const route of routes.values()) route.resources.forEach((resource) => served.add(resource));
-  const canHaul = [...served].every(
-    (resource) => mineExitIn[resource] + carried[resource] + state.mineCartCapacity <= state.mineExitCapacity,
-  );
+  const canHaul = Object.values(cartLoads).some((load) => load.amount > 0) || [...served].some((resource) => vein[resource] > 0 && room(resource) > 0);
 
   // Surface hauling: mine exit → mine stockpile → warehouse, in the same tick as a delivery.
   const toMine = transfer(mineExitIn, state.mineStock, state.surfaceHaul, state.mineCapacity);
@@ -365,15 +381,15 @@ export function tickGame(state: GameState): Partial<GameState> {
   }
 
   const structure = buildingStats(buildings, undefined, techs);
-  // The keep collects taxes every five seconds.
+  // The keep collects taxes every five seconds: each peasant pays the keep's level in gold a minute.
   const elapsedSeconds = state.elapsedSeconds + 1;
-  if (elapsedSeconds % 5 === 0) gold = Math.round((gold + structure.taxPerFiveSeconds) * 100) / 100;
+  if (elapsedSeconds % 5 === 0) gold = Math.round((gold + taxPerMinute(structure, state.population) / 12) * 100) / 100;
 
   // New peasants come to the campfire while there are free beds (the houses' staff keep the beds).
   const before = { sites, pendingSites, carts: state.carts, construction, clearOrders, buildings, paused: state.paused };
   const beds = buildingStats(buildings, workforceOf({ ...before, population: state.population }).staff, techs).beds;
   let population = state.population;
-  if (elapsedSeconds % structure.arrivalSeconds === 0 && population < beds && roomForNewcomer({ population, buildings, techs, homes, hungry })) population += 1;
+  if (elapsedSeconds % structure.arrivalSeconds === 0 && population < beds && roomForNewcomer({ population, buildings, techs, homes, hungry, placements: state.placements, roads: state.roads })) population += 1;
 
   // Staff the buildings from whoever isn't under orders; what each building does follows its staff.
   const workforce = workforceOf({ ...before, population });

@@ -17,7 +17,7 @@ export type PaintTile = { x: number; y: number; ok: boolean };
  * shows the grid on the river too (fishing huts).
  */
 type Tile = { x: number; y: number };
-export type Ghost = { plot: Plot | null; valid: boolean; belt?: boolean; tiles?: PaintTile[]; allowed?: Tile[]; rocky?: Tile[]; water?: boolean };
+export type Ghost = { plot: Plot | null; valid: boolean; belt?: boolean; tiles?: PaintTile[]; allowed?: Tile[]; rocky?: Tile[]; water?: boolean; doors?: PaintTile[] };
 const NO_TILES: Tile[] = [];
 
 /**
@@ -121,13 +121,16 @@ export function PlacementGhost({ ghost }: { ghost: Ghost }) {
   // The lit ground only changes with what's placed, not as the footprint is dragged about.
   const allowedSvg = useMemo(() => tileRuns(allowed), [allowed]);
   const rockySvg = useMemo(() => tileRuns(rocky), [rocky]);
-  const [area, left, right, lid, ok, bad, ground, rocks] = useSvgPaths([
+  const doors = ghost.doors ?? [];
+  const [area, left, right, lid, ok, bad, ground, rocks, doorOk, doorBad] = useSvgPaths([
     footprint,
     ...shell,
     tiles.length > 0 ? tileDiamonds(tiles.filter((tile) => tile.ok)) : '',
     tiles.length > 0 ? tileDiamonds(tiles.filter((tile) => !tile.ok)) : '',
     allowedSvg,
     rockySvg,
+    doors.length > 0 ? tileDiamonds(doors.filter((tile) => tile.ok)) : '',
+    doors.length > 0 ? tileDiamonds(doors.filter((tile) => !tile.ok)) : '',
   ]);
   gridPaths ??= { land: parseSvg(gridLines(false)), water: parseSvg(gridLines(true)) };
   beltPaths ??= { tiles: parseSvg(BELT), edges: parseSvg(`${landRing(3)} ${landRing(5)}`) };
@@ -158,6 +161,15 @@ export function PlacementGhost({ ghost }: { ghost: Ghost }) {
         <>
           <Path path={ok} color="rgba(140, 220, 120, 0.55)" />
           <Path path={bad} color="rgba(232, 96, 74, 0.55)" />
+        </>
+      )}
+      {/* In front of the door: green where a road joined to the keep and the gate reaches it, red where none does. */}
+      {doors.length > 0 && (
+        <>
+          <Path path={doorOk} color="rgba(140, 220, 120, 0.6)" />
+          <Path path={doorOk} style="stroke" strokeWidth={1.2} color="#9fe08a" />
+          <Path path={doorBad} color="rgba(232, 96, 74, 0.5)" />
+          <Path path={doorBad} style="stroke" strokeWidth={1.2} color="#ff7a5c" />
         </>
       )}
       {plot && (

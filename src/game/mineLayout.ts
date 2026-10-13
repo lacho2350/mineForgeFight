@@ -52,7 +52,12 @@ export type MineLayout = {
   openedStations: Set<string>;
   /** Station sites (worked or not) for every opened station, by level. */
   stationsByLevel: Map<number, Site[]>;
+  /** Areas of rock the surveyors have mapped (revealed though nothing's dug there). */
+  surveys: Survey[];
 };
+
+/** A surveyed area: every tile within `radius` (in rows and columns) of the centre is known. */
+export type Survey = { row: number; column: number; radius: number };
 
 export const stationKey = (level: number, station: number) => `${String(level)}:${String(station)}`;
 
@@ -264,6 +269,7 @@ export function buildMineLayout(input: {
   playerDug: string[];
   depositMined: Record<string, number>;
   openedStations: string[];
+  surveys?: Survey[];
 }): MineLayout {
   if (cached && cached.version === input.version) return cached;
   const { depth, sites, playerDug, depositMined } = input;
@@ -329,11 +335,36 @@ export function buildMineLayout(input: {
     depositMined,
     openedStations,
     stationsByLevel,
+    surveys: input.surveys ?? [],
   };
   return cached;
 }
 
 export const isDug = (layout: MineLayout, row: number, column: number) => layout.kinds.has(tileKey(row, column));
+
+// ——— What's known of the rock ———
+
+/** Rock this many tiles (or more) from the nearest dug tile or the open surface is dark: unknown. */
+export const FOG_REACH = 4;
+
+/** Tiles (the larger of rows and columns) from the nearest dug tile or the open surface, up to FOG_REACH. */
+export function fogDistance(layout: MineLayout, row: number, column: number) {
+  if (row < MINE_SURFACE_ROWS) return 0;
+  let distance = Math.min(FOG_REACH, row - (MINE_SURFACE_ROWS - 1));
+  for (let r = row - FOG_REACH; r <= row + FOG_REACH; r += 1) {
+    for (const c of layout.dugByRow.get(r) ?? []) {
+      distance = Math.min(distance, Math.max(Math.abs(r - row), Math.abs(c - column)));
+    }
+  }
+  return distance;
+}
+
+/** Has a survey mapped this tile? */
+export const isSurveyed = (layout: MineLayout, row: number, column: number) =>
+  layout.surveys.some((survey) => Math.max(Math.abs(survey.row - row), Math.abs(survey.column - column)) <= survey.radius);
+
+/** Is what's in this tile known: near a tunnel (in the light) or surveyed? */
+export const isRevealed = (layout: MineLayout, row: number, column: number) => fogDistance(layout, row, column) < FOG_REACH || isSurveyed(layout, row, column);
 
 // ——— Miner sites ———
 
@@ -364,7 +395,9 @@ function freeDepositSites(layout: MineLayout): Site[] {
 }
 
 function freeStationSites(layout: MineLayout): Site[] {
-  const taken = new Set(layout.sites.filter((site) => site.kind === 'station').map((site) => tileKey(site.row, site.column)));
+  // A station whose standing tile any miner already stands on (a deposit miner too) isn't free: two
+  // miners on one tile would be drawn as one, and calling one back would send both away.
+  const taken = new Set(layout.sites.map((site) => tileKey(site.row, site.column)));
   const player = new Set(layout.playerDug);
   // Player tiles in a gallery's own rail row just extend the gallery, so stations may connect to them.
   const touchesPlayer = (row: number, column: number, railRow: number) =>
@@ -396,7 +429,8 @@ export type DepositInfo = {
   worker: Site | null;
   /** Where a miner would stand to work it, if it can be worked right now. */
   standing: Site | null;
-  status: 'worked' | 'available' | 'unreachable' | 'depleted' | 'empty';
+  /** `unknown`: dark rock nobody has dug near or surveyed — what's in it isn't known. */
+  status: 'worked' | 'available' | 'unreachable' | 'depleted' | 'empty' | 'unknown';
 };
 
 // Where a miner could stand to work the coal face at (row, column): the station chamber for a
@@ -419,6 +453,7 @@ function standingSiteFor(layout: MineLayout, row: number, column: number): Site 
 /** Everything the player needs to know about the deposit on a tile, for the info panel. */
 export function getDepositInfo(layout: MineLayout, key: string): DepositInfo {
   const { row, column } = parseKey(key);
+  if (!isRevealed(layout, row, column)) return { key, row, column, deposit: null, total: 0, remaining: 0, worker: null, standing: null, status: 'unknown' };
   const deposit = isDug(layout, row, column) ? null : depositAt(row, column);
   const total = depositTotal(row, column);
   const remaining = deposit ? depositRemaining(layout, row, column) : 0;

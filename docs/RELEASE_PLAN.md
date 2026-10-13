@@ -1,6 +1,7 @@
 # Release plan: Google Play, Apple App Store and PC
 
-Written 2026-10-12. Store rules change; the facts below were checked on that date (sources at the end).
+Written 2026-10-12; payments and rewarded ads added 2026-10-13. Store rules change; the facts below were
+checked on those dates (sources at the end).
 
 ## Where the game stands
 
@@ -8,9 +9,10 @@ Written 2026-10-12. Store rules change; the facts below were checked on that dat
   SDK 57 targets Android API 36 and builds with Xcode 26.4 for iOS 16.4+, which already meets today's
   store rules (Google Play: target API 36 since 31 Aug 2026; Apple: built with Xcode 26 / the iOS 26 SDK
   since 28 Apr 2026). EAS Build uses the right Xcode on its own Macs — no Mac needed.
-- **Never run on a phone yet.** Everything so far was built and tested in the browser (Skia's web
-  renderer, CanvasKit). The native code paths exist (`GameScene.tsx`, `MineScene.tsx`, `BattleBoard.tsx`,
-  saves through `expo-sqlite/localStorage`) but have not been exercised. This is the biggest unknown.
+- **Run on Android once, on an emulator only** (2026-10-12, Expo Go on an API 36 Pixel image): the
+  stronghold, placing, cottages, the mine, a battle, saving and Android's Back all worked; still to see:
+  a real phone, an iPhone, and a low-end device's speed. Everything else was built and tested in the
+  browser (Skia's web renderer, CanvasKit).
 - **Not set up for the stores**: no `eas.json`, no Android `package` or iOS `bundleIdentifier` in
   `app.json`, version `1.0.0`, portrait only, `ios.supportsTablet: true`.
 - **Legal**: `LICENSE` is still the Expo template's MIT licence with Expo's copyright — replace it with
@@ -27,7 +29,8 @@ Written 2026-10-12. Store rules change; the facts below were checked on that dat
 1. **Identifiers** (permanent once published): e.g. `com.lacho.mineforgefight` for both
    `android.package` and `ios.bundleIdentifier`, and the store name ("Mine Forge Fight" must be free on
    both stores).
-2. **Business model**: free, paid up front, free with in-app purchases, or ads. This decides the store
+2. **Business model**: free, paid up front, free with in-app purchases, or ads (see **Money** below for
+   what in-app purchases and rewarded ads take). This decides the store
    forms (privacy labels, data safety), extra libraries (store billing, an ads SDK), and on Steam any
    in-game purchase must go through the Steam Wallet. Simplest first release: **paid, or free with no
    purchases and no ads** — then the game collects no data and the privacy forms are trivial.
@@ -84,6 +87,83 @@ Written 2026-10-12. Store rules change; the facts below were checked on that dat
    aimed at children unless you want the Families rules), ads declaration.
 8. **Release**: production with a **staged rollout** (e.g. 10% → 50% → 100%); later updates either go
    through the store (`eas build` + `eas submit`) or, for JS-only fixes, **EAS Update** over the air.
+
+## Money: in-app purchases and rewarded ads (Android first)
+
+**The step-by-step Android plan with rewarded ads — what to change in this project, the AdMob and Play Console
+set-up, the forms and the testing tracks — is in [ANDROID_ADS_PLAN.md](ANDROID_ADS_PLAN.md).**
+
+**Decided and built (2026-10-13):** an interstitial ad at most every 3 minutes at natural pauses; *No more
+ads* €2; packs of 1,000 / 10,000 / 100,000 of gold and every ore at €1 / €5 / €20 (expo-iap +
+react-native-google-mobile-ads; what's left is console set-up — see ANDROID_ADS_PLAN.md).
+
+Both need native modules, so neither runs in Expo Go: they need a development build
+(`npx eas-cli@latest build --profile development`) and testing on a device (or the emulator, for ads).
+
+### In-app purchases (Google Play Billing)
+
+- **The rule**: digital goods sold in a Play-installed game must go through **Google Play Billing**, and
+  since **31 Aug 2026 every new app and update must use Billing Library 8 or later** (an extension to
+  1 Nov 2026 can be asked for on the Play Console's Policy status page; version 8 is accepted until
+  31 Aug 2027). So start on a current library — don't pick anything still on 7.
+- **Library** (the two the Expo guide names):
+  - **`expo-iap`** (OpenIAP; `npx expo install expo-iap` + its config plugin). Android sits on Billing
+    Library 9.1. Free; you keep the receipts and do your own server-side checks if you want them. API:
+    `useIAP()` → `fetchProducts({ skus })` → `requestPurchase(…)` → `finishTransaction({ purchase,
+    isConsumable })`. **Finish every purchase**: Google refunds one not acknowledged within 3 days.
+    (`react-native-iap` was archived on 4 Aug 2026 — `expo-iap` is its successor.)
+  - **RevenueCat** (`react-native-purchases`): a hosted layer over Play Billing and StoreKit —
+    receipt checking, refunds, a dashboard, paywalls; a mock mode works in Expo Go for the UI. Free up to
+    $2.5K tracked revenue a month, then 1% of it (on top of Google's fee).
+  - Suggestion: `expo-iap` for a few one-off items (cheaper, no account); RevenueCat if subscriptions or
+    serious analytics come later.
+- **Play Console set-up**: a **payments profile** (legal name, a street address — no PO box, tax info,
+  a bank account in the same country, verified), then the products under *Monetize → Products → In-app
+  products* (ids like `gold_small`, `remove_ads`), each with a price. Test with **license testers** on an
+  internal-testing build (test cards, no money moves).
+- **Google's fee**: the Play help page (checked 2026-10-13) lists, for the first $1M a year in Australia,
+  the EEA, Japan, the UK and the US, *10% + a 5% billing fee* on purchases by new installs and *25% + 5%*
+  for existing installs, and *15%* in the other markets (30% above $1M); re-check before setting prices.
+- **What fits Mine Forge Fight** (one-off, no pay-to-win pressure on a single-player game): a *Supporter
+  pack* (cosmetic banner + a starting boost), *Remove ads* (if ads go in), and maybe small *gold* packs
+  (consumables) — and keep the save/purchase in step: grant the item in the store's state only after
+  `finishTransaction` succeeds, and re-grant non-consumables on every launch from the purchase history
+  (`getAvailablePurchases`), since saves are local.
+
+### Rewarded ads (AdMob)
+
+- **Library**: **`react-native-google-mobile-ads`** (Invertase; `npx expo install
+  react-native-google-mobile-ads` + its config plugin with `androidAppId` / `iosAppId`). Supports
+  rewarded, rewarded interstitial, interstitial, banner, app-open and native ads.
+- **AdMob account**: create the app and a *rewarded* ad unit; use Google's **test ad unit ids** while
+  developing (real ads clicked in testing can get the account banned); add an `app-ads.txt` on the
+  game's website.
+- **Consent (required)**: for users in the **EEA, the UK and Switzerland** Google only serves
+  personalised ads through a **Google-certified consent platform** — the simplest is Google's own UMP,
+  built into the library as `AdsConsent` (`AdsConsent.gatherConsent()` before the first ad, then load ads
+  only when `canRequestAds`; set `delayAppMeasurementInit` in the plugin). Without it, ads there are
+  restricted.
+- **AdMob's rules for rewards**: the player must **choose** to watch (a button naming the reward, e.g.
+  *"Watch an ad: surveyors ready now"*), must be able to skip/decline without penalty, and must get the
+  reward promised; **never real money** or anything transferable outside the game.
+- **What fits the game**: a rewarded ad to *send the surveyors out again now* (resetting the survey
+  cooldown), *finish a building a minute sooner*, *+N gold once an hour*, or *double the next barge's
+  pay* — all capped (say 5 a day) so the game isn't balanced around them. No interstitials mid-battle.
+- **Play Console forms when ads are in**: the **Ads** declaration ("contains ads" shows on the listing);
+  **Data safety**: the Mobile Ads SDK collects and shares the **advertising ID**, other device
+  identifiers, IP address, app interactions and diagnostics for advertising/analytics/fraud prevention —
+  declare them (it adds the `com.google.android.gms.permission.AD_ID` permission; keep the form and the
+  manifest in step); **target audience** 13+ unless you want the Families rules (then only
+  Families-certified ad settings); the content rating questionnaire asks about ads too.
+- On iOS the same library also asks App Tracking Transparency (`userTrackingUsageDescription` in the
+  plugin) — that's Phase 2.
+
+### Order
+
+1. Decide: IAP only, ads only, or both (both = consent + Data safety work + a *Remove ads* item).
+2. Development build with the library (or both); sandbox/test ids only.
+3. Products in Play Console + license testers; AdMob app + rewarded unit + UMP message.
+4. Internal test track → the closed test (Phase 1, step 5) with purchases and ads switched on.
 
 ## Phase 2 — Apple App Store (iOS / iPadOS)
 
@@ -143,12 +223,23 @@ EAS plan if the free tier's build queue is too slow.
 
 ## What I can do next
 
+- **The detailed to-do from here to release: [NEXT_STEPS.md](NEXT_STEPS.md).**
+- Carry out [ANDROID_ADS_PLAN.md](ANDROID_ADS_PLAN.md): identifiers, `eas.json`, the ads library with consent, the
+  three rewarded-ad bonuses (`rewards.ts`) and their buttons, then the first Android builds.
 - Add the identifiers, `eas.json` profiles and remote versioning; replace the template LICENSE.
 - Run the first development builds and fix whatever breaks on Android and iOS.
 - Bundle CanvasKit locally and scaffold the Electron desktop app with electron-builder.
 - A settings screen, a first-time tutorial, and a crash reporter.
 
 ## Sources
+
+- Billing Library deadlines: https://developer.android.com/google/play/billing/deprecation-faq ; release notes: https://developer.android.com/google/play/billing/release-notes
+- Expo in-app purchases guide (expo-iap, react-native-purchases): https://docs.expo.dev/guides/in-app-purchases/ ; expo-iap setup (Billing Library 9.1): https://openiap.dev/docs/setup/expo ; react-native-iap archived: https://github.com/hyochan/react-native-iap
+- RevenueCat with Expo: https://www.revenuecat.com/docs/getting-started/installation/expo ; pricing (third-party summary): https://costbench.com/software/subscription-billing/revenuecat/
+- Google Play service fees: https://support.google.com/googleplay/android-developer/answer/112622 ; payments profile: https://support.google.com/googleplay/android-developer/answer/7161426
+- react-native-google-mobile-ads: https://www.npmjs.com/package/react-native-google-mobile-ads ; EU consent (AdsConsent / UMP): https://docs.page/invertase/react-native-google-mobile-ads/european-user-consent
+- AdMob rewarded ads: https://support.google.com/admob/answer/7372450 ; rules for rewards: https://support.google.com/admob/answer/7313578 ; consent requirements (EEA, UK, Switzerland): https://support.google.com/admob/answer/13554116
+- Mobile Ads SDK and the Data safety form: https://developers.google.com/admob/android/privacy/play-data-disclosure
 
 - Expo — submit to app stores: https://docs.expo.dev/deploy/submit-to-app-stores/ ; Android submission: https://docs.expo.dev/submit/android/ ; Apple privacy manifests: https://docs.expo.dev/guides/apple-privacy/ ; docs index: https://docs.expo.dev/llms.txt
 - Expo SDK 57 (target API 36, iOS 16.4+, Xcode 26.4): https://expo.dev/changelog/sdk-57

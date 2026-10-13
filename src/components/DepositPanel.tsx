@@ -32,7 +32,7 @@ export default function DepositPanel({
   onRelease: () => void;
   onClose: () => void;
 }) {
-  const title = info.deposit ? RESOURCE_INFO[info.deposit].deposit : info.status === 'empty' ? 'Rock' : 'Tunnel';
+  const title = info.deposit ? RESOURCE_INFO[info.deposit].deposit : info.status === 'unknown' ? 'Unknown rock' : info.status === 'empty' ? 'Rock' : 'Tunnel';
   const minedOut = info.total - info.remaining;
   const progress = info.total > 0 ? minedOut / info.total : 0;
 
@@ -47,6 +47,7 @@ export default function DepositPanel({
     depleted: 'Mined out. Nothing left to dig here.',
     unminable: 'Miners can only work coal for now. Dig around it.',
     empty: 'Nothing to mine here.',
+    unknown: 'Dark rock: nobody knows what’s in it. Survey from a tunnel near it (🔦 SURVEY, then tap the tunnel) to map the rock round there, or dig closer.',
   }[info.status];
 
   return (

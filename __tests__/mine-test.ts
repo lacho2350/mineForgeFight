@@ -1,6 +1,6 @@
 import { MINE_SHAFT_COLUMN, getTunnelRow } from '../src/components/MineMapLayout';
 import { selectMineLayout } from '../src/game/hold';
-import { checkDigStep, isDug, tileKey } from '../src/game/mineLayout';
+import { checkDigStep, getDepositInfo, isDug, stationSite, tileKey } from '../src/game/mineLayout';
 import { game, newGame } from './support';
 
 beforeEach(() => newGame({ gold: 10_000 }));
@@ -67,5 +67,19 @@ describe('digging under a main tunnel', () => {
     const planned = new Set([...shaft, tileKey(ENTRANCE_RAIL, LIFT - 3)]);
     const beside = checkDigStep(layout, planned, tileKey(ENTRANCE_RAIL + 1, LIFT - 3), tileKey(ENTRANCE_RAIL, LIFT - 3));
     expect(beside).toEqual({ ok: false, reason: 'Keep a tile of rock between tunnels.' });
+  });
+});
+
+describe('miners', () => {
+  it('never stand two to a tile: a station isn’t offered where a deposit miner already stands', () => {
+    newGame();
+    const station = stationSite(-1, 2);
+    const face = tileKey(station.faceRow, station.faceColumn);
+    // Free to begin with…
+    expect(getDepositInfo(selectMineLayout(game()), face).standing).toEqual(station);
+    // …but not once a miner works another face from its standing tile.
+    newGame({ sites: [{ row: station.row, column: station.column, faceRow: station.row - 1, faceColumn: station.column, kind: 'deposit' }], layoutVersion: game().layoutVersion + 1 });
+    const standing = getDepositInfo(selectMineLayout(game()), face).standing;
+    expect(standing && tileKey(standing.row, standing.column)).not.toBe(tileKey(station.row, station.column));
   });
 });

@@ -9,8 +9,9 @@ export const SAVE_KEY = 'mineforge-save';
 /**
  * 2: the stronghold map grew outer rings (placements moved 7 tiles in). 3: it grew from 47 to 59 tiles.
  * 4: the eight 2×2 workers' houses became up to 24 one-tile cottages, each kept by its woman.
+ * 5: buildings need a road at the door joined to the keep and the gate (laid free for the ones without).
  */
-export const SAVE_VERSION = 4;
+export const SAVE_VERSION = 5;
 const SAVE_DELAY_MS = 3000;
 
 type Pending = { name: string; value: StorageValue<unknown> };

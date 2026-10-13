@@ -5,8 +5,10 @@ import {
   depositRemaining,
   depositStep,
   depositTotal,
+  fogDistance,
   hash,
   isDug,
+  isSurveyed,
   levelOfRow,
   parseKey,
   tileKey,
@@ -47,22 +49,15 @@ const palette = {
   rope: '#c9b48a',
 };
 
-// Darkness by Chebyshev distance (in tiles) from the nearest dug tile or the open surface.
+// Darkness by Chebyshev distance (in tiles) from the nearest dug tile or the open surface (`fogDistance`,
+// up to FOG_REACH: dark); rock the surveyors have mapped is only shaded, so its deposits show.
 const FOG_ALPHA = [0, 0.12, 0.58, 0.88];
+const SURVEYED_ALPHA = 0.42;
 
-function fogDistance(layout: MineLayout, row: number, column: number) {
-  if (row < MINE_SURFACE_ROWS) return 0;
-  let distance = row - (MINE_SURFACE_ROWS - 1);
-  for (let r = row - FOG_ALPHA.length; r <= row + FOG_ALPHA.length; r += 1) {
-    for (const c of layout.dugByRow.get(r) ?? []) {
-      distance = Math.min(distance, Math.max(Math.abs(r - row), Math.abs(c - column)));
-    }
-  }
-  return distance;
-}
-
-function fogAlpha(distance: number) {
-  return distance < FOG_ALPHA.length ? FOG_ALPHA[distance] : 1;
+function tileFog(layout: MineLayout, row: number, column: number) {
+  const distance = fogDistance(layout, row, column);
+  const alpha = distance < FOG_ALPHA.length ? FOG_ALPHA[distance] : 1;
+  return alpha > SURVEYED_ALPHA && isSurveyed(layout, row, column) ? SURVEYED_ALPHA : alpha;
 }
 
 function dirtColor(row: number) {
@@ -457,7 +452,7 @@ function drawRow(canvas: SkCanvas, row: number, from: number, to: number, layout
   const faces = new Set(layout.sites.filter((site) => site.faceRow === row).map((site) => site.faceColumn));
 
   for (let column = from; column < to; column += 1) {
-    if (isDug(layout, row, column) || fogAlpha(fogDistance(layout, row, column)) >= 1) continue;
+    if (isDug(layout, row, column) || tileFog(layout, row, column) >= 1) continue;
     drawDirtTile(p, row, column);
     drawDeposit(p, layout, row, column, faces.has(column));
   }
@@ -485,9 +480,9 @@ function drawRow(canvas: SkCanvas, row: number, from: number, to: number, layout
 
   // Blocky darkness, merged into runs of equal shade.
   let runStart = from;
-  let runAlpha = fogAlpha(fogDistance(layout, row, from));
+  let runAlpha = tileFog(layout, row, from);
   for (let column = from + 1; column <= to; column += 1) {
-    const alpha = column < to ? fogAlpha(fogDistance(layout, row, column)) : -1;
+    const alpha = column < to ? tileFog(layout, row, column) : -1;
     if (alpha === runAlpha) continue;
     if (runAlpha > 0) p.rect(runStart * T, 0, (column - runStart) * T, T, palette.fog, runAlpha);
     runStart = column;
@@ -616,6 +611,12 @@ function trackChanges(layout: MineLayout) {
   for (const key of changed) {
     const { row, column } = parseKey(key);
     markDirty(row, column);
+  }
+  // A new survey lights up its whole patch.
+  for (const survey of layout.surveys.slice(previous.surveys.length)) {
+    for (let row = survey.row - survey.radius; row <= survey.row + survey.radius; row += 1) {
+      for (let column = survey.column - survey.radius; column <= survey.column + survey.radius; column += 1) markDirty(row, column);
+    }
   }
 }
 

@@ -7,12 +7,20 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { loadGame, startSimulation } from '../game/gameStore';
 import { flushSave } from '../game/save';
+import { startAds } from '../components/ads';
+import { startStore } from '../components/purchases';
 
 // Load the save before anything renders (this localStorage is synchronous on every platform).
 void loadGame();
 
 export default function RootLayout() {
   useEffect(() => startSimulation(), []);
+  // The store (prices, purchases not yet credited) and the ads (consent first). Neither does anything on
+  // the web or in Expo Go.
+  useEffect(() => {
+    void startStore();
+    void startAds();
+  }, []);
 
   // Saves are batched; write the latest one when the app goes to the background or the page closes.
   useEffect(() => {

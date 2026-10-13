@@ -4,14 +4,21 @@
 // Paths are found over the tile grid (4 directions; buildings, the keep and the mine are in the way,
 // so where a building stands matters too). Peasants can also walk out through the gate, over the
 // bridge and round the land outside the walls (to the docks on the riverbank). Pure TS.
+import type { BuildingId } from './buildings';
 import {
   CASTLE,
+  FIXED_SPOTS,
+  FOOTPRINTS,
   GATE_TILES,
   MAP_SIZE,
   STARTING_ROAD_RUNS,
   coveredTiles,
+  doorTiles,
   isOpenGround,
+  MAIN_ROAD,
+  needsRoad,
   onGateRoad,
+  onMainRoad,
   tileKey,
   zoneAt,
   type Footprint,
@@ -27,8 +34,10 @@ export type RoadKind = (typeof ROAD_KINDS)[number];
 export type Roads = Record<string, RoadKind>;
 
 /** Walking speed on bare ground, in tiles per second, and over rocks not yet cleared. */
-export const GROUND_SPEED = 1;
-export const ROCK_SPEED = 0.4;
+/** (Off the roads people walk 70% slower than on a dirt road, so they take a road wherever it's quicker; rocks
+ * slow them as much again as before.) */
+export const GROUND_SPEED = 0.45;
+export const ROCK_SPEED = 0.18;
 
 export const ROAD_INFO: Record<RoadKind, { name: string; speed: number; gold: number; resources: Partial<Record<Resource, number>> }> = {
   dirt: { name: 'Dirt road', speed: 1.5, gold: 2, resources: {} },
@@ -51,10 +60,122 @@ export function startingRoads(placements: Placements): Roads {
   return roads;
 }
 
+// ——— Roads to the keep and the gate ———
+
+const box = (id: 'keep' | 'gate') => ({ ...(FIXED_SPOTS[id] as Spot), ...FOOTPRINTS[id] });
+const inBox = (b: Spot & Footprint, x: number, y: number) => x >= b.x && x < b.x + b.w && y >= b.y && y < b.y + b.d;
+// Beside a footprint (sharing an edge with one of its tiles), not in it.
+const beside = (b: Spot & Footprint, x: number, y: number) =>
+  !inBox(b, x, y) && (inBox(b, x - 1, y) || inBox(b, x + 1, y) || inBox(b, x, y - 1) || inBox(b, x, y + 1));
+const KEEP_BOX = box('keep');
+const GATE_BOX = box('gate');
+const NEXT: [number, number][] = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+
+const accessCache = new WeakMap<Roads, ReadonlySet<string>>();
+/**
+ * The road tiles a building's door may be on: every stretch of road (tiles joined side by side) that
+ * reaches both the keep and the main gate. Worked out once per roads object.
+ */
+export function accessRoads(roads: Roads): ReadonlySet<string> {
+  const known = accessCache.get(roads);
+  if (known) return known;
+  const access = new Set<string>();
+  const seen = new Set<string>();
+  for (const start of Object.keys(roads)) {
+    if (seen.has(start)) continue;
+    const stretch = [start];
+    seen.add(start);
+    let keep = false;
+    let gate = false;
+    for (let i = 0; i < stretch.length; i++) {
+      const [x, y] = stretch[i].split(',').map(Number);
+      keep ||= beside(KEEP_BOX, x, y);
+      gate ||= beside(GATE_BOX, x, y);
+      for (const [dx, dy] of NEXT) {
+        const key = tileKey(x + dx, y + dy);
+        if (roads[key] && !seen.has(key)) {
+          seen.add(key);
+          stretch.push(key);
+        }
+      }
+    }
+    if (keep && gate) for (const key of stretch) access.add(key);
+  }
+  accessCache.set(roads, access);
+  return access;
+}
+
+/** Is there a road at this building's door joined to the keep and the main gate? */
+export const hasRoadAccess = (id: BuildingId, spot: Spot, roads: Roads) => {
+  const access = accessRoads(roads);
+  return doorTiles(id, spot).some((tile) => access.has(tileKey(tile.x, tile.y)));
+};
+
+/**
+ * Lay dirt road, free, from the door of every placed building that lacks one to the nearest road joined to
+ * the keep and the gate (the shortest way over open town ground; rocks on it are the caller's to clear;
+ * the main road always joins the keep to the gate). For a new game's first buildings and saves from
+ * before buildings needed a road. Returns the roads, and how many tiles were laid.
+ */
+export function joinBuildings(placements: Placements, roads: Roads): { roads: Roads; laid: number } {
+  const covered = coveredTiles(placements);
+  const open = (x: number, y: number) => zoneAt(x, y) === 'town' && isOpenGround(x, y) && !covered.has(tileKey(x, y));
+  let joined = roads;
+  let laid = 0;
+  for (const [id, spot] of Object.entries(placements) as [BuildingId, Spot][]) {
+    if (!needsRoad(id) || hasRoadAccess(id, spot, joined)) continue;
+    const access = accessRoads(joined);
+    // Breadth-first from the door tiles to the first tile of the joined roads.
+    const from = new Map<string, string | null>();
+    const queue: Spot[] = [];
+    for (const door of doorTiles(id, spot)) {
+      if (!open(door.x, door.y)) continue;
+      from.set(tileKey(door.x, door.y), null);
+      queue.push(door);
+    }
+    let reached: string | null = null;
+    for (let i = 0; i < queue.length && !reached; i++) {
+      const { x, y } = queue[i];
+      for (const [dx, dy] of NEXT) {
+        const key = tileKey(x + dx, y + dy);
+        if (from.has(key)) continue;
+        if (access.has(key)) {
+          reached = tileKey(x, y);
+          break;
+        }
+        if (!open(x + dx, y + dy)) continue;
+        from.set(key, tileKey(x, y));
+        queue.push({ x: x + dx, y: y + dy });
+      }
+    }
+    if (!reached) continue;
+    joined = { ...joined };
+    for (let key: string | null = reached; key; key = from.get(key) ?? null) {
+      if (!joined[key]) {
+        joined[key] = 'dirt';
+        laid += 1;
+      }
+    }
+  }
+  return { roads: joined, laid };
+}
+
+/** The roads with the main road (keep → gate) whole again: dirt wherever it's missing and nothing stands. */
+export function withMainRoad(roads: Roads, covered: Set<string>): Roads {
+  let whole = roads;
+  for (let y = MAIN_ROAD.y0; y <= MAIN_ROAD.y1; y++) {
+    const key = tileKey(MAIN_ROAD.x, y);
+    if (whole[key] || covered.has(key)) continue;
+    if (whole === roads) whole = { ...roads };
+    whole[key] = 'dirt';
+  }
+  return whole;
+}
+
 /** Why a road (or taking one up) can't happen on this tile, or null if it can (`cleared`: rocks cleared so far). */
 export function roadProblem(spot: Spot, kind: RoadKind | 'erase', roads: Roads, covered: Set<string>, cleared: readonly string[] = NO_CLEARING): string | null {
   const key = tileKey(spot.x, spot.y);
-  if (kind === 'erase') return roads[key] ? null : 'No road there.';
+  if (kind === 'erase') return onMainRoad(spot.x, spot.y) ? 'The main road from the keep to the gate stays: it can’t be taken up.' : roads[key] ? null : 'No road there.';
   if (zoneAt(spot.x, spot.y) !== 'town' || !isOpenGround(spot.x, spot.y)) return 'Roads go on open ground inside the wall.';
   if (covered.has(key)) return 'A building stands there.';
   if (rockAt(cleared, spot.x, spot.y)) return 'Rocks in the way: clear them first.';
@@ -103,6 +224,31 @@ function gridFor(placements: Placements, roads: Roads, cleared: readonly string[
   }
   const grid = { open, slow, cache: new Map<string, Walk | null>() };
   byRocks.set(cleared, grid);
+  return grid;
+}
+
+// The carts' grid: road tiles only (not under a building), each at its road's speed.
+const roadGrids = new WeakMap<Placements, WeakMap<Roads, Grid>>();
+function roadGridFor(placements: Placements, roads: Roads): Grid {
+  let byRoads = roadGrids.get(placements);
+  if (!byRoads) {
+    byRoads = new WeakMap();
+    roadGrids.set(placements, byRoads);
+  }
+  const cached = byRoads.get(roads);
+  if (cached) return cached;
+  const covered = coveredTiles(placements);
+  const open = new Uint8Array(MAP_SIZE * MAP_SIZE);
+  const slow = new Float64Array(MAP_SIZE * MAP_SIZE);
+  for (const [key, kind] of Object.entries(roads)) {
+    if (covered.has(key)) continue;
+    const [x, y] = key.split(',').map(Number);
+    if (x < 0 || y < 0 || x >= MAP_SIZE || y >= MAP_SIZE) continue;
+    open[index(x, y)] = 1;
+    slow[index(x, y)] = 1 / ROAD_INFO[kind].speed;
+  }
+  const grid = { open, slow, cache: new Map<string, Walk | null>() };
+  byRoads.set(roads, grid);
   return grid;
 }
 
@@ -164,7 +310,23 @@ class Heap {
 
 /** The quickest walk from one footprint to another, or null if there's no way through (rocks only slow it). */
 export function walkBetween(from: Spot & Footprint, to: Spot & Footprint, placements: Placements, roads: Roads, cleared: readonly string[] = NO_CLEARING): Walk | null {
-  const grid = gridFor(placements, roads, cleared);
+  return route(gridFor(placements, roads, cleared), from, to);
+}
+
+/** The quickest way from one footprint to another on the roads alone (a road tile beside each), or null if no road joins them. */
+export function roadBetween(from: Spot & Footprint, to: Spot & Footprint, placements: Placements, roads: Roads): Walk | null {
+  return route(roadGridFor(placements, roads), from, to);
+}
+
+/**
+ * A cart's way between two footprints: along the roads; only where no road joins them (one taken up since)
+ * over open ground like a walker, so a delivery never stalls.
+ */
+export const cartWay = (from: Spot & Footprint, to: Spot & Footprint, placements: Placements, roads: Roads, cleared: readonly string[] = NO_CLEARING) =>
+  roadBetween(from, to, placements, roads) ?? walkBetween(from, to, placements, roads, cleared);
+
+// Dijkstra over a grid from the tiles beside one footprint to the tiles beside another (cached per grid).
+function route(grid: Grid, from: Spot & Footprint, to: Spot & Footprint): Walk | null {
   const key = `${String(from.x)},${String(from.y)},${String(from.w)},${String(from.d)}>${String(to.x)},${String(to.y)},${String(to.w)},${String(to.d)}`;
   if (grid.cache.has(key)) return grid.cache.get(key) ?? null;
   const starts = doors(grid, from);
@@ -238,8 +400,9 @@ export function walkOn(walk: Walk, points: number[][]): Walk {
 
 // ——— What walking does ———
 
-/** Seconds of walking between the mine and the warehouse that hauling is balanced for. */
-export const HAUL_REFERENCE = 6;
+/** Seconds of walking between the mine and the warehouse that hauling is balanced for: a new game's walk
+ * (5.1 s since the warehouse grew to 5 × 5 — its yard reaches within two tiles of the mine). */
+export const HAUL_REFERENCE = 5;
 /** Seconds of walking from the warehouse to a building site that construction is balanced for. */
 export const BUILD_REFERENCE = 12;
 

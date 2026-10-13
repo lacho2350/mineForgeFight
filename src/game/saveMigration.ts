@@ -27,7 +27,7 @@ import {
   type Placements,
   type Spot,
 } from './cityMap';
-import { haulFactor, isRoadKind, roadProblem, startingRoads, type RoadKind, type Roads } from './roads';
+import { haulFactor, isRoadKind, joinBuildings, roadProblem, startingRoads, withMainRoad, type RoadKind, type Roads } from './roads';
 import { TRAP_INFO, TRAP_KINDS, trapProblem, type Trap } from './traps';
 import { isTechId } from './techs';
 import type { GameState, SavedState } from './state';
@@ -37,9 +37,12 @@ import { buildingFields } from './updates';
 /** An order from when the armory made all the gear (paid up front); kept only to pay older saves back. */
 type LegacyCraftJob = { count: number; made?: number; paid?: { resources?: Record<string, number>; used?: Record<string, number> } };
 
+/** A save on its way in: `joinRoads` marks one from before buildings needed a road (see `migrateSave`). */
+type Incoming = Partial<SavedState> & { joinRoads?: boolean };
+
 // Lay a save over a fresh game. Records are merged key by key, so a save from an older version still gets
 // any buildings, units or resources added since; stats that follow from building levels are recomputed.
-export function mergeSave(saved: Partial<SavedState> | undefined, fresh: GameState): GameState {
+export function mergeSave(saved: Incoming | undefined, fresh: GameState): GameState {
   if (!saved) return fresh;
   const stock = (key: 'vein' | 'mineExit' | 'mineStock' | 'warehouse') => ({ ...emptyStock(), ...saved[key] });
   const buildings = { ...fresh.buildings, ...saved.buildings };
@@ -72,6 +75,12 @@ export function mergeSave(saved: Partial<SavedState> | undefined, fresh: GameSta
       if (isRoadKind(kind) && !roadProblem({ x, y }, kind, roads, covered)) roads[key] = kind;
     }
   }
+  // The main road from the keep to the gate is always there (a save may have had stretches of it taken up).
+  roads = withMainRoad(roads, coveredTiles(placements));
+  // Saves from before buildings needed a road at the door joined to the keep and the gate: those without
+  // get dirt laid free from the door to the nearest such road (the rocks on the way are cleared below).
+  let joined = 0;
+  if (saved.joinRoads) ({ roads, laid: joined } = joinBuildings(placements, roads));
   // Saves from before the rocks: the ground under every building, building site and road counts as
   // cleared, so the hold stands as it was (the rest of the town is rocky now).
   const cleared = new Set((saved.clearedRocks ?? []).filter((key) => typeof key === 'string'));
@@ -188,9 +197,11 @@ export function mergeSave(saved: Partial<SavedState> | undefined, fresh: GameSta
     // Saves from before the losing streak was kept count it from the last raid.
     raidsLostInARow: saved.raidsLostInARow ?? (saved.raidReport?.outcome === 'lost' ? 1 : 0),
     battleDeadline: saved.battle?.status === 'active' ? elapsedSeconds + (saved.battle.auto ? 0 : RAID_AUTO_AFTER) : (saved.battleDeadline ?? 0),
+    // Holds from before the prologue are well under way: it's in the menu for them, not shown at once.
+    prologueSeen: saved.prologueSeen ?? true,
   };
   // The old timed barge's bookkeeping.
-  for (const key of ['shipVisit', 'shipSold', 'craftQueue']) delete (merged as Record<string, unknown>)[key];
+  for (const key of ['shipVisit', 'shipSold', 'craftQueue', 'joinRoads']) delete (merged as Record<string, unknown>)[key];
   // Raids sighted before field battles were sieges. One sighted under older, harsher rules (well beyond what
   // the hold's power now calls for) is sized afresh.
   if (merged.raid && merged.raid.kind !== 'field' && merged.raid.kind !== 'siege') merged.raid = { ...merged.raid, kind: 'siege' };
@@ -199,6 +210,9 @@ export function mergeSave(saved: Partial<SavedState> | undefined, fresh: GameSta
     const power = holdPowerOf(merged);
     const strength = raidStrength(raid.number, raid.kind === 'field' ? power.army : power.total, merged.raidsLostInARow);
     if (partyValue(raid.party) > strength * 1.2) merged.raid = { ...raid, party: raidParty(raid.number, strength, raid.kind) };
+  }
+  if (joined > 0) {
+    merged.notice = `Every building now needs a road at its door joined to the keep and the main gate: ${String(joined)} tile${joined === 1 ? '' : 's'} of dirt road were laid free to the ones without.`;
   }
   if (washedAway.count > 0) {
     merged.notice = `The river now runs up to the far wall: its ${String(washedAway.count)} trap${washedAway.count === 1 ? '' : 's'} on that side were paid back (${String(washedAway.gold)} gold).`;
@@ -209,9 +223,9 @@ export function mergeSave(saved: Partial<SavedState> | undefined, fresh: GameSta
 // Older saves, step by step: version 1 placed buildings on a 32-tile map, which then grew outer rings
 // (raiders, traps, moat, wall), so everything moved in by the same amount; version 2 was on the 47-tile
 // map, which then grew 6 tiles on every side (`grownMap`).
-export function migrateSave(saved: Partial<SavedState> | undefined, version: number): Partial<SavedState> {
+export function migrateSave(saved: Partial<SavedState> | undefined, version: number): Incoming {
   if (!saved) return {};
-  let next = saved;
+  let next: Incoming = saved;
   if (version < 2 && next.placements) {
     const placements: Placements = {};
     for (const [id, spot] of Object.entries(next.placements) as [BuildingId, Spot][]) {
@@ -221,6 +235,8 @@ export function migrateSave(saved: Partial<SavedState> | undefined, version: num
   }
   if (version < 3) next = grownMap(next);
   if (version < 4) next = splitHouses(next);
+  // Buildings didn't need a road at the door: the merge lays the missing ones (it knows every building's spot).
+  if (version < 5) next = { ...next, joinRoads: true };
   return next;
 }
 

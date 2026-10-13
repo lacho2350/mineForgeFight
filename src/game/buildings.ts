@@ -158,7 +158,8 @@ export type BuildingStats = {
   maxLevel: number;
   /** Buildings that can be under construction at once. */
   buildSites: number;
-  taxPerFiveSeconds: number;
+  /** Gold each peasant pays in taxes a minute: the keep's level (× the tax techs). The keep collects every 5 s. */
+  taxPerPeasant: number;
   beds: number;
   minerRate: number;
   mineCartCapacity: number;
@@ -230,6 +231,9 @@ const roundTo = (value: number, step: number) => Math.round(value / step) * step
  * level, so nothing stored is lost when hands are short. The techs bought (`techs`) add their bonuses
  * on top.
  */
+/** The hold's taxes, in gold a minute: every peasant pays the keep's level (× the tax techs). */
+export const taxPerMinute = (stats: Pick<BuildingStats, 'taxPerPeasant'>, population: number) => Math.round(stats.taxPerPeasant * population * 100) / 100;
+
 export function buildingStats(levels: BuildingLevels, staff?: Partial<Record<BuildingId, number>>, techs: readonly TechId[] = []): BuildingStats {
   const { keep, warehouse, wall, towers, moat } = levels;
   const tech = techBonuses(techs);
@@ -247,13 +251,14 @@ export function buildingStats(levels: BuildingLevels, staff?: Partial<Record<Bui
   return {
     maxLevel: keep,
     buildSites: 1 + Math.floor(keep / 5) + tech.buildSites,
-    taxPerFiveSeconds: round2(keep * (1 + tech.tax)),
+    taxPerPeasant: round2(keep * (1 + tech.tax)),
     // The keep's hall sleeps 8 whatever happens (so a hold whose peasants are all under orders can still
     // grow and staff its houses); kept houses add the rest, up to MAX_PEASANTS.
     beds: Math.min(MAX_PEASANTS, Math.floor((KEEP_BEDS + housed) * (1 + tech.beds))),
     minerRate: round1((0.5 + 0.2 * Math.max(0, foundry - 1)) * (1 + tech.minerRate)),
     mineCartCapacity,
-    warehouseCapacity: roundTo(100 * 1.3 ** Math.max(0, warehouse - 1) * (1 + tech.warehouse), 10),
+    // Each resource it holds (tripled on 2026-10-13: it was 100 at level 1).
+    warehouseCapacity: roundTo(300 * 1.3 ** Math.max(0, warehouse - 1) * (1 + tech.warehouse), 10),
     // The mine's surface piles must always fit a few cart loads, or the carts would stall.
     mineCapacity: Math.max(Math.round((50 + 25 * Math.max(0, warehouse - 1)) * (1 + tech.mineStock)), mineCartCapacity * 4),
     haulers,
@@ -330,7 +335,7 @@ export function buildingEffects(id: BuildingId, level: number, techs: readonly T
       return [
         { label: 'Building level cap', value: String(stats.maxLevel) },
         { label: 'Buildings under construction at once', value: String(stats.buildSites) },
-        { label: 'Taxes', value: `${String(stats.taxPerFiveSeconds * 12)} gold / min` },
+        { label: 'Taxes, each peasant', value: `${String(stats.taxPerPeasant)} gold / min` },
       ];
     case 'warehouse':
       return [

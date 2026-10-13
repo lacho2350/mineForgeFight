@@ -13,10 +13,11 @@ import type { ItemId, ItemStock } from './items';
 import type { ForgeId, ForgeTasks } from './forges';
 import type { WagonJob } from './wagons';
 import type { Placements, Spot } from './cityMap';
+import type { ProductId } from './shop';
 import type { RoadKind, Roads } from './roads';
 import type { Trap, TrapKind } from './traps';
 import type { TechId } from './techs';
-import type { Site } from './mineLayout';
+import type { Site, Survey } from './mineLayout';
 import type { Homes } from './homes';
 
 export type Cost = { coal: number; gold: number };
@@ -142,6 +143,10 @@ export type GameState = {
   digPlan: string[];
   /** Seconds the diggers have spent on the first tile of the plan. */
   digProgress: number;
+  /** Patches of the mine's dark rock the surveyors have mapped (survey.ts). */
+  surveys: Survey[];
+  /** Game second the surveyors are ready to map another patch. */
+  surveyReadyAt: number;
   /** Bumped whenever the dug tiles or sites change, so derived layouts and cart routes refresh. */
   layoutVersion: number;
   /** The hold's army: creatures of each unit. */
@@ -154,6 +159,12 @@ export type GameState = {
   raidsLostInARow: number;
   /** Instant battles: settle every raid at once when it arrives, instead of fighting it out on the field. */
   autoResolveRaids: boolean;
+  /** The prologue (the story of the hold) has been read or skipped: a new game shows it first. */
+  prologueSeen: boolean;
+  /** No more ads was bought (shop.ts). */
+  adsRemoved: boolean;
+  /** Store tokens of the purchases already credited (so one handed over again pays nothing twice). */
+  creditedPurchases: string[];
   /** Game second the next raiders arrive. */
   nextRaidAt: number;
   /** Raiders sighted or at the gate. */
@@ -202,6 +213,8 @@ export type GameState = {
   digDeeper: () => void;
   /** Order a connected run of tiles dug; charged now, dug over time. */
   planDig: (keys: string[]) => void;
+  /** Pay the surveyors to map the dark rock round `key` (once they're ready). */
+  survey: (key: string) => void;
   /** Send a free peasant to mine the deposit at `key`. */
   assignMiner: (key: string) => void;
   /** Take the miner off the deposit at `key`; they go back to the campfire. */
@@ -222,6 +235,10 @@ export type GameState = {
   setRideOut: (rideOut: boolean) => void;
   /** Instant battles on or off: raids settled at once when they arrive, or fought out on the field. */
   setAutoResolveRaids: (on: boolean) => void;
+  /** The prologue has been read (or skipped). */
+  seePrologue: () => void;
+  /** A purchase the store confirmed: credit it (once per store token). Returns whether it was new. */
+  creditPurchase: (id: ProductId, key: string) => boolean;
   /** Take command of the battle at the gate (it then waits for the player's orders). */
   commandBattle: () => void;
   /** Leave the battlefield mid-battle: the captains fight on (once the time for orders is up). */

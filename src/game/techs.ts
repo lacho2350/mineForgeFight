@@ -47,6 +47,11 @@ export type TechBonuses = {
   shipHold: number;
   // More moat damage (0.25 = +25%).
   moatDamage: number;
+  // Surveys of the mine: refresh quicker (0.3 = 30% less wait), cost less (0.25 = 25% cheaper).
+  surveyTime: number;
+  surveyCost: number;
+  // Surveys reveal this many tiles further.
+  surveyRadius: number;
   // Flat additions.
   veinCapacity: number;
   cartLoad: number;
@@ -82,7 +87,7 @@ export type Tech = {
 
 export const TECH_IDS = [
   // Mine
-  'steelPicks', 'biggerBins', 'deepCarts', 'blastingPowder', 'steamDrills', 'shaftSurveys',
+  'steelPicks', 'biggerBins', 'deepCarts', 'blastingPowder', 'steamDrills', 'shaftSurveys', 'surveyLanterns', 'dowsingRods', 'seismicCharges',
   // Economy
   'taxRolls', 'masterMasons', 'royalCharter',
   'bunkBeds', 'villageWell', 'stoneCottages',
@@ -120,6 +125,9 @@ export const TECHS: Record<TechId, Tech> = {
   blastingPowder: { branch: 'mine', tier: 2, name: 'Blasting powder', effect: 'Tunnels are dug 40% faster and cost 20% less.', gold: 350, requires: ['steelPicks'], bonus: { digSpeed: 0.4, digCost: 0.2 } },
   steamDrills: { branch: 'mine', tier: 3, name: 'Steam drills', effect: 'Miners cut another 30% faster.', gold: 1400, requires: ['blastingPowder', 'temperedSteel'], bonus: { minerRate: 0.3 } },
   shaftSurveys: { branch: 'mine', tier: 3, name: 'Shaft surveys', effect: 'Opening a gallery and buying carts cost 25% less.', gold: 900, requires: ['deepCarts'], bonus: { depthCost: 0.25, cartCost: 0.25 } },
+  surveyLanterns: { branch: 'mine', tier: 1, name: 'Survey lanterns', effect: 'The surveyors are ready again 30% sooner.', gold: 150, requires: [], bonus: { surveyTime: 0.3 } },
+  dowsingRods: { branch: 'mine', tier: 2, name: 'Dowsing rods', effect: 'Surveys map 2 tiles further all round and cost 25% less.', gold: 400, requires: ['surveyLanterns'], bonus: { surveyRadius: 2, surveyCost: 0.25 } },
+  seismicCharges: { branch: 'mine', tier: 3, name: 'Seismic charges', effect: 'The surveyors are ready 40% sooner again, and map 2 more tiles further.', gold: 1200, requires: ['dowsingRods'], bonus: { surveyTime: 0.4, surveyRadius: 2 } },
 
   // ——— Economy ———
   taxRolls: { branch: 'keep', tier: 1, name: 'Tax rolls', effect: 'Taxes +25%.', gold: 150, requires: [], bonus: { tax: 0.25 } },
@@ -253,7 +261,7 @@ export function techBonuses(owned: readonly TechId[] = []): TechBonuses {
   const total: TechBonuses = {
     minerRate: 0, mineStock: 0, digSpeed: 0, tax: 0, buildSpeed: 0, beds: 0, arrival: 0, warehouse: 0, haul: 0,
     trapPower: 0, trade: 0, wallHp: 0, gateHp: 0, towerDamage: 0, forgeSpeed: 0, wagonSpeed: 0, wood: 0, wagonLoad: 0, wagonCount: 0,
-    digCost: 0, depthCost: 0, cartCost: 0, techCost: 0, shipCycle: 0, shipHold: 0, moatDamage: 0,
+    digCost: 0, depthCost: 0, cartCost: 0, techCost: 0, shipCycle: 0, shipHold: 0, moatDamage: 0, surveyTime: 0, surveyCost: 0, surveyRadius: 0,
     veinCapacity: 0, cartLoad: 0, buildSites: 0, attack: 0, defence: 0, towerShots: 0, wallOil: 0, drawbridge: 0,
     growth: {},
     units: {},

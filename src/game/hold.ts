@@ -14,7 +14,7 @@ import { FARM_SERIES, type FarmId } from './farms';
 import { WOODCUTTER_IDS, isWoodcutter } from './woodcutters';
 import { itemsInTransit, wagonBackAt, wagonDropAt, wagonStops, type WagonJob } from './wagons';
 import { FOOTPRINTS, MINE_SPOT, RAID_SIDES, spotOf, type Footprint, type Placements, type Spot } from './cityMap';
-import { buildFactor, walkBetween, type Walk } from './roads';
+import { buildFactor, cartWay, walkBetween, type Walk } from './roads';
 import { TRAP_DAMAGE, trapCounts } from './traps';
 import { buildMineLayout, depositAt, siteLevel, type MineLayout, type Site } from './mineLayout';
 import type { GameState, WalkState, WorkforceState } from './state';
@@ -60,7 +60,8 @@ export function wagonLegs(state: WalkState & Pick<GameState, 'buildings' | 'tech
   if (stops.some((stop) => !stop) || speed <= 0) return null;
   const legs: number[] = [];
   for (let i = 0; i < 3; i++) {
-    const walk = walkBetween(stops[i] as Spot & Footprint, stops[i + 1] as Spot & Footprint, state.placements, state.roads, state.clearedRocks);
+    // Carts keep to the roads (`cartWay`).
+    const walk = cartWay(stops[i] as Spot & Footprint, stops[i + 1] as Spot & Footprint, state.placements, state.roads, state.clearedRocks);
     if (!walk) return null;
     legs.push(Math.max(1, Math.round(walk.time / speed)));
   }
@@ -208,7 +209,7 @@ export function minerCrew(state: Pick<GameState, 'sites' | 'pendingSites'>, site
   return minersByLevel([...state.sites, ...state.pendingSites]).has(siteLevel(site)) ? 1 : 2;
 }
 
-type LayoutState = Pick<GameState, 'layoutVersion' | 'depth' | 'sites' | 'playerDug' | 'depositMined' | 'openedStations'>;
+type LayoutState = Pick<GameState, 'layoutVersion' | 'depth' | 'sites' | 'playerDug' | 'depositMined' | 'openedStations'> & Partial<Pick<GameState, 'surveys'>>;
 
 export function selectMineLayout(state: LayoutState): MineLayout {
   return buildMineLayout({
@@ -218,6 +219,7 @@ export function selectMineLayout(state: LayoutState): MineLayout {
     playerDug: state.playerDug,
     depositMined: state.depositMined,
     openedStations: state.openedStations,
+    surveys: state.surveys,
   });
 }
 

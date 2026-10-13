@@ -27,6 +27,7 @@ import BattleBoard from '../components/BattleBoard';
 import { boardLayout, hexAt, hexCenter } from '../components/battleLayout';
 import { SETTLED, battlePlayback, trackPose, type Playback, type Strike, type Track } from '../components/battlePlayback';
 import { GameButton, SectionLabel } from '../components/GameUI';
+import { adBreak } from '../components/ads';
 
 // What the active stack could do: tinted hexes and the damage it would deal to each target.
 function playerOptions(battle: Battle) {
@@ -112,6 +113,8 @@ export default function BattleScreen() {
 
   const leave = () => {
     closeBattle();
+    // Leaving a finished battle is a pause in play: an ad may show then (every few minutes).
+    adBreak();
     if (router.canGoBack()) router.back();
     else router.replace('/');
   };

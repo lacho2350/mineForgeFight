@@ -13,11 +13,11 @@ import { act, resolveBattle, stepAI } from './combat';
 import { FIRST_RAID_AT } from './raids';
 import { SAVE_KEY, SAVE_VERSION, createSaveStorage } from './save';
 import { isMoored, isWaiting } from './ship';
-import { CLEAR_CREW, ROCK_INFO, rockAt, rockyTest } from './rocks';
+import { CLEAR_CREW, ROCK_INFO, rockAt, rockyTest, startingRock } from './rocks';
 import { ITEM_INFO, UNIT_GEAR, emptyItems } from './items';
 import { DEFAULT_FORGE_TARGET, FORGE_NAMES, FORGE_TARGETS, emptyLoad, isForge } from './forges';
-import { coveredTiles, fillPlacements, isPlaceable, placementProblem, tileKey as mapTileKey } from './cityMap';
-import { ROAD_INFO, haulFactor, roadProblem, startingRoads } from './roads';
+import { coveredTiles, fillPlacements, isPlaceable, onMainRoad, placementProblem, tileKey as mapTileKey } from './cityMap';
+import { ROAD_INFO, accessRoads, haulFactor, joinBuildings, roadProblem, startingRoads } from './roads';
 import { TRAP_INFO, TRAP_REFUND, trapAt } from './traps';
 import { TECHS, techCost } from './techs';
 import {
@@ -30,8 +30,12 @@ import {
   parseKey,
   stationKey,
   stationSite,
+  depositAt,
+  depositRemaining,
   type Site,
 } from './mineLayout';
+import { creditPurchase } from './shop';
+import { darkTiles, surveyAt, surveyCooldown, surveyCost, surveyProblem } from './survey';
 import type { GameState, SavedState } from './state';
 import {
   BUILDING_NAMES,
@@ -82,6 +86,8 @@ export const MINE_STATIONS_PER_GALLERY = MINE_STATIONS.length;
 
 const startingSites = [stationSite(-1, 0), stationSite(-1, 1)];
 const startingPlacements = fillPlacements(STARTING_BUILDINGS, [], {}, BUILDING_NAMES);
+// The first roads, and from the first buildings' doors to them.
+const startingWays = joinBuildings(startingPlacements, startingRoads(startingPlacements));
 const startingStats = buildingStats(STARTING_BUILDINGS);
 
 const saveStorage = createSaveStorage<SavedState>();
@@ -94,8 +100,12 @@ const gameState = (set: StoreApi<GameState>['setState']): GameState => ({
   population: 10,
   paused: [],
   placements: startingPlacements,
-  roads: startingRoads(startingPlacements),
-  clearedRocks: [],
+  roads: startingWays.roads,
+  // The ground under the first buildings' roads to the main road starts clear.
+  clearedRocks: Object.keys(startingWays.roads).filter((key) => {
+    const [x, y] = key.split(',').map(Number);
+    return startingRock(x, y) > 0;
+  }),
   clearOrders: [],
   items: emptyItems(),
   forgeTasks: {},
@@ -137,11 +147,16 @@ const gameState = (set: StoreApi<GameState>['setState']): GameState => ({
   playerDug: [],
   digPlan: [],
   digProgress: 0,
+  surveys: [],
+  surveyReadyAt: 0,
   layoutVersion: 0,
   army: { ...emptyArmy(), pikeman: 12 },
   raidsFought: 0,
   raidsLostInARow: 0,
   autoResolveRaids: false,
+  prologueSeen: false,
+  adsRemoved: false,
+  creditedPurchases: [],
   recruits: { ...emptyArmy(), pikeman: 7 },
   nextRaidAt: FIRST_RAID_AT,
   raid: null,
@@ -161,6 +176,8 @@ const gameState = (set: StoreApi<GameState>['setState']): GameState => ({
     const free = freeHands(state);
     if (free <= 0) return { notice: 'No free peasants. Wait for more to arrive, pause a building, or release a miner.' };
     const info = getDepositInfo(selectMineLayout(state), key);
+    if (info.status === 'unknown') return { notice: 'Nobody knows what’s in that dark rock yet: survey it first from a tunnel near it (🔦 SURVEY), or dig closer.' };
+    if (info.status === 'empty') return { notice: 'Nothing to mine there.' };
     if (info.status === 'depleted') return { notice: 'That deposit is mined out.' };
     if (info.status === 'worked') return { notice: 'A miner is already working that deposit.' };
     if (state.pendingSites.some((site) => tileKey(site.faceRow, site.faceColumn) === key)) {
@@ -346,6 +363,14 @@ const gameState = (set: StoreApi<GameState>['setState']): GameState => ({
       : 'Battles: fought out. Command each battle, or after 30 s the captains fight it, march by march.',
   }),
 
+  seePrologue: () => set({ prologueSeen: true }),
+
+  creditPurchase: (id, key) => {
+    const change = creditPurchase(useGameStore.getState(), id, key);
+    if (change) set(change);
+    return change !== null;
+  },
+
   setRideOut: (rideOut) => set((state) => {
     const { raid } = state;
     if (!raid || raid.kind !== 'siege' || state.battle?.status === 'active' || !!raid.rideOut === rideOut) return {};
@@ -383,7 +408,7 @@ const gameState = (set: StoreApi<GameState>['setState']): GameState => ({
     const { name } = BUILDING_INFO[id];
     if (state.buildings[id] > 0 || state.construction.some((job) => job.building === id)) return { notice: `The ${name} is already built.` };
     const onRoad = (x: number, y: number) => !!state.roads[mapTileKey(x, y)];
-    const problem = placementProblem(id, spot, state.placements, BUILDING_NAMES, rockyTest(state.clearedRocks), onRoad) ?? upgradeBlocker(state, id);
+    const problem = placementProblem(id, spot, state.placements, BUILDING_NAMES, rockyTest(state.clearedRocks), onRoad, accessRoads(state.roads)) ?? upgradeBlocker(state, id);
     if (problem) return { notice: `${name}: ${problem}` };
     return { ...startBuilding(state, id), placements: { ...state.placements, [id]: spot } };
   }),
@@ -526,9 +551,14 @@ const gameState = (set: StoreApi<GameState>['setState']): GameState => ({
     const warehouse = { ...state.warehouse };
     let done = 0;
     let reason = '';
+    // Main-road tiles the stroke crossed while taking roads up (they stay).
+    let kept = 0;
     for (const spot of tiles) {
       const problem = roadProblem(spot, kind, roads, covered, state.clearedRocks);
-      if (problem) continue;
+      if (problem) {
+        if (kind === 'erase' && onMainRoad(spot.x, spot.y)) kept += 1;
+        continue;
+      }
       const key = mapTileKey(spot.x, spot.y);
       if (kind === 'erase') {
         delete roads[key];
@@ -546,10 +576,10 @@ const gameState = (set: StoreApi<GameState>['setState']): GameState => ({
       done += 1;
     }
     if (done === 0) {
-      if (kind === 'erase') return { notice: 'No roads there to take up.' };
+      if (kind === 'erase') return { notice: kept > 0 ? 'The main road from the keep to the gate stays: it can’t be taken up.' : 'No roads there to take up.' };
       return { notice: reason ? `${ROAD_INFO[kind].name}:${reason}` : 'No road can go there: roads go on open ground inside the wall.' };
     }
-    if (kind === 'erase') return { roads, notice: `Took up ${String(done)} road tile${done === 1 ? '' : 's'}.` };
+    if (kind === 'erase') return { roads, notice: `Took up ${String(done)} road tile${done === 1 ? '' : 's'}.${kept > 0 ? ' The main road from the keep to the gate stays.' : ''}` };
     return {
       roads,
       gold,
@@ -597,6 +627,31 @@ const gameState = (set: StoreApi<GameState>['setState']): GameState => ({
       veinCapacity: state.veinCapacity + VEIN_CAPACITY_PER_DEPTH,
       layoutVersion: state.layoutVersion + 1,
       notice: `The miners opened gallery ${String(depth)}: room for ${String(MINE_STATIONS_PER_GALLERY)} more miners and a longer vein.`,
+    };
+  }),
+
+  survey: (key) => set((state) => {
+    const layout = selectMineLayout(state);
+    const problem = surveyProblem(state, layout, key);
+    if (problem) return { notice: problem };
+    const area = surveyAt(key, state.techs);
+    const cost = surveyCost(area.row, state.techs);
+    // What the surveyors found in the dark: the deposits there, by kind.
+    const found = new Map<string, number>();
+    for (const { row, column } of darkTiles(layout, area)) {
+      const deposit = depositAt(row, column);
+      if (!deposit || depositRemaining(layout, row, column) <= 0) continue;
+      const name = RESOURCE_INFO[deposit].deposit.toLowerCase();
+      found.set(name, (found.get(name) ?? 0) + 1);
+    }
+    const list = [...found].map(([name, tiles]) => `${name}${tiles > 1 ? ` (${String(tiles)} tiles)` : ''}`).join(', ');
+    const cooldown = surveyCooldown(state.techs);
+    return {
+      surveys: [...state.surveys, area],
+      layoutVersion: state.layoutVersion + 1,
+      gold: roundCoal(state.gold - cost),
+      surveyReadyAt: state.elapsedSeconds + cooldown,
+      notice: `The surveyors mapped the rock round row ${String(area.row)}, column ${String(area.column)} for ${String(cost)} gold: ${list || 'nothing but rock'}. Ready again in ${String(cooldown)} s.`,
     };
   }),
 

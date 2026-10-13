@@ -127,14 +127,18 @@ export function BuildingArt({ id, plot, tier, level }: { id: BuildingId; plot: P
       );
     }
     case 'warehouse': {
-      // A shed (a barn from level 6) at the back; the stock piles in front are drawn live (see `Piles`).
+      // A shed (a barn from level 6) at the back; the stock piles in its yard are drawn live (see `Piles`).
+      // On the big plot the shed is deeper and taller, with a wider door.
       const barn = tier >= 2;
-      const h = barn ? 12 + 3 * tier : 10;
+      const big = w >= 5;
+      const depth = big ? 2.1 : 1.2;
+      const shed = barn ? w - 0.3 : big ? 2.6 : 1.4;
+      const h = (barn ? 12 + 3 * tier : 10) + (big ? 5 : 0);
       return (
         <Group>
-          <Box x={x + 0.15} y={y + 0.15} w={barn ? w - 0.3 : 1.4} d={1.2} h={h} m={m} />
-          <Gable x={x + 0.1} y={y + 0.1} w={barn ? w - 0.2 : 1.5} d={1.3} z={h} rise={9} m={m} />
-          <LeftFace x={x + 0.15} yFront={y + 1.35} u0={0.35} u1={1.0} v0={0} v1={9} color={DARK} />
+          <Box x={x + 0.15} y={y + 0.15} w={shed} d={depth} h={h} m={m} />
+          <Gable x={x + 0.1} y={y + 0.1} w={shed + 0.1} d={depth + 0.1} z={h} rise={big ? 13 : 9} m={m} />
+          <LeftFace x={x + 0.15} yFront={y + 0.15 + depth} u0={0.35} u1={big ? 1.35 : 1.0} v0={0} v1={big ? 12 : 9} color={DARK} />
         </Group>
       );
     }

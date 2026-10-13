@@ -1,22 +1,22 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { router, useIsFocused } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
-import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
+import { BackHandler, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { GameState } from '../game/state';
 import { BUILDING_NAMES, haulWalk, isShownBuilding, orderedRocks, workforceOf } from '../game/hold';
-import { roadCostText, trapBlocker, trapCostText, upgradeBlocker } from '../game/costs';
+import { canAffordBuild, roadCostText, trapBlocker, trapCostText, upgradeBlocker } from '../game/costs';
 import { useGame, useGameStore } from '../game/gameStore';
-import { BUILDING_IDS, BUILDING_INFO, MAX_BUILDING_LEVEL, buildingCost, buildingStats, type BuildingId } from '../game/buildings';
+import { BUILDING_IDS, BUILDING_INFO, MAX_BUILDING_LEVEL, buildingCost, buildingStats, taxPerMinute, type BuildingId } from '../game/buildings';
 import { HOUSE_IDS, isHouse, type HouseId } from '../game/houses';
-import { PANTRY, errandText, isKept, sleepers } from '../game/homes';
+import { PANTRY, errandText, hasHomeRoad, isKept, sleepers } from '../game/homes';
 import { fellingStand, forestWood } from '../game/forest';
 import { FOODS, isFishery, isPasture } from '../game/farms';
 import { isWoodcutter } from '../game/woodcutters';
-import { DEFAULT_SPOTS, FOOTPRINTS, MAP_SIZE, SIDE_NAMES, buildSpots, coveredTiles, isPlaceable, nearestFreeSpot, placementProblem, sidesOf, tileKey, type Spot } from '../game/cityMap';
-import { ROAD_INFO, ROAD_KINDS, haulFactor, roadProblem, type RoadKind, type Roads } from '../game/roads';
-import { CLEAR_CREW, rockAt, rockyTest, rocksLeft } from '../game/rocks';
+import { DEFAULT_SPOTS, FOOTPRINTS, MAP_SIZE, SIDE_NAMES, buildSpots, coveredTiles, doorSide, doorTiles, isOpenGround, onMainRoad, isPlaceable, nearestFreeSpot, needsRoad, placementProblem, sidesOf, tileKey, zoneAt, type Spot } from '../game/cityMap';
+import { GROUND_SPEED, ROAD_INFO, ROAD_KINDS, accessRoads, haulFactor, roadProblem, type RoadKind, type Roads } from '../game/roads';
+import { CLEAR_CREW, ROCK_INFO, rockAt, rockyTest, rocksLeft } from '../game/rocks';
+import { BOAT_INFO, fishingBoat, nextBoat } from '../game/boats';
 import { isMoored } from '../game/ship';
 import { TRAP_DAMAGE, TRAP_INFO, TRAP_KINDS, TRAP_REFUND, trapAt, trapCounts, trapProblem, trapsFacing, type TrapKind } from '../game/traps';
 import { BUILDING_ICONS, ROAD_ICONS, TRAP_ICONS } from '../components/buildingIcons';
@@ -31,12 +31,18 @@ import { isForge } from '../game/forges';
 import CombatPanel, { hireableNow } from '../components/CombatPanel';
 import RaidBanner from '../components/RaidBanner';
 import Sheet from '../components/Sheet';
+import Prologue from '../components/Prologue';
+import ShopPanel from '../components/ShopPanel';
+import { adBreak } from '../components/ads';
+import { Toast, ToolButton } from '../components/Toolbar';
 import StockpileTable from '../components/StockpileTable';
 import { TechTree, techsReady } from '../components/TechTree';
 
 type Popup =
   | { kind: 'building'; id: BuildingId }
   | { kind: 'trap'; x: number; y: number }
+  | { kind: 'road'; x: number; y: number }
+  | { kind: 'ground'; x: number; y: number }
   | { kind: 'build' }
   | { kind: 'market' }
   | { kind: 'buildings' }
@@ -74,6 +80,8 @@ export default function StrongholdScreen() {
   const game = useGame(focused);
   const insets = useSafeAreaInsets();
   const [popup, setPopup] = useState<Popup>(null);
+  // The prologue: before a new game, and again from the menu.
+  const [replaying, setReplaying] = useState(false);
   const [placing, setPlacing] = useState<Placing>(null);
   const [painting, setPainting] = useState<Painting | null>(null);
   const [stroke, setStroke] = useState<Spot[]>([]);
@@ -88,21 +96,43 @@ export default function StrongholdScreen() {
 
   const openBuilding = useCallback((id: BuildingId) => setPopup({ kind: 'building', id }), []);
   const openWar = useCallback(() => setPopup({ kind: 'combat' }), []);
-  const openBuild = useCallback(() => setPopup({ kind: 'build' }), []);
+  // Where a building picked from the palette starts: its usual spot, or the open ground tapped (Build here).
+  const buildHere = useRef<Spot | null>(null);
+  const openBuild = useCallback(() => {
+    buildHere.current = null;
+    setPopup({ kind: 'build' });
+  }, []);
   const openBuildings = useCallback(() => setPopup({ kind: 'buildings' }), []);
   const openTech = useCallback(() => setPopup({ kind: 'tech' }), []);
   const openDocks = useCallback(() => setPopup({ kind: 'market' }), []);
   const openMenu = useCallback(() => setPopup({ kind: 'menu' }), []);
-  const openMine = useCallback(() => router.push('/mine'), []);
-  const close = () => setPopup(null);
+  // Going down the mine and closing a pop-up are pauses in play: an ad may show then (every few minutes).
+  const openMine = useCallback(() => {
+    adBreak();
+    router.push('/mine');
+  }, []);
+  const close = () => {
+    setPopup(null);
+    adBreak();
+  };
 
   // Placement: start at the building's usual spot (or the nearest free one), move it with taps.
   const startPlacing = useCallback((id: BuildingId) => {
     const { clearedRocks, roads, placements } = useGameStore.getState();
-    const preferred = DEFAULT_SPOTS[id] ?? { x: Math.floor(MAP_SIZE / 2), y: MAP_SIZE - 6 };
+    const { w, d } = FOOTPRINTS[id];
+    const tapped = buildHere.current;
+    buildHere.current = null;
+    const preferred = tapped
+      ? { x: Math.min(MAP_SIZE - w, Math.max(0, tapped.x - Math.floor(w / 2))), y: Math.min(MAP_SIZE - d, Math.max(0, tapped.y - Math.floor(d / 2))) }
+      : (DEFAULT_SPOTS[id] ?? { x: Math.floor(MAP_SIZE / 2), y: MAP_SIZE - 6 });
     const rocky = rockyTest(clearedRocks);
     const road = roadTest(roads);
-    const spot = placementProblem(id, preferred, placements, BUILDING_NAMES, rocky, road) ? nearestFreeSpot(id, preferred, placements, BUILDING_NAMES, rocky, road) : preferred;
+    // The nearest spot that fits (with a road at the door), else the nearest one off the roads and rocks,
+    // to be moved to a road from there.
+    const access = accessRoads(roads);
+    const spot = placementProblem(id, preferred, placements, BUILDING_NAMES, rocky, road, access)
+      ? (nearestFreeSpot(id, preferred, placements, BUILDING_NAMES, rocky, road, access) ?? nearestFreeSpot(id, preferred, placements, BUILDING_NAMES, rocky, road))
+      : preferred;
     setPopup(null);
     setPlacing({ id, ...(spot ?? preferred) });
   }, []);
@@ -121,6 +151,17 @@ export default function StrongholdScreen() {
     strokeRef.current = [...current, ...fresh];
     setStroke(strokeRef.current);
   }, []);
+  // Android's Back cancels placing or painting (an open pop-up closes itself, see Sheet).
+  const busy = !!placing || !!painting;
+  useEffect(() => {
+    if (!busy || !focused) return;
+    const back = BackHandler.addEventListener('hardwareBackPress', () => {
+      setPlacing(null);
+      setPainting(null);
+      return true;
+    });
+    return () => back.remove();
+  }, [busy, focused]);
   const finishStroke = useCallback((commit: boolean) => {
     const tiles = strokeRef.current;
     strokeRef.current = [];
@@ -152,12 +193,19 @@ export default function StrongholdScreen() {
       };
     });
   }, []);
+  // A tap on the ground opens what lies there: a trap, a road, rocks, or open ground inside the wall.
   const tapGround = useCallback((x: number, y: number) => {
-    const trap = trapAt(useGameStore.getState().traps, Math.floor(x), Math.floor(y));
+    const state = useGameStore.getState();
+    const tile = { x: Math.floor(x), y: Math.floor(y) };
+    const trap = trapAt(state.traps, tile.x, tile.y);
     if (trap) setPopup({ kind: 'trap', x: trap.x, y: trap.y });
+    else if (state.roads[tileKey(tile.x, tile.y)]) setPopup({ kind: 'road', ...tile });
+    else if (zoneAt(tile.x, tile.y) === 'town' && isOpenGround(tile.x, tile.y) && !coveredTiles(state.placements).has(tileKey(tile.x, tile.y))) {
+      setPopup({ kind: 'ground', ...tile });
+    }
   }, []);
   const { roads, traps, clearedRocks, clearOrders, placements } = game;
-  const spotProblem = placing ? placementProblem(placing.id, placing, placements, BUILDING_NAMES, rockyTest(clearedRocks), roadTest(roads)) : null;
+  const spotProblem = placing ? placementProblem(placing.id, placing, placements, BUILDING_NAMES, rockyTest(clearedRocks), roadTest(roads), accessRoads(roads)) : null;
   const covered = useMemo(() => coveredTiles(placements), [placements]);
   // Where the building being placed may go: lit while placing, yellow where rocks must be cleared first.
   const placingId = placing?.id;
@@ -172,7 +220,11 @@ export default function StrongholdScreen() {
       };
       return { plot: null, valid: true, belt: painting.tool === 'trap', tiles: stroke.map((tile) => ({ ...tile, ok: ok(tile) })) };
     }
-    return placing ? { plot: plotOf(placing.id, {}, placing), valid: !spotProblem, allowed: spots?.clear, rocky: spots?.rocky, water: isFishery(placing.id) } : null;
+    if (!placing) return null;
+    // The tiles in front of the door, green where a road joined to the keep and the gate reaches them.
+    const access = accessRoads(roads);
+    const doors = needsRoad(placing.id) ? doorTiles(placing.id, placing).map((tile) => ({ ...tile, ok: access.has(tileKey(tile.x, tile.y)) })) : undefined;
+    return { plot: plotOf(placing.id, {}, placing), valid: !spotProblem, allowed: spots?.clear, rocky: spots?.rocky, water: isFishery(placing.id), doors };
   }, [painting, stroke, roads, traps, clearedRocks, clearOrders, covered, placing, spotProblem, spots]);
   const confirmPlacing = () => {
     if (!placing) return;
@@ -242,7 +294,7 @@ export default function StrongholdScreen() {
           <>
             <Toast notice={game.notice} />
             <View style={styles.toolbar}>
-              <ToolButton icon="⛏" label="MINE" onPress={openMine} />
+              <ToolButton icon="⛏️" label="MINE" onPress={openMine} />
               <ToolButton icon="🔨" label="BUILD" onPress={openBuild} />
               <ToolButton icon="🏰" label="BUILDINGS" onPress={openBuildings} badge={game.construction.length > 0 ? String(game.construction.length) : undefined} />
               <ToolButton icon="📜" label="TECH" onPress={openTech} badge={techReady > 0 ? String(techReady) : undefined} />
@@ -267,15 +319,42 @@ export default function StrongholdScreen() {
             onChooseSpot={isPlaceable(popup.id) && !game.placements[popup.id] ? () => startPlacing(popup.id) : undefined}
             onDestroyed={close}
           />
+          {popup.id === 'keep' && <TaxStatus game={game} />}
           {popup.id === 'keep' && <DefenceSummary game={game} workforce={workforce} />}
           {popup.id === 'warehouse' && <Stockpiles game={game} />}
           {isWoodcutter(popup.id) && <ForestStatus game={game} />}
           {isHouse(popup.id) && game.buildings[popup.id] > 0 && <HomeStatus game={game} id={popup.id} />}
+          {isFishery(popup.id) && <BoatStatus level={game.buildings[popup.id]} />}
           {popup.id === 'docks' && <BargesPanel game={game} />}
           {popup.id === 'armory' && <GearStore game={game} />}
           {isForge(popup.id) && <ForgePanel game={game} forge={popup.id} />}
           {popup.id === 'depot' && <DepotPanel game={game} />}
         </Sheet>
+      )}
+      {popup?.kind === 'road' && (
+        <RoadSheet
+          game={game}
+          x={popup.x}
+          y={popup.y}
+          onClose={close}
+          onClearMore={() => {
+            close();
+            startPainting({ tool: 'road', kind: 'erase' });
+          }}
+        />
+      )}
+      {popup?.kind === 'ground' && (
+        <GroundSheet
+          game={game}
+          x={popup.x}
+          y={popup.y}
+          onClose={close}
+          onPaint={startPainting}
+          onBuild={() => {
+            buildHere.current = { x: popup.x, y: popup.y };
+            setPopup({ kind: 'build' });
+          }}
+        />
       )}
       {popup?.kind === 'trap' && (
         <TrapSheet game={game} x={popup.x} y={popup.y} onClose={close} />
@@ -313,8 +392,23 @@ export default function StrongholdScreen() {
       )}
       {popup?.kind === 'menu' && (
         <Sheet title="The hold" subtitle="PEASANTS, STOCKPILES AND THE GAME" onClose={close}>
-          <Menu game={game} workforce={workforce} />
+          <Menu
+            game={game}
+            workforce={workforce}
+            onPrologue={() => {
+              setPopup(null);
+              setReplaying(true);
+            }}
+          />
         </Sheet>
+      )}
+      {(!game.prologueSeen || replaying) && (
+        <Prologue
+          onDone={() => {
+            setReplaying(false);
+            if (!game.prologueSeen) game.seePrologue();
+          }}
+        />
       )}
     </View>
   );
@@ -325,13 +419,18 @@ export default function StrongholdScreen() {
 function Hud({ game, workforce }: { game: GameState; workforce: Workforce }) {
   const beds = buildingStats(game.buildings, workforce.staff, game.techs).beds;
   const raidIn = game.raid ? null : game.nextRaidAt - game.elapsedSeconds;
-  // Cottages out of water or food: their sleepers work slower.
+  // Cottages out of water or food, or with no road to the keep and the gate: their sleepers work slower.
   const dry = HOUSE_IDS.filter((id) => game.buildings[id] > 0 && !isKept(game.homes[id])).length;
+  const cutOff = HOUSE_IDS.filter((id) => game.buildings[id] > 0 && !hasHomeRoad(id, game)).length;
   return (
     <View style={styles.hud}>
       <View style={styles.hudRow}>
         <Stat label="GOLD" value={Math.floor(game.gold).toLocaleString()} tone="#e5a565" />
-        <Stat label={`PEASANTS · ${String(workforce.idle)} IDLE`} value={`${String(game.population)}/${String(beds)}`} tone="#c0cd83" />
+        <Stat
+          label={cutOff > 0 ? `PEASANTS · ${String(cutOff)} HOME${cutOff === 1 ? '' : 'S'} NO ROAD` : `PEASANTS · ${String(workforce.idle)} IDLE`}
+          value={`${String(game.population)}/${String(beds)}`}
+          tone={cutOff > 0 ? '#e08a72' : '#c0cd83'}
+        />
         <Stat
           label={game.hungry ? 'FOOD · HUNGRY' : dry > 0 ? `FOOD · ${String(dry)} HOME${dry === 1 ? '' : 'S'} DRY` : 'FOOD'}
           value={Math.floor(FOODS.reduce((sum, food) => sum + game.warehouse[food], 0)).toLocaleString()}
@@ -354,32 +453,6 @@ function Stat({ label, value, tone }: { label: string; value: string; tone: stri
 
 
 // ——— News and the toolbar ———
-
-// The latest notice, shown for a few seconds whenever it changes.
-const Toast = memo(function Toast({ notice }: { notice: string }) {
-  const [expired, setExpired] = useState<string | null>(null);
-  useEffect(() => {
-    const timer = setTimeout(() => setExpired(notice), 5000);
-    return () => clearTimeout(timer);
-  }, [notice]);
-  if (expired === notice) return null;
-  return (
-    <Animated.View key={notice} entering={FadeIn.duration(150)} exiting={FadeOut.duration(300)} style={[styles.toast, { pointerEvents: 'none' }]}>
-      <Text style={styles.toastText}>{notice}</Text>
-    </Animated.View>
-  );
-});
-
-// The toolbar's and the side's buttons are redrawn only when their badges change.
-const ToolButton = memo(function ToolButton({ icon, label, onPress, badge }: { icon: string; label: string; onPress: () => void; badge?: string }) {
-  return (
-    <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress} style={({ pressed }) => [styles.tool, pressed && styles.pressed]}>
-      <Text style={styles.toolIcon}>{icon}</Text>
-      <Text style={styles.toolLabel}>{label}</Text>
-      {badge && <Text style={styles.toolBadge}>{badge}</Text>}
-    </Pressable>
-  );
-});
 
 // A round button on the side of the map; `alarm` lights it red with a "!" (raiders sighted or a battle
 // waiting), otherwise `badge` shows a count.
@@ -412,7 +485,7 @@ function PlacementBar({ game, id, problem, onConfirm, onCancel }: {
           </Text>
           <Text style={[styles.placementHint, problem && styles.placementProblem]}>
             {problem ??
-              `${isFishery(id) ? 'It goes right next to the river, along the river wall inside the town. ' : isPasture(id) ? 'It grazes outside the walls. ' : ''}Lit: where it can go (yellow: rocks to clear first; never on roads). Drag it there, or tap. ${String(cost.gold)} gold${cost.resources.coal ? ` · ${String(cost.resources.coal)} coal` : ''}.`}
+              `${isFishery(id) ? 'It goes right next to the river, along the river wall inside the town. ' : isPasture(id) ? 'It grazes outside the walls. ' : ''}Lit: where it can go (yellow: rocks to clear first; never on roads)${needsRoad(id) ? `; its door (the ${doorSide(id)} side, marked) needs a road joined to the keep and the main gate` : ''}. Drag it there, or tap. ${String(cost.gold)} gold${cost.resources.coal ? ` · ${String(cost.resources.coal)} coal` : ''}.`}
           </Text>
         </View>
       </View>
@@ -646,6 +719,91 @@ function TrapSheet({ game, x, y, onClose }: { game: GameState; x: number; y: num
   );
 }
 
+// A road tile: how much faster it is to walk on, and clearing it (this tile, or more with the eraser).
+function RoadSheet({ game, x, y, onClose, onClearMore }: { game: GameState; x: number; y: number; onClose: () => void; onClearMore: () => void }) {
+  const kind = game.roads[tileKey(x, y)];
+  if (!kind) return null;
+  const info = ROAD_INFO[kind];
+  const main = onMainRoad(x, y);
+  return (
+    <Sheet title={info.name} subtitle={`${main ? 'THE MAIN ROAD' : 'ROAD'} · WALKING ${String(info.speed)} TILES/S`} onClose={onClose}>
+      <Text style={styles.body}>
+        Peasants, haulers and carts go {String(info.speed)} tiles a second along it (off the roads, {String(GROUND_SPEED)}).{' '}
+        {main ? 'The main road from the keep to the gate stays: it can be paved better, but never taken up.' : 'Clearing it is free, but nothing is paid back.'}
+      </Text>
+      {!main && (
+        <GameButton
+          label="CLEAR ROAD"
+          detail="this tile · free"
+          onPress={() => {
+            game.layRoads('erase', [{ x, y }]);
+            onClose();
+          }}
+        />
+      )}
+      <GameButton label="CLEAR MORE…" detail="drag over the road tiles to clear" onPress={onClearMore} secondary />
+    </Sheet>
+  );
+}
+
+// A tapped tile of the town that isn't built on: rocks (order them cleared) or open ground (lay a road on
+// it, or build there). Ordered rocks stay until the crew clears them; then the tile shows as open ground.
+function GroundSheet({ game, x, y, onClose, onPaint, onBuild }: {
+  game: GameState;
+  x: number;
+  y: number;
+  onClose: () => void;
+  onPaint: (painting: Painting) => void;
+  onBuild: () => void;
+}) {
+  const size = rockAt(game.clearedRocks, x, y);
+  if (size) {
+    const info = ROCK_INFO[size];
+    const ordered = orderedRocks(game.clearOrders).has(tileKey(x, y));
+    return (
+      <Sheet title={info.name[0].toUpperCase() + info.name.slice(1)} subtitle={`ROCKS · ${String(info.seconds)} S OF CLEARING · +${String(info.granite)} GRANITE`} onClose={onClose}>
+        <Text style={styles.body}>
+          Nothing can be built or paved here until it’s cleared, and peasants pick their way over it slowly. A crew of {String(CLEAR_CREW)}{' '}
+          clears it for {String(info.granite)} granite.
+        </Text>
+        {ordered ? (
+          <Text style={styles.note}>ORDERED · THE CLEARING CREW WILL GET TO IT</Text>
+        ) : (
+          <GameButton
+            label="CLEAR ROCK"
+            detail={`${String(info.seconds)} s of work · free`}
+            onPress={() => {
+              game.clearRocks([{ x, y }]);
+              onClose();
+            }}
+          />
+        )}
+        <GameButton label="CLEAR MORE…" detail="drag over the rocks to clear" onPress={() => onPaint({ tool: 'clear', kind: 'rocks' })} secondary />
+      </Sheet>
+    );
+  }
+  return (
+    <Sheet title="Open ground" subtitle="INSIDE THE WALL · LAY A ROAD OR BUILD HERE" onClose={onClose}>
+      <Text style={styles.body}>A road here speeds up everyone walking over it; or put a building here.</Text>
+      {ROAD_KINDS.map((kind) => (
+        <GameButton
+          key={kind}
+          label={`LAY ${ROAD_INFO[kind].name.toUpperCase()}`}
+          detail={`${roadCostText(kind)} · walking ×${String(ROAD_INFO[kind].speed)}`}
+          disabled={!canAffordBuild(game, ROAD_INFO[kind])}
+          onPress={() => {
+            game.layRoads(kind, [{ x, y }]);
+            onClose();
+          }}
+          secondary
+        />
+      ))}
+      <GameButton label="LAY MORE ROAD…" detail="drag to lay road tiles" onPress={() => onPaint({ tool: 'road', kind: 'dirt' })} secondary />
+      <GameButton label="BUILD HERE…" detail="pick a building; it starts on this spot" onPress={onBuild} />
+    </Sheet>
+  );
+}
+
 // ——— Pop-up contents ———
 
 // The forest beyond the gate the woodcutters fell (see game/forest.ts).
@@ -673,6 +831,47 @@ function HomeStatus({ game, id }: { game: GameState; id: HouseId }) {
           {(home?.food ?? 0) <= 0 && game.hungry ? ' The store has no food either.' : ''}
         </Text>
       )}
+      {hasHomeRoad(id, game) ? (
+        <Text style={styles.note}>ROAD · AT ITS DOOR, JOINED TO THE KEEP AND THE GATE</Text>
+      ) : (
+        <Text style={[styles.body, styles.placementProblem]}>
+          No road at its door ({doorSide(id)} side) joined to the keep and the main gate: its people are unhappy — they work slower, and nobody new moves in until one is laid.
+        </Text>
+      )}
+    </View>
+  );
+}
+
+// The keep's taxes: every peasant pays the keep's level in gold a minute (× the tax techs).
+function TaxStatus({ game }: { game: GameState }) {
+  const stats = buildingStats(game.buildings, undefined, game.techs);
+  const boost = stats.taxPerPeasant / Math.max(1, game.buildings.keep);
+  return (
+    <View style={styles.block}>
+      <View style={styles.blockHeader}>
+        <SectionLabel>TAXES</SectionLabel>
+        <Text style={styles.note}>{taxPerMinute(stats, game.population).toLocaleString()} GOLD / MIN</Text>
+      </View>
+      <Text style={styles.note}>
+        KEEP LEVEL {String(game.buildings.keep)} × {String(game.population)} PEASANTS{boost > 1 ? ` × ${String(Math.round(boost * 100) / 100)} (TAX TECHS)` : ''} · MORE PEOPLE, MORE TAX
+      </Text>
+    </View>
+  );
+}
+
+// A fishing hut's boat (from level 5), and the next one it gets.
+function BoatStatus({ level }: { level: number }) {
+  const boat = fishingBoat(level);
+  const next = nextBoat(level);
+  return (
+    <View style={styles.block}>
+      <View style={styles.blockHeader}>
+        <SectionLabel>ITS BOAT</SectionLabel>
+        <Text style={styles.note}>{boat ? BOAT_INFO[boat].name.toUpperCase() : 'FISHING FROM THE RIVER WALL'}</Text>
+      </View>
+      <Text style={styles.note}>
+        {next ? `${BOAT_INFO[next].name.toUpperCase()} AT LEVEL ${String(BOAT_INFO[next].level)}` : 'THE BEST BOAT ON THE RIVER'} · ROWBOAT, SAILING SKIFF, FISHING SMACK, KETCH AT LEVELS 5, 10, 15, 20
+      </Text>
     </View>
   );
 }
@@ -721,9 +920,10 @@ function Stockpiles({ game }: { game: GameState }) {
   );
 }
 
-function Menu({ game, workforce }: { game: GameState; workforce: Workforce }) {
+function Menu({ game, workforce, onPrologue }: { game: GameState; workforce: Workforce; onPrologue: () => void }) {
   const beds = buildingStats(game.buildings, workforce.staff, game.techs).beds;
   const dry = HOUSE_IDS.filter((id) => game.buildings[id] > 0 && !isKept(game.homes[id])).length;
+  const cutOff = HOUSE_IDS.filter((id) => game.buildings[id] > 0 && !hasHomeRoad(id, game)).length;
   return (
     <>
       <View style={styles.block}>
@@ -731,6 +931,7 @@ function Menu({ game, workforce }: { game: GameState; workforce: Workforce }) {
         <Text style={styles.body}>
           {String(workforce.miners)} mining · {String(workforce.pushers)} pushing carts · {String(workforce.builders)} building · {String(workforce.staffTotal)} staffing buildings · {String(workforce.idle)} at the campfire
           {dry > 0 ? ` · ${String(dry)} cottage${dry === 1 ? '' : 's'} out of water or food` : game.population < beds ? ' · a newcomer every few seconds' : ' · cottages full'}
+          {cutOff > 0 ? ` · ${String(cutOff)} cottage${cutOff === 1 ? '' : 's'} with no road to the keep and the gate (unhappy: slower, nobody new moves in)` : ''}
         </Text>
       </View>
       <View style={styles.block}>
@@ -738,6 +939,8 @@ function Menu({ game, workforce }: { game: GameState; workforce: Workforce }) {
         <Text style={styles.body}>Raids, the army, recruiting, instant or fought-out battles and the defences: the ⚔️ button on the side of the map.</Text>
       </View>
       <Stockpiles game={game} />
+      <ShopPanel adsRemoved={game.adsRemoved} />
+      <GameButton label="THE STORY SO FAR" detail="the prologue: how Greyhollow came to be" onPress={onPrologue} secondary />
       <NewGameButton onConfirm={game.resetGame} />
       <Text style={styles.footer}>DIG BELOW. BUILD ABOVE. · PROGRESS SAVES AUTOMATICALLY</Text>
     </>
@@ -783,13 +986,7 @@ const styles = StyleSheet.create({
   raid: { alignSelf: 'center', width: '100%', maxWidth: 720 },
 
   bottom: { position: 'absolute', left: 0, right: 0, bottom: 0, paddingHorizontal: 10, gap: 8, alignItems: 'center' },
-  toast: { width: '100%', maxWidth: 720, paddingHorizontal: 12, paddingVertical: 8, borderLeftWidth: 2, borderLeftColor: '#c98959', backgroundColor: 'rgba(27, 32, 25, 0.92)' },
-  toastText: { color: '#d8d2c0', fontFamily: 'monospace', fontSize: 10 },
   toolbar: { flexDirection: 'row', width: '100%', maxWidth: 720, gap: 6 },
-  tool: { flex: 1, alignItems: 'center', gap: 2, paddingVertical: 8, borderWidth: 1, borderColor: '#3a4439', backgroundColor: 'rgba(17, 20, 16, 0.92)' },
-  toolIcon: { fontSize: 18, lineHeight: 22 },
-  toolLabel: { color: '#e6dfcb', fontFamily: 'monospace', fontSize: 9, fontWeight: '700' },
-  toolBadge: { position: 'absolute', top: 4, right: 6, minWidth: 16, paddingHorizontal: 3, textAlign: 'center', backgroundColor: '#d2a45f', color: '#20231b', fontFamily: 'monospace', fontSize: 9, fontWeight: '700' },
   side: { position: 'absolute', right: 12 },
   sideButton: {
     width: 48,

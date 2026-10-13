@@ -206,7 +206,7 @@ export function MinerStockpiles({ sites, steps }: { sites: Site[]; steps: Record
   return sites.map((site) => {
     const resource = depositAt(site.faceRow, site.faceColumn) ?? 'coal';
     return (
-      <Group key={`stockpile-${String(site.row)}-${String(site.column)}`} transform={[{ translateX: minerBinX(site) }, { translateY: site.row * T + T }]}>
+      <Group key={`stockpile-${String(site.row)}-${String(site.column)}-${String(site.faceRow)}-${String(site.faceColumn)}`} transform={[{ translateX: minerBinX(site) }, { translateY: site.row * T + T }]}>
         <Bin pictures={minerBins[resource]} width={MINER_BIN_WIDTH} height={MINER_BIN_HEIGHT} fill={steps[resource] / MINER_PILE_STEPS} />
       </Group>
     );

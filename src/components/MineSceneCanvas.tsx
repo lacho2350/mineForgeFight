@@ -84,7 +84,7 @@ function createMinerPicture(): SkPicture {
 
 function SiteMiners({ sites, picture }: { sites: Site[]; picture: SkPicture }) {
   return sites.map((site) => (
-    <Group key={`miner-${String(site.row)}-${String(site.column)}`} transform={[{ translateX: site.column * tileSize }, { translateY: site.row * tileSize }]}>
+    <Group key={`miner-${String(site.row)}-${String(site.column)}-${String(site.faceRow)}-${String(site.faceColumn)}`} transform={[{ translateX: site.column * tileSize }, { translateY: site.row * tileSize }]}>
       <Picture picture={picture} />
     </Group>
   ));

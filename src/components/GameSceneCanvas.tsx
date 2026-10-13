@@ -10,9 +10,9 @@ import { raidSide, type RaidParty } from '../game/raids';
 import type { Roads } from '../game/roads';
 import { rocksLeft } from '../game/rocks';
 import type { Trap } from '../game/traps';
-import { FOOD_RESOURCES, RESOURCES, type Resource } from '../game/resources';
+import { FOOD_RESOURCES, MINE_RESOURCES, RESOURCES, type Resource } from '../game/resources';
 import { fellingStand, forestLook } from '../game/forest';
-import { PASTURE_IDS } from '../game/farms';
+import { FISHERY_IDS, PASTURE_IDS } from '../game/farms';
 import { ARMY_UNITS } from '../game/units';
 import {
   CAMPFIRE,
@@ -50,7 +50,10 @@ import {
 import { EmptyPlot, PlacementGhost, Selection, type Ghost } from './stronghold/overlays';
 import { Gatehouse, Tower, WallSegment } from './stronghold/fortifications';
 import { BuildingArt, Campfire, Headframe, Parade, Scaffold } from './stronghold/buildingArt';
-import { Barges, Flocks, LiveBits, PILE_STEPS, Piles, ProgressBar, Wagons } from './stronghold/live';
+import { Barges, LiveBits, PILE_STEPS, Piles, ProgressBar, Wagons } from './stronghold/live';
+import { Flocks } from './stronghold/flocks';
+import { FishingBoats } from './stronghold/boats';
+import { fishingBoat } from '../game/boats';
 import { Housewives } from './stronghold/housewives';
 import { PeasantAtlas } from './stronghold/peasants';
 import { useStillImage } from './stronghold/stillImage';
@@ -102,11 +105,25 @@ function GameSceneCanvas({ width, height, camX, camY, zoom, selected, ghost, act
   const raid = useGameSlice((state) => state.raid, active);
   const forest = useGameSlice((state) => forestLook(state.forest), active);
   const felling = useGameSlice((state) => fellingStand(state.forest) ?? '', active);
+  // What the mine stockpile holds (for the handcarts hauling it to the warehouse), as a short stable string.
+  const hauled = useGameSlice((state) => MINE_RESOURCES.filter((resource) => state.mineStock[resource] >= 1).slice(0, 4).join(','), active);
   const flocks = useGameSlice(
     (state) =>
       PASTURE_IDS.map((id) => {
         const spot = state.placements[id];
         return spot && state.buildings[id] > 0 ? `${String(spot.x)},${String(spot.y)},${String(Math.min(30, Math.round(state.flocks[id] ?? 0)))}` : '';
+      })
+        .filter(Boolean)
+        .join(';'),
+    active,
+  );
+  // Each fishing hut's boat (from level 5): "x,tier;…".
+  const boats = useGameSlice(
+    (state) =>
+      FISHERY_IDS.map((id) => {
+        const spot = state.placements[id];
+        const tier = fishingBoat(state.buildings[id]);
+        return spot && tier ? `${String(spot.x)},${String(tier)}` : '';
       })
         .filter(Boolean)
         .join(';'),
@@ -123,7 +140,10 @@ function GameSceneCanvas({ width, height, camX, camY, zoom, selected, ghost, act
   // What the still image shows, in steps.
   const steps = (resources: readonly Resource[], capacity: number) => resources.map((resource) => Math.ceil(Math.min(1, warehouse[resource] / Math.max(1, capacity)) * PILE_STEPS)).join();
   const piles = steps(STORE_RESOURCES, warehouseCapacity);
-  const foodPiles = steps(FOOD_RESOURCES, buildingStats(buildings).granaryCapacity);
+  const granaryCapacity = buildingStats(buildings).granaryCapacity;
+  const foodPiles = steps(FOOD_RESOURCES, granaryCapacity);
+  // Stores with no room left: their carts and carriers stay home.
+  const full = [...(warehouse.wood >= warehouseCapacity ? ['wood'] : []), ...FOOD_RESOURCES.filter((food) => warehouse[food] >= granaryCapacity)].join(',');
   const parade = ARMY_UNITS.map((unit) => figuresFor(army[unit]));
   const building = construction.map((job) => job.building).sort();
   // Raiders show up on their ground, on the side they come from, while a raid is on its way or at the gate.
@@ -158,8 +178,9 @@ function GameSceneCanvas({ width, height, camX, camY, zoom, selected, ghost, act
         <Group transform={transform}>
           {warehousePlot && buildings.warehouse > 0 && <Piles resources={STORE_RESOURCES} steps={piles} plot={warehousePlot} />}
           {granaryPlot && buildings.granary > 0 && <Piles resources={FOOD_RESOURCES} steps={foodPiles} plot={granaryPlot} />}
-          <Flocks look={flocks} />
+          <Flocks look={flocks} clock={clock} />
           <LiveBits buildings={buildings} placements={placements} clock={clock} />
+          <FishingBoats look={boats} clock={clock} />
           <Barges clock={clock} live={active} />
           <Wagons clock={clock} placements={placements} roads={roads} clearedRocks={clearedRocks} live={active} />
           <Housewives clock={clock} placements={placements} roads={roads} clearedRocks={clearedRocks} live={active} />
@@ -178,6 +199,8 @@ function GameSceneCanvas({ width, height, camX, camY, zoom, selected, ghost, act
             roads={roads}
             clearedRocks={clearedRocks}
             felling={felling}
+            hauled={hauled}
+            full={full}
           />
           {selectedPlot && <Selection plot={selectedPlot} />}
           {ghost && <PlacementGhost ghost={ghost} />}
