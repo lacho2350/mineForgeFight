@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactElement } from 'react';
 import { ClipOp, Group, Skia, drawAsPicture, type SkImage, type SkPicture } from '@shopify/react-native-skia';
 import { Platform } from 'react-native';
-import { STILL_HEIGHT, STILL_TOP, SCENE_WIDTH as sceneWidth } from '../GameSceneLayout';
+import { SCENE_HEIGHT, STILL_HEIGHT, STILL_TOP, SCENE_WIDTH as sceneWidth } from '../GameSceneLayout';
 import { collectPaths, freeAfterDrawn } from '../skiaPaths';
 
 // Render the still layer offscreen into an image whenever its key changes, but only while the screen
@@ -135,4 +135,61 @@ export function useStillImage(key: string, pixelScale: number, active: boolean, 
     };
   }, []);
   return image;
+}
+
+/**
+ * A part of the still scene as a picture (not an image), drawn anew whenever `key` changes: for the
+ * buildings drawn see-through over the castle image, which are few and replay cheaply every frame. Its
+ * paths are collected and freed as the still image's are; a replaced picture is freed once the frames
+ * that might still draw it are done. `render` returning null means nothing to draw.
+ */
+export function useScenePicture(key: string, active: boolean, render: () => ReactElement | null): SkPicture | null {
+  const [picture, setPicture] = useState<SkPicture | null>(null);
+  const built = useRef('');
+  const shown = useRef<SkPicture | null>(null);
+  const mounted = useRef(true);
+  useEffect(() => {
+    if (!active || built.current === key) return;
+    let cancelled = false;
+    const element = render();
+    if (!element) {
+      built.current = key;
+      setPicture(null);
+      return;
+    }
+    const bounds = Skia.XYWHRect(0, 0, sceneWidth, SCENE_HEIGHT);
+    void collectPaths(
+      () => (cancelled ? Promise.resolve(null) : drawAsPicture(element, bounds)),
+      (next) => next,
+    ).then((next) => {
+      if (!next) return;
+      if (cancelled || !mounted.current) {
+        next.dispose();
+        return;
+      }
+      built.current = key;
+      setPicture(next);
+    });
+    return () => {
+      cancelled = true;
+    };
+    // `render` is a fresh closure every time; the key says what it draws.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key, active]);
+  // The picture before this one leaves the canvas with this commit; free it once that's drawn.
+  useEffect(() => {
+    const previous = shown.current;
+    shown.current = picture;
+    if (previous && previous !== picture) freeAfterDrawn(() => previous.dispose(), FREE_AFTER_MS);
+  }, [picture]);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      const last = shown.current;
+      shown.current = null;
+      if (last) freeAfterDrawn(() => last.dispose(), FREE_AFTER_MS);
+    };
+  }, []);
+  return picture;
 }

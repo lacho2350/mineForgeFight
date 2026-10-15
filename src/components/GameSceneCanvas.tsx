@@ -1,5 +1,5 @@
 import { memo, useMemo, type ReactNode } from 'react';
-import { BlurMask, Canvas, Group, Image, Path, Rect } from '@shopify/react-native-skia';
+import { BlurMask, Canvas, Group, Image, Path, Picture, Rect } from '@shopify/react-native-skia';
 import { PixelRatio, StyleSheet, View } from 'react-native';
 import { useDerivedValue, useFrameCallback, useSharedValue, type SharedValue } from 'react-native-reanimated';
 import { workforceOf } from '../game/hold';
@@ -27,9 +27,12 @@ import {
   SCENE_WIDTH as sceneWidth,
   TOWER_SPOTS,
   WALL_TILES,
+  fadedBuildings,
   iso,
   plotOf,
+  watch,
   type Plot,
+  type Watched,
 } from './GameSceneLayout';
 import { svgPath } from './skiaPaths';
 import { poly, tierOf } from './stronghold/shapes';
@@ -56,7 +59,8 @@ import { FishingBoats } from './stronghold/boats';
 import { fishingBoat } from '../game/boats';
 import { Housewives } from './stronghold/housewives';
 import { PeasantAtlas } from './stronghold/peasants';
-import { useStillImage } from './stronghold/stillImage';
+import { SLOTS_PER_RESOURCE, Stockpile, stockpilePlot, stockpileSteps } from './stronghold/stockpile';
+import { useScenePicture, useStillImage } from './stronghold/stillImage';
 
 export type GameSceneProps = {
   width: number;
@@ -85,6 +89,8 @@ const STILL_SCALE = Math.min(1.6, PixelRatio.get() * 1.25);
 const STORE_RESOURCES = RESOURCES.filter((resource) => !FOOD_RESOURCES.includes(resource));
 
 const figuresFor = (count: number) => (count <= 0 ? 0 : count >= 30 ? 3 : count >= 10 ? 2 : 1);
+/** How faint a see-through building is drawn. */
+const FADED_OPACITY = 0.38;
 
 function GameSceneCanvas({ width, height, camX, camY, zoom, selected, ghost, active = true }: GameSceneProps) {
   const buildings = useGameSlice((state) => state.buildings, active);
@@ -138,9 +144,9 @@ function GameSceneCanvas({ width, height, camX, camY, zoom, selected, ghost, act
   const clock = useCityClock(active);
   const transform = useDerivedValue(() => [{ scale: zoom.get() }, { translateX: -camX.get() }, { translateY: -camY.get() }]);
 
-  // What the still image shows, in steps.
+  // What the stores show, in steps: the warehouse's stockpile squares, the granary's piles.
   const steps = (resources: readonly Resource[], capacity: number) => resources.map((resource) => Math.ceil(Math.min(1, warehouse[resource] / Math.max(1, capacity)) * PILE_STEPS)).join();
-  const piles = steps(STORE_RESOURCES, warehouseCapacity);
+  const stockpile = stockpileSteps(STORE_RESOURCES, warehouse, warehouseCapacity);
   const granaryCapacity = buildingStats(buildings).granaryCapacity;
   const foodPiles = steps(FOOD_RESOURCES, granaryCapacity);
   // Stores with no room left: their carts and carriers stay home.
@@ -149,15 +155,28 @@ function GameSceneCanvas({ width, height, camX, camY, zoom, selected, ghost, act
   const building = construction.map((job) => job.building).sort();
   // Raiders show up on their ground, on the side they come from, while a raid is on its way or at the gate.
   const raiders = raid ? { party: raid.party, side: raidSide(raid.number), atGate } : null;
-  const key = JSON.stringify([buildings, placements, roads, clearedRocks.length, traps, parade, building, raiders]);
-  // In two layers, each drawn in a step of its own: the ground, then everything standing on it.
-  const still = useStillImage(key, STILL_SCALE, active, () => [
-    <StaticGround key="ground" buildings={buildings} roads={roads} clearedRocks={clearedRocks} traps={traps} />,
-    <StaticScene key="scene" buildings={buildings} placements={placements} roads={roads} clearedRocks={clearedRocks} parade={parade} building={building} raiders={raiders} />,
-  ]);
   const warehousePlot = plotOf('warehouse', placements);
   const granaryPlot = plotOf('granary', placements);
   const selectedPlot = selected ? plotOf(selected, placements) : null;
+  // See-through buildings, Stronghold-style: whatever stands in front of the tapped building, the
+  // warehouse's stockpile or the building being placed — and would hide it — is left out of the castle
+  // image and drawn over it, faint (`FadedBuildings`).
+  const ghostPlot = ghost?.plot ?? null;
+  const faded = useMemo(() => {
+    const watched: Watched[] = [];
+    if (selected && selectedPlot && selected !== 'wall' && selected !== 'moat') watched.push(watch(selectedPlot, selected));
+    if (ghostPlot) watched.push(watch(ghostPlot));
+    if (warehousePlot && buildings.warehouse > 0) watched.push(watch(stockpilePlot(warehousePlot, STORE_RESOURCES.length * SLOTS_PER_RESOURCE), 'warehouse'));
+    return fadedBuildings(buildings, placements, watched);
+  }, [buildings, placements, selected, selectedPlot, ghostPlot, warehousePlot]);
+  const key = JSON.stringify([buildings, placements, roads, clearedRocks.length, traps, parade, building, raiders, faded]);
+  // In two layers, each drawn in a step of its own: the ground, then everything standing on it.
+  const still = useStillImage(key, STILL_SCALE, active, () => [
+    <StaticGround key="ground" buildings={buildings} roads={roads} clearedRocks={clearedRocks} traps={traps} />,
+    <StaticScene key="scene" buildings={buildings} placements={placements} roads={roads} clearedRocks={clearedRocks} parade={parade} building={building} raiders={raiders} faded={faded} />,
+  ]);
+  const fadedKey = JSON.stringify([faded, faded.map((id) => [buildings[id], placements[id]])]);
+  const fadedPicture = useScenePicture(fadedKey, active, () => (faded.length > 0 ? <FadedBuildings buildings={buildings} placements={placements} faded={faded} /> : null));
 
   // Two canvases, one over the other. Below, everything that stands still — the mountains, the castle
   // image and the forest, big and costly to fill — drawn again only when the camera moves or they change.
@@ -177,8 +196,13 @@ function GameSceneCanvas({ width, height, camX, camY, zoom, selected, ghost, act
       </Canvas>
       <Canvas style={styles.over}>
         <Group transform={transform}>
-          {warehousePlot && buildings.warehouse > 0 && <Piles resources={STORE_RESOURCES} steps={piles} plot={warehousePlot} />}
+          {warehousePlot && buildings.warehouse > 0 && <Stockpile resources={STORE_RESOURCES} steps={stockpile} plot={warehousePlot} />}
           {granaryPlot && buildings.granary > 0 && <Piles resources={FOOD_RESOURCES} steps={foodPiles} plot={granaryPlot} />}
+          {fadedPicture && (
+            <Group opacity={FADED_OPACITY}>
+              <Picture picture={fadedPicture} />
+            </Group>
+          )}
           <Flocks look={flocks} clock={clock} />
           <LiveBits buildings={buildings} placements={placements} clock={clock} />
           <FishingBoats look={boats} clock={clock} />
@@ -227,7 +251,7 @@ function StaticGround({ buildings, roads, clearedRocks, traps }: { buildings: Re
 }
 
 // Everything standing on it that doesn't move.
-function StaticScene({ buildings, placements, roads, clearedRocks, parade, building, raiders }: {
+function StaticScene({ buildings, placements, roads, clearedRocks, parade, building, raiders, faded }: {
   buildings: Record<BuildingId, number>;
   placements: Placements;
   roads: Roads;
@@ -235,6 +259,8 @@ function StaticScene({ buildings, placements, roads, clearedRocks, parade, build
   parade: number[];
   building: BuildingId[];
   raiders: { party: RaidParty; side: MapSide; atGate: boolean } | null;
+  /** Buildings left out (drawn see-through over the image instead, `FadedBuildings`); their shadows stay. */
+  faded: BuildingId[];
 }) {
   const items: { depth: number; node: ReactNode }[] = [];
   const add = (depth: number, node: ReactNode) => items.push({ depth, node });
@@ -300,6 +326,7 @@ function StaticScene({ buildings, placements, roads, clearedRocks, parade, build
   // Buildings where they stand; a building's first level shows as a staked site under scaffolding.
   for (const { id, plot } of plots) {
     const tier = tierOf(buildings[id]);
+    if (tier > 0 && faded.includes(id)) continue;
     add(front(plot), tier === 0 ? <EmptyPlot key={id} plot={plot} /> : <BuildingArt key={id} id={id} plot={plot} tier={tier} level={buildings[id]} />);
   }
 
@@ -319,6 +346,22 @@ function StaticScene({ buildings, placements, roads, clearedRocks, parade, build
         const plot = plotOf(id, placements);
         return plot ? <Scaffold key={id} plot={plot} /> : null;
       })}
+    </Group>
+  );
+}
+
+// The see-through buildings, back to front, as the still image would draw them (recorded into a picture
+// by `useScenePicture` and drawn faint over the castle image).
+function FadedBuildings({ buildings, placements, faded }: { buildings: Record<BuildingId, number>; placements: Placements; faded: BuildingId[] }) {
+  const items = faded
+    .map((id) => ({ id, plot: plotOf(id, placements) }))
+    .filter((item): item is { id: BuildingId; plot: Plot } => item.plot !== null)
+    .sort((a, b) => a.plot.x + a.plot.w + a.plot.y + a.plot.d - (b.plot.x + b.plot.w + b.plot.y + b.plot.d));
+  return (
+    <Group>
+      {items.map(({ id, plot }) => (
+        <BuildingArt key={id} id={id} plot={plot} tier={tierOf(buildings[id])} level={buildings[id]} />
+      ))}
     </Group>
   );
 }

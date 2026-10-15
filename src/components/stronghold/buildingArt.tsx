@@ -127,7 +127,7 @@ export function BuildingArt({ id, plot, tier, level }: { id: BuildingId; plot: P
       );
     }
     case 'warehouse': {
-      // A shed (a barn from level 6) at the back; the stock piles in its yard are drawn live (see `Piles`).
+      // A shed (a barn from level 6) at the back; the stockpile in its yard is drawn live (see `Stockpile`).
       // On the big plot the shed is deeper and taller, with a wider door.
       const barn = tier >= 2;
       const big = w >= 5;

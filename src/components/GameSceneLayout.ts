@@ -124,3 +124,33 @@ export function tapTargets(placements: Placements): { id: BuildingId; plot: Plot
 }
 
 export const SHAFT_RECT: SceneRect = plotRect(MINE_PLOT);
+
+/** How far down the map a plot reaches: bigger is nearer the viewer, drawn later (in front). */
+export const plotDepth = depth;
+
+const overlapping = (a: SceneRect, b: SceneRect) => a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+
+/** Something on the map that must stay in view: the buildings in front of it are drawn see-through
+ * (`except` the building it belongs to — the tapped one, the stockpile's warehouse). */
+export type Watched = { plot: Plot; rect: SceneRect; except?: BuildingId };
+
+/** What's watched for a plot: itself, raised as tall as it is. */
+export const watch = (plot: Plot, except?: BuildingId): Watched => ({ plot, rect: plotRect(plot), except });
+
+/**
+ * The buildings drawn see-through, Stronghold-style: every built one (not the fortifications) that stands
+ * in front of something watched — the tapped building, the stockpile, the building being placed — and
+ * overlaps it on screen, so it would hide it.
+ */
+export function fadedBuildings(buildings: Record<BuildingId, number>, placements: Placements, watched: Watched[]): BuildingId[] {
+  if (watched.length === 0) return [];
+  const faded: BuildingId[] = [];
+  for (const id of Object.keys(FOOTPRINTS) as BuildingId[]) {
+    if (id === 'wall' || id === 'towers' || id === 'gate' || id === 'moat' || buildings[id] <= 0) continue;
+    const plot = plotOf(id, placements);
+    if (!plot) continue;
+    const rect = plotRect(plot);
+    if (watched.some((w) => w.except !== id && depth(plot) > depth(w.plot) && overlapping(rect, w.rect))) faded.push(id);
+  }
+  return faded.sort();
+}

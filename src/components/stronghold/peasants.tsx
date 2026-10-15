@@ -17,11 +17,11 @@ import { CAMPFIRE, TILE_HH, TILE_HW, iso, plotOf } from '../GameSceneLayout';
 import { ORIGIN } from './shapes';
 
 const TUNICS = ['#7a5a3a', '#5d6e3a', '#8a6a4a', '#6a5a7a', '#7a4a3a'];
-const LOADS = ['#1c1c1f', '#9a9da3', '#c46a2b', '#7a3427', '#8a5a2e', RESOURCE_INFO.fish.color, RESOURCE_INFO.mutton.color];
-/** The logs woodcutters carry home. */
-const LOGS_LOAD = 4;
-/** The basket of fish a fishing hut's hand carries to the store, and the mutton a shepherd brings in. */
-const FOOT_LOADS: Partial<Record<Resource, number>> = { fish: 5, mutton: 6 };
+/** What building staff fetch from the store (shown as a sack of it). */
+const SUPPLIES: Resource = 'iron';
+/** The foods carried to the store on foot: a basket of fish from a fishing hut, mutton from a pasture. The
+ * rest go by cart. */
+const FOOT_LOADS: readonly Resource[] = ['fish', 'mutton'];
 
 /** A peasant, standing with their feet at (x, y) (tower archers, drawn into the still image). */
 export function Peasant({ x = 0, y = 0, tunic }: { x?: number; y?: number; tunic: string }) {
@@ -35,7 +35,8 @@ export function Peasant({ x = 0, y = 0, tunic }: { x?: number; y?: number; tunic
   );
 }
 
-// The sprite sheet: one cell per tunic, then one per load (a sack drawn where a peasant carries it),
+// The sprite sheet: one cell per tunic, then one load per resource (the goods as a peasant carries them,
+// Stronghold-style — a sack of ore, a bundle of logs, a basket of fish — drawn where they're carried),
 // then a hammer. Cells are 8 × 12 scene units drawn 4× larger; the feet sit at (4, 11) in every cell,
 // so a load drawn with its carrier's transform lands on their shoulder.
 const SPRITE_RES = 4;
@@ -44,7 +45,8 @@ const CELL_H = 12;
 const FEET_X = 4;
 const FEET_Y = 11;
 const LOAD_CELL = TUNICS.length;
-const HAMMER_CELL = TUNICS.length + LOADS.length;
+const loadCell = (resource: Resource) => LOAD_CELL + RESOURCES.indexOf(resource);
+const HAMMER_CELL = TUNICS.length + RESOURCES.length;
 // After the peasants' cells, the carts': a handcart with its carter, then one heap per resource (drawn with
 // the cart's transform, so it lands in the cart). The ground under the wheels sits at (CART_AX, CART_AY).
 const CART_X0 = (HAMMER_CELL + 1) * CELL_W;
@@ -71,10 +73,29 @@ function getSpriteSheet() {
     rect(cell, -1.8, -6.5, 3.6, 4.2, tunic);
     rect(cell, -1.2, -9, 2.4, 2.5, '#e0b48a');
   });
-  LOADS.forEach((load, index) => {
-    paint.setColor(Skia.Color(load));
-    canvas.drawCircle(((LOAD_CELL + index) * CELL_W + FEET_X + 2.2) * SPRITE_RES, (FEET_Y - 7.2) * SPRITE_RES, 2 * SPRITE_RES, paint);
-  });
+  for (const resource of RESOURCES) {
+    const { color, light, dark } = RESOURCE_INFO[resource];
+    const cell = loadCell(resource);
+    if (resource === 'wood') {
+      // A bundle of logs over the shoulder, their ends lighter.
+      rect(cell, -0.6, -8.4, 5.6, 1.8, color);
+      rect(cell, 4.2, -8.4, 0.8, 1.8, light);
+      rect(cell, -0.6, -8.4, 0.8, 1.8, light);
+      rect(cell, -0.6, -7.2, 5.6, 0.5, dark);
+    } else if (resource === 'fish' || resource === 'apples') {
+      // A basket, the goods heaped over its rim.
+      rect(cell, 0.6, -8.2, 3.4, 2.2, '#a5774c');
+      rect(cell, 0.6, -6.6, 3.4, 0.5, '#6e4a2f');
+      rect(cell, 1.0, -9.0, 2.6, 1.0, color);
+    } else {
+      // A sack of it on the shoulder, tied at the top, lit from the upper left.
+      paint.setColor(Skia.Color(color));
+      canvas.drawCircle((cell * CELL_W + FEET_X + 2.2) * SPRITE_RES, (FEET_Y - 7.2) * SPRITE_RES, 2 * SPRITE_RES, paint);
+      paint.setColor(Skia.Color(light));
+      canvas.drawCircle((cell * CELL_W + FEET_X + 1.5) * SPRITE_RES, (FEET_Y - 7.9) * SPRITE_RES, 0.7 * SPRITE_RES, paint);
+      rect(cell, 1.8, -9.8, 0.8, 1.0, dark);
+    }
+  }
   rect(HAMMER_CELL, 1.6, -9, 1, 4, '#c9ccd1');
   // The handcart (as the depot's `CartArt`), and the heaps.
   const cartRect = (left: number, x: number, y: number, w: number, h: number, color: string) => {
@@ -161,7 +182,7 @@ function peasantSpecs(
   };
   // A peasant carrying a load (one way: there, or back with `carryBack`), or a handcart heaped with a resource
   // on the way there and coming back empty.
-  const walker = (walk: Walk, speed: number, phase: number, cell: number, load: number, carryBack: boolean) => goer(walk, speed, phase, person(cell), person(LOAD_CELL + load), carryBack);
+  const walker = (walk: Walk, speed: number, phase: number, cell: number, load: Resource, carryBack: boolean) => goer(walk, speed, phase, person(cell), person(loadCell(load)), carryBack);
   const carter = (walk: Walk, speed: number, phase: number, resource: Resource) => goer(walk, speed, phase, handcart(cartCell(0)), handcart(heapCell(resource)), false);
   let carts = 0;
   const footprint = (id: BuildingId) => {
@@ -181,7 +202,7 @@ function peasantSpecs(
     const pushing = Math.min(3, Math.ceil(haulers / 3));
     for (let i = 0; i < haulers && haul; i++) {
       if (i < pushing && haulByCart) carter(haulByCart, 0.9, (i + 0.5) / Math.max(1, pushing), hauled.length > 0 ? hauled[i % hauled.length] : 'coal');
-      else walker(haul, 1.1, i / Math.max(1, haulers), i % TUNICS.length, i % LOADS.length, false);
+      else walker(haul, 1.1, i / Math.max(1, haulers), i % TUNICS.length, hauled.length > 0 ? hauled[i % hauled.length] : 'coal', false);
     }
     walkers = haulers - pushing;
     carts = pushing;
@@ -199,7 +220,7 @@ function peasantSpecs(
       if (!plot || walkers >= MAX_WALKERS || workforce.staff[id] <= 0 || buildings[id] <= 0) return;
       const walk = walkBetween(plot, store, placements, roads, clearedRocks);
       if (!walk) return;
-      walker(walk, 0.9, (index * 0.37) % 1, index % TUNICS.length, 3, true);
+      walker(walk, 0.9, (index * 0.37) % 1, index % TUNICS.length, SUPPLIES, true);
       walkers += 1;
     });
   }
@@ -209,12 +230,12 @@ function peasantSpecs(
   FARMS_SHOWN.forEach(({ id, food }, index) => {
     const farm = footprint(id);
     if (!larder || !farm || buildings[id] <= 0 || workforce.staff[id] <= 0 || full.includes(food)) return;
-    const onFoot = FOOT_LOADS[food];
-    if (onFoot !== undefined ? walkers >= MAX_WALKERS : carts >= MAX_CARTS) return;
-    const walk = onFoot !== undefined ? walkBetween(farm, larder, placements, roads, clearedRocks) : cartWay(farm, larder, placements, roads, clearedRocks);
+    const onFoot = FOOT_LOADS.includes(food);
+    if (onFoot ? walkers >= MAX_WALKERS : carts >= MAX_CARTS) return;
+    const walk = onFoot ? walkBetween(farm, larder, placements, roads, clearedRocks) : cartWay(farm, larder, placements, roads, clearedRocks);
     if (!walk) return;
-    if (onFoot !== undefined) {
-      walker(walk, 0.9, (index * 0.41) % 1, index % TUNICS.length, onFoot, false);
+    if (onFoot) {
+      walker(walk, 0.9, (index * 0.41) % 1, index % TUNICS.length, food, false);
       walkers += 1;
     } else {
       carter(walk, 0.75, (index * 0.41) % 1, food);
@@ -229,7 +250,7 @@ function peasantSpecs(
     const road = hut && buildings[id] > 0 && stand ? walkBetween(hut, { ...FOREST_EXIT, w: 1, d: 1 }, placements, roads, clearedRocks) : null;
     const fell = road && stand ? walkOn(road, standWay(stand)) : null;
     const cutters = fell ? Math.min(2, workforce.staff[id], MAX_WALKERS - walkers) : 0;
-    for (let i = 0; i < cutters && fell; i++) walker(fell, 0.8, (i + index * 0.3) / Math.max(1, cutters), (i + index + 2) % TUNICS.length, LOGS_LOAD, true);
+    for (let i = 0; i < cutters && fell; i++) walker(fell, 0.8, (i + index * 0.3) / Math.max(1, cutters), (i + index + 2) % TUNICS.length, 'wood', true);
     walkers += cutters;
   });
   for (const job of construction) {

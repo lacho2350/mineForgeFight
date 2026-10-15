@@ -199,6 +199,29 @@ game, and starts the 1-second simulation (`startSimulation()`).
 - **Stockpiles, per resource**: `vein` (miners' bins) → `mineExit` (surface bins) → `mineStock` →
   `warehouse`. Capacities apply per resource. Surface carts move exit→mine→warehouse each tick
   (per-tick totals shared across resources).
+- **The warehouse's stockpile on the map** (`stronghold/stockpile.tsx`, since 2026-10-15, Stronghold-style):
+  the yard in front of the shed is a grid of 7 × 4 squares, **two to a resource** (`SLOTS_PER_RESOURCE`;
+  the 14 non-food resources, each with its own place), on which the goods pile up as the stock grows — a
+  resource's first square fills with the first half of the warehouse's capacity for it, the second with the
+  rest, so **a full warehouse is a yard covered end to end**. Looks by resource (`lookOf`): wood as stacked
+  logs, granite as blocks in courses, ores and coal and salt and sulfur as heaps, gold / silver / diamonds /
+  emeralds / mithril as chests (wood with the goods on the lid), wool as bales; in `STACK_STEPS` (8) steps
+  (`stockpileSteps` is the memo key), drawn live with `useSvgPaths`. The granary keeps the old `Piles`.
+  **Goods carried one by one** (`peasants.tsx`): every peasant's load is a sprite of the goods themselves —
+  a sack in the resource's colour (lit, tied at the top), a bundle of logs, a basket of fish or apples —
+  one cell per resource (`loadCell`); the haulers between the mine and the warehouse carry what the mine
+  stockpile holds (`hauled`, like the handcarts), staff fetch `SUPPLIES` (iron), fishing hands and shepherds
+  their food, woodcutters their logs. The load shows on the way to the store and is gone on the way back.
+- **See-through buildings** (Stronghold-style, since 2026-10-15): a built building that stands in front of
+  something that must stay in view and overlaps it on screen — the **tapped building**, the **warehouse's
+  stockpile yard** (always), or the **building being placed** — is left out of the castle image and drawn
+  over it faint (`FADED_OPACITY` 0.38): `fadedBuildings` / `watch` in GameSceneLayout.ts (`plotDepth` says
+  what's in front; fortifications never fade; a watch's `except` is its own building, so the shed never
+  fades for its own yard), `faded` in the still image's key and `StaticScene` (shadows stay), and
+  `FadedBuildings` recorded as a **picture** by `useScenePicture` (stillImage.tsx: `drawAsPicture` under
+  `collectPaths`, so its `svgPath`s are freed; the replaced picture is freed with `freeAfterDrawn`) and drawn
+  in the live layer with `<Picture>`. Changing what's faded rebuilds the castle image (a few hundred ms,
+  in strips); until then the old image shows the building solid under the faint one.
 - **The stronghold map** (`src/game/cityMap.ts`): 59×59 tiles in rings from the edge inward
   (`zoneAt`): tiles 0–2 **raider ground** (raiders are drawn there, on the side they come from, while a
   raid is sighted or attacking), 3–4 the **trap belt** (traps only, see below), 5 the **moat**
@@ -607,7 +630,8 @@ src/
                            and `StaticScene` — each recorded in a step of its own and rasterised a strip
                            of rows per task, so a rebuild never freezes the game (keep fast-changing
                            things out of the key all the same); the live layer on top has the
-                           warehouse piles, progress bars, selection, a few animated bits (smoke,
+                           warehouse stockpile and granary piles, the see-through buildings' picture,
+                           progress bars, selection, a few animated bits (smoke,
                            balloons, flame, mine wheel, the river barges) and every peasant as one `Atlas` moved by a
                            single `useRSXformBuffer` worklet (haulers, staff errands, crews, idlers, and the
                            handcarts: a third of the mine's haulers, up to 3, push carts heaped with
@@ -623,7 +647,8 @@ src/
                            boxes/roofs/towers/flags, shared colours), `backdrop`, `ground` (grass, rocks,
                            roads, traps, trees, raiders), `fortifications` (wall, towers, gatehouse),
                            `buildingArt` (every building, campfire, headframe, scaffolds, parade),
-                           `live` (piles, smoke, balloons, wheel, carts, barges, progress bars),
+                           `live` (the granary's piles, smoke, balloons, wheel, carts, barges, progress
+                           bars), `stockpile` (the warehouse's yard, below),
                            `peasants` (the sprite atlas), `housewives` (the cottages' women on their
                            errands), `overlays` (plots, selection, placement
                            ghost) and `stillImage` (`useStillImage`, `picturesToImage`).
