@@ -15,6 +15,24 @@ export const MINE_GALLERY_STEP = MINE_TILE_SIZE * MINE_LEVEL_ROWS;
 export const MINE_GALLERY_START = (MINE_ENTRANCE_ROW + 1) * MINE_TILE_SIZE;
 export const MINE_MAP_WIDTH = MINE_COLUMNS * MINE_TILE_SIZE;
 
+// The camera (MineViewport): map drawn beyond the screen edges so panning rarely reveals undrawn rock,
+// and the visible-area state only updates when the camera crosses VIEW_STEP map pixels (or a zoom step).
+export const MINE_OVERSCAN = MINE_TILE_SIZE * 4;
+export const MINE_VIEW_STEP = MINE_TILE_SIZE * 3;
+
+/** The part of the map (in map pixels, with some margin) the camera can currently see. */
+export type MineView = { left: number; top: number; right: number; bottom: number };
+
+/** The camera's first position: centred on the lift at the surface, at zoom 1, in a viewport `width` wide. */
+export const mineStartCamX = (width: number) => Math.min(Math.max(MINE_SHAFT_X + MINE_TILE_SIZE / 2 - width / 2, 0), Math.max(0, MINE_MAP_WIDTH - width));
+
+/** The view the camera shows from (camX, camY) at `zoom` in a viewport `width` × `height` (as the viewport reports it). */
+export function mineViewAt(camX: number, camY: number, zoom: number, width: number, height: number): MineView {
+  const left = Math.floor(camX / MINE_VIEW_STEP) * MINE_VIEW_STEP - MINE_OVERSCAN;
+  const top = Math.floor(camY / MINE_VIEW_STEP) * MINE_VIEW_STEP - MINE_OVERSCAN;
+  return { left, top, right: left + MINE_VIEW_STEP + width / zoom + MINE_OVERSCAN * 2, bottom: top + MINE_VIEW_STEP + height / zoom + MINE_OVERSCAN * 2 };
+}
+
 // Unexplored rock shown under the deepest gallery.
 export const MINE_BEDROCK_MARGIN = MINE_TILE_SIZE * 2;
 

@@ -8,9 +8,11 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
     "ios": {
+      "bundleIdentifier": "com.lacho.mineforgefight",
       "supportsTablet": true
     },
     "android": {
+      "package": "com.lacho.mineforgefight",
       "adaptiveIcon": {
         "backgroundColor": "#111410",
         "foregroundImage": "./assets/android-icon-foreground.png",

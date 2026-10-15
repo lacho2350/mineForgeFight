@@ -251,19 +251,39 @@ export type RoadTest = (x: number, y: number) => boolean;
 // ——— Doors ———
 // Every building the player places needs a road at its door joined to the keep and the main gate before it
 // can be placed (roads.ts, `accessRoads`) — but the pastures, out on the raiders' ground, and the fishing
-// huts on the riverbank, which are reached on foot along the bank (the town's roads don't get there early). Doors face the
-// front-left (the side along y + d); the barracks' faces the front-right (along x + w).
+// huts on the riverbank, which are reached on foot along the bank (the town's roads don't get there early).
+// Doors face the front-left (the side along y + d); the barracks' faces the front-right (along x + w). A
+// one-tile building (a cottage) opens on any side: its road may touch it anywhere (cottages packed four to a
+// block, from saves that split the old 2 × 2 houses, had their back row's doors facing the front row).
 
 /** Does this building need a road at its door to be placed? */
 export const needsRoad = (id: BuildingId) => isPlaceable(id) && !isPasture(id) && !isFishery(id);
 
-/** Which way a building's door faces, as the player sees it. */
-export const doorSide = (id: BuildingId): 'front-left' | 'front-right' => (id === 'barracks' ? 'front-right' : 'front-left');
+export type DoorSide = 'front-left' | 'front-right' | 'any';
+
+/** Which way a building's door faces, as the player sees it (`any`: a one-tile building, reached from any side). */
+export const doorSide = (id: BuildingId): DoorSide => {
+  const { w, d } = FOOTPRINTS[id];
+  if (w === 1 && d === 1) return 'any';
+  return id === 'barracks' ? 'front-right' : 'front-left';
+};
+
+/** The door's side as the player reads it: "the front-left side", "any side". */
+export const doorText = (id: BuildingId) => (doorSide(id) === 'any' ? 'any side' : `the ${doorSide(id)} side`);
 
 /** The tiles in front of a building's door, just outside its footprint: a road on one of them reaches it. */
 export function doorTiles(id: BuildingId, spot: Spot): Spot[] {
   const { w, d } = FOOTPRINTS[id];
-  if (doorSide(id) === 'front-right') return Array.from({ length: d }, (_, i) => ({ x: spot.x + w, y: spot.y + i }));
+  const side = doorSide(id);
+  if (side === 'any') {
+    return [
+      { x: spot.x - 1, y: spot.y },
+      { x: spot.x + w, y: spot.y },
+      { x: spot.x, y: spot.y - 1 },
+      { x: spot.x, y: spot.y + d },
+    ];
+  }
+  if (side === 'front-right') return Array.from({ length: d }, (_, i) => ({ x: spot.x + w, y: spot.y + i }));
   return Array.from({ length: w }, (_, i) => ({ x: spot.x + i, y: spot.y + d }));
 }
 
@@ -317,7 +337,7 @@ export function placementProblem(
   }
   if (access && needsRoad(id) && !doorTiles(id, spot).some((tile) => access.has(tileKey(tile.x, tile.y)))) {
     if (access.size === 0) return 'No road joins the keep to the main gate: lay one first (BUILD → roads), then build along it.';
-    return `Needs a road at its door (the ${doorSide(id)} side) joined to the keep and the main gate.`;
+    return `Needs a road at its door (${doorText(id)}) joined to the keep and the main gate.`;
   }
   return null;
 }

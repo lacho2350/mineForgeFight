@@ -3,6 +3,7 @@ import { FOOTPRINTS, MAIN_ROAD, MINE_SPOT, doorTiles, nearestFreeSpot, needsRoad
 import { GROUND_SPEED, ROAD_INFO, accessRoads, cartWay, hasRoadAccess, joinBuildings, roadBetween, walkBetween, type Roads } from '../src/game/roads';
 import { rockyTest } from '../src/game/rocks';
 import { mergeSave, migrateSave } from '../src/game/saveMigration';
+import { SAVE_VERSION } from '../src/game/save';
 import { useGameStore } from '../src/game/gameStore';
 import { hasHomeRoad, isHappy, sleepers, workPace } from '../src/game/homes';
 import type { BuildingId } from '../src/game/buildings';
@@ -97,8 +98,23 @@ describe('a road at the door', () => {
       expect(rockyTest(loaded.clearedRocks)(x, y)).toBe(false);
     }
     // A save already under the rule is left as it is.
-    const current = mergeSave(migrateSave(JSON.parse(JSON.stringify(saved)), 5), useGameStore.getInitialState());
+    const current = mergeSave(migrateSave(JSON.parse(JSON.stringify(saved)), SAVE_VERSION), useGameStore.getInitialState());
     expect(hasRoadAccess('armory', away, current.roads)).toBe(false);
+  });
+
+  it('reaches a one-tile cottage on any side: packed four to a block, the back row gets its road on loading', () => {
+    newGame();
+    const { x, y } = offTheRoads();
+    expect(doorTiles('houses2', { x, y })).toHaveLength(4);
+    // Four cottages on one block, as the split houses left them: the back row's front side is the front row.
+    const block: Placements = { ...game().placements, houses2: { x, y }, houses3: { x: x + 1, y }, houses4: { x, y: y + 1 }, houses5: { x: x + 1, y: y + 1 } };
+    const buildings = { ...game().buildings, houses2: 1, houses3: 1, houses4: 1, houses5: 1 };
+    const { roads } = joinBuildings(block, game().roads);
+    for (const id of ['houses2', 'houses3', 'houses4', 'houses5'] as const) expect(hasRoadAccess(id, block[id] as { x: number; y: number }, roads)).toBe(true);
+    // A save from before (under version 6) has them laid free once more on loading.
+    const loaded = mergeSave(migrateSave(JSON.parse(JSON.stringify({ ...game(), placements: block, buildings })), 5), useGameStore.getInitialState());
+    for (const id of ['houses2', 'houses3', 'houses4', 'houses5'] as const) expect(hasHomeRoad(id, loaded)).toBe(true);
+    expect(loaded.notice).toMatch(/laid free/);
   });
 });
 

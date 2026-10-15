@@ -16,6 +16,13 @@ const RELEASE_INTERSTITIAL_ID: Record<string, string> = {
   ios: 'ca-app-pub-0000000000000000/0000000000',
 };
 
+// Development only: have the consent form behave as in the EEA wherever the device is, to try it outside
+// Europe (the emulator counts as a test device by itself; a real phone's hashed id goes in
+// DEBUG_CONSENT_TEST_DEVICES — the Mobile Ads SDK logs it at start-up). `AdsConsent.reset()` from a dev
+// menu would show the form again; release builds ignore both.
+const DEBUG_CONSENT_AS_EEA: boolean = false;
+const DEBUG_CONSENT_TEST_DEVICES: string[] = [];
+
 let ads: AdsModule | null | undefined;
 function adsModule(): AdsModule | null {
   if (ads !== undefined) return ads;
@@ -47,7 +54,9 @@ export async function startAds() {
   const unitId = __DEV__ ? sdk.TestIds.INTERSTITIAL : RELEASE_INTERSTITIAL_ID[Platform.OS];
   if (!unitId || unitId.includes('0000000000')) return;
   try {
-    const consent = await sdk.AdsConsent.gatherConsent();
+    const consent = await sdk.AdsConsent.gatherConsent(
+      __DEV__ && DEBUG_CONSENT_AS_EEA ? { debugGeography: sdk.AdsConsentDebugGeography.EEA, testDeviceIdentifiers: DEBUG_CONSENT_TEST_DEVICES } : {},
+    );
     if (consent.privacyOptionsRequirementStatus === sdk.AdsConsentPrivacyOptionsRequirementStatus.REQUIRED) {
       showPrivacyForm = () => sdk.AdsConsent.showPrivacyOptionsForm();
     }

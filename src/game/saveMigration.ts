@@ -214,7 +214,7 @@ export function mergeSave(saved: Incoming | undefined, fresh: GameState): GameSt
     if (partyValue(raid.party) > strength * 1.2) merged.raid = { ...raid, party: raidParty(raid.number, strength, raid.kind) };
   }
   if (joined > 0) {
-    merged.notice = `Every building now needs a road at its door joined to the keep and the main gate: ${String(joined)} tile${joined === 1 ? '' : 's'} of dirt road were laid free to the ones without.`;
+    merged.notice = `Every building needs a road at its door joined to the keep and the main gate (a cottage's on any side): ${String(joined)} tile${joined === 1 ? '' : 's'} of dirt road were laid free to the ones without.`;
   }
   if (washedAway.count > 0) {
     merged.notice = `The river now runs up to the far wall: its ${String(washedAway.count)} trap${washedAway.count === 1 ? '' : 's'} on that side were paid back (${String(washedAway.gold)} gold).`;
@@ -238,7 +238,9 @@ export function migrateSave(saved: Partial<SavedState> | undefined, version: num
   if (version < 3) next = grownMap(next);
   if (version < 4) next = splitHouses(next);
   // Buildings didn't need a road at the door: the merge lays the missing ones (it knows every building's spot).
-  if (version < 5) next = { ...next, joinRoads: true };
+  // Below 6 once more: a one-tile building's door now opens on any side, so cottages packed four to a block
+  // (from the split houses) whose back row's doors faced the front row can be reached at last.
+  if (version < 6) next = { ...next, joinRoads: true };
   return next;
 }
 

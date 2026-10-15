@@ -1,5 +1,5 @@
 import { ClipOp, Skia, createPicture, type SkCanvas, type SkImage, type SkPaint, type SkPicture } from '@shopify/react-native-skia';
-import { MINE_COLUMNS, MINE_MAP_WIDTH, MINE_SHAFT_COLUMN, MINE_SURFACE_ROWS, MINE_TILE_SIZE } from './MineMapLayout';
+import { MINE_COLUMNS, MINE_MAP_WIDTH, MINE_SHAFT_COLUMN, MINE_SURFACE_ROWS, MINE_TILE_SIZE, MINE_VIEW_STEP, mineStartCamX, mineViewAt, type MineView } from './MineMapLayout';
 import {
   depositAt,
   depositRemaining,
@@ -640,6 +640,42 @@ function renderBlock(blockRow: number, blockColumn: number, layout: MineLayout):
   const image = surface.makeImageSnapshot();
   surface.dispose();
   return image;
+}
+
+/** The blocks a view shows, as [row, column] pairs (only blocks on the map). */
+export function blocksInView(view: MineView, layout: Pick<MineLayout, 'rows'>): [number, number][] {
+  const blockWidth = TERRAIN_BLOCK_COLUMNS * T;
+  const blockHeight = TERRAIN_BLOCK_ROWS * T;
+  const firstRow = Math.max(0, Math.floor(view.top / blockHeight));
+  const lastRow = Math.min(Math.ceil(layout.rows / TERRAIN_BLOCK_ROWS) - 1, Math.floor(view.bottom / blockHeight));
+  const firstColumn = Math.max(0, Math.floor(view.left / blockWidth));
+  const lastColumn = Math.min(TERRAIN_BLOCK_COUNT_X - 1, Math.floor(view.right / blockWidth));
+  const blocks: [number, number][] = [];
+  for (let row = firstRow; row <= lastRow; row += 1) {
+    for (let column = firstColumn; column <= lastColumn; column += 1) blocks.push([row, column]);
+  }
+  return blocks;
+}
+
+/**
+ * Draw the blocks the mine shows first — the camera's starting view (centred on the lift at the surface,
+ * zoom 1) in a window `width` × `height` — into the cache ahead of time, so they're there when the mine
+ * screen opens: on Android every block is rasterised on the CPU as it's first seen, which showed a moment
+ * of black rock. Call it before going down the mine (the stronghold does, `openMine`). Cheap when they're
+ * cached already. Returns how many blocks were drawn afresh.
+ */
+export function warmTerrainBlocks(layout: MineLayout, width: number, height: number): number {
+  // The mine's bars push its camera up a little (`insetTop`), so a step more is drawn at the bottom.
+  const view = mineViewAt(mineStartCamX(width), 0, 1, width, height + MINE_VIEW_STEP);
+  trackChanges(layout);
+  let drawn = 0;
+  for (const [row, column] of blocksInView(view, layout)) {
+    const key = blockKey(row, column);
+    const cached = blockCache.get(key);
+    if (cached && cached.stamp === (blockStamps.get(key) ?? 0)) continue;
+    if (getBlockImage(row, column, layout)) drawn += 1;
+  }
+  return drawn;
 }
 
 /** The cached image for one terrain block (top-left at block coordinates × block size). */

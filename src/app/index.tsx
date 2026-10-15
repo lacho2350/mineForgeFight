@@ -1,9 +1,10 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { router, useIsFocused } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { BackHandler, Pressable, StyleSheet, Text, View } from 'react-native';
+import { BackHandler, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { GameState } from '../game/state';
+import { flushSave } from '../game/save';
 import { BUILDING_NAMES, haulWalk, isShownBuilding, orderedRocks, workforceOf } from '../game/hold';
 import { canAffordBuild, roadCostText, trapBlocker, trapCostText, upgradeBlocker } from '../game/costs';
 import { useGame, useGameStore } from '../game/gameStore';
@@ -13,7 +14,7 @@ import { PANTRY, errandText, hasHomeRoad, isKept, sleepers } from '../game/homes
 import { fellingStand, forestWood } from '../game/forest';
 import { FOODS, isFishery, isPasture } from '../game/farms';
 import { isWoodcutter } from '../game/woodcutters';
-import { DEFAULT_SPOTS, FOOTPRINTS, MAP_SIZE, SIDE_NAMES, buildSpots, coveredTiles, doorSide, doorTiles, isOpenGround, onMainRoad, isPlaceable, nearestFreeSpot, needsRoad, placementProblem, sidesOf, tileKey, zoneAt, type Spot } from '../game/cityMap';
+import { DEFAULT_SPOTS, FOOTPRINTS, MAP_SIZE, SIDE_NAMES, buildSpots, coveredTiles, doorText, doorTiles, isOpenGround, onMainRoad, isPlaceable, nearestFreeSpot, needsRoad, placementProblem, sidesOf, tileKey, zoneAt, type Spot } from '../game/cityMap';
 import { GROUND_SPEED, ROAD_INFO, ROAD_KINDS, accessRoads, haulFactor, roadProblem, type RoadKind, type Roads } from '../game/roads';
 import { CLEAR_CREW, ROCK_INFO, rockAt, rockyTest, rocksLeft } from '../game/rocks';
 import { BOAT_INFO, fishingBoat, nextBoat } from '../game/boats';
@@ -34,6 +35,7 @@ import Sheet from '../components/Sheet';
 import Prologue from '../components/Prologue';
 import ShopPanel from '../components/ShopPanel';
 import { adBreak } from '../components/ads';
+import { warmMine } from '../components/mineWarmup';
 import { Toast, ToolButton } from '../components/Toolbar';
 import StockpileTable from '../components/StockpileTable';
 import { TechTree, techsReady } from '../components/TechTree';
@@ -49,6 +51,7 @@ type Popup =
   | { kind: 'tech' }
   | { kind: 'menu' }
   | { kind: 'combat' }
+  | { kind: 'leave' }
   | null;
 /** A building being placed and where its footprint is now. */
 type Placing = { id: BuildingId; x: number; y: number } | null;
@@ -107,8 +110,10 @@ export default function StrongholdScreen() {
   const openDocks = useCallback(() => setPopup({ kind: 'market' }), []);
   const openMenu = useCallback(() => setPopup({ kind: 'menu' }), []);
   // Going down the mine and closing a pop-up are pauses in play: an ad may show then (every few minutes).
+  // The mine's first blocks are drawn before the screen opens, so it doesn't open on black rock.
   const openMine = useCallback(() => {
     adBreak();
+    warmMine();
     router.push('/mine');
   }, []);
   const close = () => {
@@ -162,6 +167,17 @@ export default function StrongholdScreen() {
     });
     return () => back.remove();
   }, [busy, focused]);
+  // On the bare map, Android's Back would leave the app at once: ask first ("Leave Greyhollow?", a pop-up
+  // like any other, so Back on it just stays). The prologue listens for itself while it's showing.
+  const bare = !busy && !popup && focused && game.prologueSeen && !replaying && Platform.OS === 'android';
+  useEffect(() => {
+    if (!bare) return;
+    const back = BackHandler.addEventListener('hardwareBackPress', () => {
+      setPopup({ kind: 'leave' });
+      return true;
+    });
+    return () => back.remove();
+  }, [bare]);
   const finishStroke = useCallback((commit: boolean) => {
     const tiles = strokeRef.current;
     strokeRef.current = [];
@@ -412,6 +428,20 @@ export default function StrongholdScreen() {
           />
         </Sheet>
       )}
+      {popup?.kind === 'leave' && (
+        <Sheet title="Leave Greyhollow?" subtitle="THE HOLD IS SAVED AS IT STANDS" onClose={() => setPopup(null)}>
+          <Text style={styles.body}>The game is saved on this device and goes on from here when you come back. The mine and the hold rest while you are away.</Text>
+          <GameButton label="STAY" detail="back to the hold" onPress={() => setPopup(null)} secondary />
+          <GameButton
+            label="LEAVE"
+            detail="close the game"
+            onPress={() => {
+              flushSave();
+              BackHandler.exitApp();
+            }}
+          />
+        </Sheet>
+      )}
       {(!game.prologueSeen || replaying) && (
         <Prologue
           onDone={() => {
@@ -495,7 +525,7 @@ function PlacementBar({ game, id, problem, onConfirm, onCancel }: {
           </Text>
           <Text style={[styles.placementHint, problem && styles.placementProblem]}>
             {problem ??
-              `${isFishery(id) ? 'It goes right next to the river, along the river wall inside the town. ' : isPasture(id) ? 'It grazes outside the walls. ' : ''}Lit: where it can go (yellow: rocks to clear first; never on roads)${needsRoad(id) ? `; its door (the ${doorSide(id)} side, marked) needs a road joined to the keep and the main gate` : ''}. Drag it there, or tap. ${String(cost.gold)} gold${cost.resources.coal ? ` · ${String(cost.resources.coal)} coal` : ''}.`}
+              `${isFishery(id) ? 'It goes right next to the river, along the river wall inside the town. ' : isPasture(id) ? 'It grazes outside the walls. ' : ''}Lit: where it can go (yellow: rocks to clear first; never on roads)${needsRoad(id) ? `; its door (${doorText(id)}, marked) needs a road joined to the keep and the main gate` : ''}. Drag it there, or tap. ${String(cost.gold)} gold${cost.resources.coal ? ` · ${String(cost.resources.coal)} coal` : ''}.`}
           </Text>
         </View>
       </View>
@@ -845,7 +875,7 @@ function HomeStatus({ game, id }: { game: GameState; id: HouseId }) {
         <Text style={styles.note}>ROAD · AT ITS DOOR, JOINED TO THE KEEP AND THE GATE</Text>
       ) : (
         <Text style={[styles.body, styles.placementProblem]}>
-          No road at its door ({doorSide(id)} side) joined to the keep and the main gate: its people are unhappy — they work slower, and nobody new moves in until one is laid.
+          No road at its door ({doorText(id)}) joined to the keep and the main gate: its people are unhappy — they work slower, and nobody new moves in until one is laid.
         </Text>
       )}
     </View>

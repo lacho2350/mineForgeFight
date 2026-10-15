@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Platform, Pressable, StyleSheet, Text, View, type LayoutChangeEvent } from 'react-native';
+import { Dimensions, Platform, Pressable, StyleSheet, Text, View, type LayoutChangeEvent } from 'react-native';
 import { Gesture, GestureDetector, MouseButton, type PanGesture } from 'react-native-gesture-handler';
 import Animated, {
   useAnimatedReaction,
@@ -16,17 +16,17 @@ import { RESOURCES, type Resource, type Stock } from '../game/resources';
 import { checkDigStep, depositRemaining, findDigParent, isDug, parseKey, tileKey, type MineLayout } from '../game/mineLayout';
 import MinePickaxe from './MinePickaxe';
 import MinePileTip from './MinePileTip';
-import type { DigOverlayState, MineSceneCanvasProps, MineView } from './MineSceneCanvas';
+import type { DigOverlayState, MineSceneCanvasProps } from './MineSceneCanvas';
 import { EXIT_PILE_STEPS, MINER_PILE_STEPS, binAt } from './MineHaulerSteps';
-import { MINE_COLUMNS, MINE_MAP_WIDTH, MINE_SHAFT_X, MINE_SURFACE_ROWS, MINE_TILE_SIZE } from './MineMapLayout';
+import { MINE_COLUMNS, MINE_MAP_WIDTH, MINE_OVERSCAN, MINE_SURFACE_ROWS, MINE_TILE_SIZE, MINE_VIEW_STEP, mineStartCamX, mineViewAt, type MineView } from './MineMapLayout';
 
 const T = MINE_TILE_SIZE;
 const MIN_ZOOM = 0.3;
 const MAX_ZOOM = 2;
-// Map drawn beyond the screen edges so panning rarely reveals undrawn rock.
-const OVERSCAN = T * 4;
+// Map drawn beyond the screen edges so panning rarely reveals undrawn rock (MineMapLayout).
+const OVERSCAN = MINE_OVERSCAN;
 // The visible-area state only updates when the camera crosses this many map pixels (or zoom step).
-const VIEW_STEP = T * 3;
+const VIEW_STEP = MINE_VIEW_STEP;
 
 export type MineSceneProps = {
   layout: MineLayout;
@@ -123,7 +123,13 @@ export default function MineViewport({
   const camX = useSharedValue(0);
   const camY = useSharedValue(0);
   const zoom = useSharedValue(1);
-  const [view, setView] = useState<MineView>({ left: 0, top: 0, right: 0, bottom: 0 });
+  // The first view is the one the camera starts on (the window's width stands in until the frame is
+  // measured), so the first frame draws the blocks round the lift — warmed before the screen opened
+  // (`warmTerrainBlocks`) — instead of nothing.
+  const [view, setView] = useState<MineView>(() => {
+    const guess = Dimensions.get('window').width;
+    return mineViewAt(mineStartCamX(guess), -insetTop, 1, guess, viewportHeight);
+  });
 
   useEffect(() => {
     viewHeight.set(viewportHeight);
@@ -140,7 +146,7 @@ export default function MineViewport({
   const onLayout = (event: LayoutChangeEvent) => {
     const next = event.nativeEvent.layout.width;
     if (next <= 0 || next === width) return;
-    if (width === 0) camX.set(clamp(MINE_SHAFT_X + T / 2 - next / 2, 0, Math.max(0, mapWidth - next)));
+    if (width === 0) camX.set(mineStartCamX(next));
     viewWidth.set(next);
     setWidth(next);
   };

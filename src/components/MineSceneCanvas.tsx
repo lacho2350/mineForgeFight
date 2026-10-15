@@ -18,11 +18,11 @@ import { useIsFocused } from 'expo-router';
 import { useDerivedValue, type SharedValue } from 'react-native-reanimated';
 import { getCartRoutes, type LevelCarts } from '../game/haulage';
 import { digTime, isDug, parseKey, type MineLayout, type Site } from '../game/mineLayout';
-import { MINE_SURFACE_ROWS, MINE_TILE_SIZE } from './MineMapLayout';
+import { MINE_SURFACE_ROWS, MINE_TILE_SIZE, type MineView } from './MineMapLayout';
 import {
   TERRAIN_BLOCK_COLUMNS,
-  TERRAIN_BLOCK_COUNT_X,
   TERRAIN_BLOCK_ROWS,
+  blocksInView,
   closeTerrainView,
   getBlockImage,
   keepBlocksInView,
@@ -90,8 +90,7 @@ function SiteMiners({ sites, picture }: { sites: Site[]; picture: SkPicture }) {
   ));
 }
 
-/** The part of the map (in map pixels, with some margin) the camera can currently see. */
-export type MineView = { left: number; top: number; right: number; bottom: number };
+export type { MineView };
 
 // Terrain is cached as images in blocks of 16 × 4 tiles (see mineTerrain); only blocks inside the
 // view are drawn, one image each, so the cost stays small however big the claim is. Nearest-neighbour
@@ -112,14 +111,7 @@ function TerrainBlocks({ view, layout, active }: { view: MineView; layout: MineL
   });
   const blockWidth = TERRAIN_BLOCK_COLUMNS * tileSize;
   const blockHeight = TERRAIN_BLOCK_ROWS * tileSize;
-  const firstRow = Math.max(0, Math.floor(view.top / blockHeight));
-  const lastRow = Math.min(Math.ceil(layout.rows / TERRAIN_BLOCK_ROWS) - 1, Math.floor(view.bottom / blockHeight));
-  const firstColumn = Math.max(0, Math.floor(view.left / blockWidth));
-  const lastColumn = Math.min(TERRAIN_BLOCK_COUNT_X - 1, Math.floor(view.right / blockWidth));
-  const blocks: [number, number][] = [];
-  for (let row = firstRow; row <= lastRow; row += 1) {
-    for (let column = firstColumn; column <= lastColumn; column += 1) blocks.push([row, column]);
-  }
+  const blocks = blocksInView(view, layout);
   keepBlocksInView(blocks.length);
 
   return blocks.map(([row, column]) => {

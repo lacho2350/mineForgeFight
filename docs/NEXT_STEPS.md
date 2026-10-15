@@ -32,7 +32,14 @@ Play Console, an Android phone (better than the emulator for the final checks), 
 
 ---
 
-## Part A — Code to finish first 🤖 (tell me the package name and I'll do A1–A4 in one go)
+## Part A — Code to finish first 🤖 — **done 2026-10-15** (branch `release-prep`), but for the 🧑 steps below
+
+- A1 `com.lacho.mineforgefight` is in `app.json` (change it there before the first Play upload if you want another).
+- A2 `eas.json` is written; **🧑 still to do:** `npx eas-cli@latest login` + `npx eas-cli@latest init` (writes `extra.eas.projectId`).
+- A3 `expo-dev-client ~57.0.20` is in `package.json`; **🧑 run `npm install`** (the lockfile updates), then
+  `npx expo-doctor` to confirm the version.
+- A4 all four: any-side cottage doors (+ roads laid once more on load, `SAVE_VERSION` 6), the "Leave
+  Greyhollow?" prompt, the mine's first blocks drawn before the screen opens, `DEBUG_CONSENT_AS_EEA` in `ads.ts`.
 
 ### A1. Choose the package name — permanent
 
@@ -416,7 +423,7 @@ resumes; Android Back closes pop-ups; rotation stays portrait; a low-end phone s
 
 ## Checklist
 
-- [ ] A1 package name chosen and set · [ ] A2 EAS project + `eas.json` · [ ] A3 dev client · [ ] A4 fixes
+- [x] A1 package name chosen and set · [x] A2 `eas.json` (🧑 `eas init` still) · [x] A3 dev client (🧑 `npm install`) · [x] A4 fixes
 - [ ] B1 Play Console verified · [ ] B2 payments profile verified · [ ] B3 AdMob · [ ] B4 Expo
 - [ ] C development build tested (test ads, consent)
 - [ ] D1 app created · [ ] D2 app content forms · [ ] D3 Data safety · [ ] D4 store listing

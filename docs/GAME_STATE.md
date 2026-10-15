@@ -271,8 +271,11 @@ game, and starts the 1-second simulation (`startSimulation()`).
   pastures, out on the raiders' ground, and (since 2026-10-13) the fishing huts on the riverbank, reached
   on foot along the bank (no new game had a road anywhere near the river, so no hut could be placed) — needs a road at its **door** joined to **both the keep and the
   main gate** before it can be placed. Doors face the front-left (the row just outside the side along
-  y + d); the barracks' faces the front-right (the column along x + w) — `doorSide`, `doorTiles`,
-  `needsRoad` in cityMap.ts. `accessRoads(roads)` (roads.ts, cached per roads object) = every stretch of
+  y + d); the barracks' faces the front-right (the column along x + w); **a one-tile building (a cottage,
+  a fishing hut) opens on any side** — its four neighbours all count (since 2026-10-15: cottages packed four
+  to a block by `splitHouses` had their back row's doors facing the front row, so no road could reach them
+  and they stayed unhappy) — `doorSide` (`'any'` for 1 × 1), `doorText` (the words for the player),
+  `doorTiles`, `needsRoad` in cityMap.ts. `accessRoads(roads)` (roads.ts, cached per roads object) = every stretch of
   road (tiles joined side by side) that touches both the keep's footprint and the gate's; `placementProblem`
   and `nearestFreeSpot` take it as `access` (the store's `placeBuilding`, the placing screen; callers
   without it skip the rule, e.g. older tests). **The main road** (`MAIN_ROAD`, `onMainRoad` in
@@ -288,8 +291,9 @@ game, and starts the 1-second simulation (`startSimulation()`).
   building's door that lacks a road to the nearest joined road (breadth-first over open town
   ground; the merge clears the rocks under every road). Used for a new game's first buildings
   (`startingWays` in gameStore.ts, their rocks cleared) and once for saves from before the rule
-  (`SAVE_VERSION` 5: `migrateSave` marks a save below 5 `joinRoads`, `mergeSave` lays the roads once
-  every spot is known and says how many tiles it laid; the marker isn't kept).
+  (`migrateSave` marks a save below `SAVE_VERSION` 6 `joinRoads` — 5 brought the rule, 6 the any-side
+  doors, so the packed cottages get theirs —, `mergeSave` lays the roads once every spot is known and says
+  how many tiles it laid; the marker isn't kept).
 - **Traps** (`src/game/traps.ts`): 1-tile traps laid anywhere in the trap belt except the gate road
   (`trapProblem`); `traps` in the store, `layTrap(kind, spot)` pays at once, `removeTrap(spot)` refunds
   half the gold. Spike pit (30 gold, 10 coal): 15 damage to one random raider company on foot. Pitch
@@ -317,7 +321,10 @@ game, and starts the 1-second simulation (`startSimulation()`).
   `AD_INTERVAL_SECONDS` (180)**, shown only at a natural pause — `adBreak()` from going down the mine or up
   to the city, closing a pop-up and leaving a battle — never during a battle and never once `adsRemoved`.
   Development builds use Google's test ad unit; release builds show none until the real AdMob unit id
-  replaces the placeholder in `ads.ts` (and the sample app ids in `app.json`'s plugin). Both SDKs are
+  replaces the placeholder in `ads.ts` (and the sample app ids in `app.json`'s plugin). To try the consent
+  form outside Europe, flip `DEBUG_CONSENT_AS_EEA` in `ads.ts` (development only: `gatherConsent` is then
+  given `debugGeography: EEA`; a real phone's hashed id goes in `DEBUG_CONSENT_TEST_DEVICES`, the emulator
+  needs none). Both SDKs are
   loaded with a guarded `require`, so **Expo Go** (no native modules) runs the game without ads or
   purchases. The shop is in the Menu (`ShopPanel`).
 - **Tech tree** (`src/game/techs.ts`): 78 upgrades bought once with **gold only**, separate from building
@@ -770,15 +777,23 @@ src/
   `adb exec-out screencap -p`. Everything worked: the stronghold, placing (lit ground), cottages and their
   women, the mine, the War panel and recruiting, raids and a commanded, animated battle, saving across a cold
   restart. Fixed then: Android's **Back** closes an open pop-up (`Sheet`) and cancels placing or painting
-  instead of leaving the game. To do: the mine's terrain blocks draw on the CPU when first seen (a moment
-  of black on entering the mine); Back on the bare stronghold still leaves the app (a "quit?" prompt).
+  instead of leaving the game; on the bare stronghold (nothing open, nothing being placed or painted, the
+  prologue not showing) it opens **"Leave Greyhollow?"** (a `Sheet`, popup kind `leave`: STAY, or LEAVE —
+  `flushSave()` then `BackHandler.exitApp()`; Back on the sheet stays), since 2026-10-15. The mine's
+  terrain blocks are rasterised on the CPU when first seen, which opened the mine on a moment of black
+  rock: now the stronghold's Mine button draws the blocks of the camera's first view before the screen
+  opens (`warmMine` in `mineWarmup.ts` → `warmTerrainBlocks` in mineTerrain.ts; a no-op `.web.ts` twin,
+  since the web loads Skia lazily on the mine screen), and `MineViewport` starts with that view (the
+  window's width standing in for the frame's) instead of an empty one, so its first frame draws them —
+  `mineStartCamX` / `mineViewAt` in `MineMapLayout.ts` (Skia-free) say where the camera starts.
   **Never set `CI=1`** — Metro then stops watching files and serves stale lazy chunks.
   **Metro doesn't watch folders created after it started** (it serves their first version forever, even
   after `touch`): after adding a folder (e.g. `src/components/stronghold/`), restart the dev server. To
   check what's served: `curl` the module's `.bundle` URL (as in the browser's network list) and grep it.
-- **Saving**: the store is wrapped in Zustand `persist` (key `mineforge-save`, `SAVE_VERSION` 4 — 4 split
+- **Saving**: the store is wrapped in Zustand `persist` (key `mineforge-save`, `SAVE_VERSION` 6 — 4 split
   the old 2×2 workers' houses into cottages on their tiles, `splitHouses`, enough to sleep as many, up to
-  four each, stocked; a house job under way is paid back). Storage is
+  four each, stocked; a house job under way is paid back; 5 and 6 lay the roads to the doors, see
+  "A road at the door"). Storage is
   `localStorage`: the browser's on web; on iOS/Android `import 'expo-sqlite/localStorage/install'` (first line
   of `_layout.tsx`) provides a synchronous SQLite-backed one. `_layout.tsx` calls `loadGame()` at module load
   (before any render), then starts the clock. Writes are batched (latest state ~3 s after a change) and
