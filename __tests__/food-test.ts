@@ -1,6 +1,7 @@
 import { BUILDING_NAMES } from '../src/game/hold';
 import { RIVER_ROWS, buildingGround, placementProblem, sideOf, zoneAt, FOOTPRINTS } from '../src/game/cityMap';
-import { FOOD_PER_PEASANT, HUNGRY_WORK, SHEEP_PER_LEVEL } from '../src/game/farms';
+import { FOOD_PER_PEASANT, SHEEP_PER_LEVEL } from '../src/game/farms';
+import { FOOD_MOOD } from '../src/game/happiness';
 import { raidSide } from '../src/game/raids';
 import { emptyArmy } from '../src/game/units';
 import { useGameStore } from '../src/game/gameStore';
@@ -72,16 +73,20 @@ describe('food', () => {
     expect(game().hungry).toBe(false);
   });
 
-  it('makes hungry peasants work slower', () => {
+  it('makes a hungry hold unhappy, and an unhappy hold works slower', () => {
     newGame({ warehouse: warehouseWith({ apples: 500 }) });
     run(1);
     const fed = game().lastFlow.mined;
-    // No food in store, and the cottages run dry too: everyone works slower.
+    // No food in store: happiness sinks by the hungry rate (and the dry cottages' share on top).
     newGame({ warehouse: warehouseWith({}), hungry: true, homes: { houses: { water: 0, food: 0, errand: null } } });
+    const before = game().happiness;
+    run(60);
+    expect(game().happiness).toBeLessThanOrEqual(before + FOOD_MOOD[0]);
+    // At rock bottom everyone works at half speed (each miner's cut is rounded to a tenth).
+    newGame({ warehouse: warehouseWith({ apples: 500 }), happiness: 0 });
     run(1);
-    // Each miner's cut is rounded to a tenth.
     expect(game().lastFlow.mined).toBeLessThan(fed);
-    expect(game().lastFlow.mined).toBeLessThanOrEqual(fed * HUNGRY_WORK + 0.1 * game().sites.length);
+    expect(game().lastFlow.mined).toBeLessThanOrEqual(fed * 0.5 + 0.1 * game().sites.length);
   });
 
   it('grows each flock to what its pasture grazes', () => {

@@ -1,6 +1,7 @@
 // Changes to the state shared by the store's actions and the tick: settling a battle, returning goods,
 // starting a building, moving stock.
 import { RESOURCES, type Resource, type Stock } from './resources';
+import { BATTLE_MOOD, afterBattle } from './happiness';
 import { FOOTPRINTS, sideOf, type MapSide } from './cityMap';
 import { LOST_RAID_SHEEP_TAKEN, PASTURE_IDS, RAID_SHEEP_TAKEN } from './farms';
 import { BUILDING_INFO, buildingCost, buildingStats, buildingTime, crewSize, type BuildingId, type BuildingLevels } from './buildings';
@@ -69,7 +70,7 @@ export function undoWagonTrip(
   return 'in the store';
 }
 
-type SettleState = Pick<GameState, 'gold' | 'warehouse' | 'army' | 'battleArmy' | 'elapsedSeconds' | 'raid' | 'raidsFought' | 'raidsLostInARow' | 'buildings' | 'placements' | 'flocks'>;
+type SettleState = Pick<GameState, 'gold' | 'warehouse' | 'army' | 'battleArmy' | 'elapsedSeconds' | 'raid' | 'raidsFought' | 'raidsLostInARow' | 'buildings' | 'placements' | 'flocks' | 'happiness'>;
 
 // A battle just ended: survivors rejoin the army, and the bounty is paid or the plunder taken.
 export function settleBattle(state: SettleState, battle: Battle) {
@@ -114,10 +115,15 @@ export function settleBattle(state: SettleState, battle: Battle) {
   // On their way, the raiders ravaged the land outside the walls on their side.
   const ravaged = ravage(state, raidSide(number), report.outcome === 'lost');
   if (ravaged.note) notice += ` ${ravaged.note}`;
+  // A victory cheers the whole hold; a defeat grieves it (happiness.ts).
+  const happiness = afterBattle(state.happiness, report.outcome);
+  if (report.outcome === 'won') notice += ` The hold celebrates (+${String(BATTLE_MOOD.won)} happiness).`;
+  else if (report.outcome === 'lost') notice += ` The hold mourns (${String(BATTLE_MOOD.lost)} happiness).`;
   return {
     army,
     gold,
     warehouse,
+    happiness,
     flocks: ravaged.flocks,
     raidReport: report,
     raid: null,

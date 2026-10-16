@@ -5,6 +5,8 @@ import { FORGE_IDS, FORGE_KEEP, FORGE_NAMES, forgeSpeedAt, isForge, type ForgeId
 import { HOUSE_IDS, HOUSE_KEEP, HOUSE_NAMES, MAX_PEASANTS, houseBeds, isHouse, type HouseId } from './houses';
 import { APPLES_PER_LEVEL, FISHERY_IDS, FISH_PER_LEVEL, LAMBS_PER_LEVEL, ORCHARD_IDS, PASTURE_IDS, SHEEP_PER_LEVEL, farmKeep, farmName, isFarm, isFishery, isOrchard, isPasture, type FarmId } from './farms';
 import { WOODCUTTER_IDS, WOODCUTTER_KEEP, isWoodcutter, woodcutterName, type WoodcutterId } from './woodcutters';
+import { CHURCH_IDS, FAIRGROUND_IDS, GARDENS_IDS, PEASANTS_PER_LEVEL, isChurch, isFairground, isMoodBuilding, moodKeep, moodName, type MoodBuildingId } from './moodBuildings';
+import { TAX_INFO, type TaxRate } from './taxes';
 import { RESOURCES, type Resource } from './resources';
 import { MIN_BARGE_INTERVAL } from './ship';
 import { BASE_WAGON_LOAD, WAGON_SPEED } from './wagons';
@@ -28,6 +30,10 @@ export const BUILDING_IDS = [
   ...ORCHARD_IDS,
   ...FISHERY_IDS,
   ...PASTURE_IDS,
+  // What keeps the peasants happy: fairs, churches and gardens (happiness.ts).
+  ...FAIRGROUND_IDS,
+  ...CHURCH_IDS,
+  ...GARDENS_IDS,
   // Where the army's gear is made, one task to a forge.
   ...FORGE_IDS,
   'wall',
@@ -63,6 +69,7 @@ export const STARTING_BUILDINGS: BuildingLevels = {
   ...(Object.fromEntries(WOODCUTTER_IDS.map((id) => [id, 0])) as Record<WoodcutterId, number>),
   granary: 0,
   ...(Object.fromEntries([...ORCHARD_IDS, ...FISHERY_IDS, ...PASTURE_IDS].map((id) => [id, 0])) as Record<FarmId, number>),
+  ...(Object.fromEntries([...FAIRGROUND_IDS, ...CHURCH_IDS, ...GARDENS_IDS].map((id) => [id, 0])) as Record<MoodBuildingId, number>),
   ...(Object.fromEntries(FORGE_IDS.map((id) => [id, 0])) as Record<ForgeId, number>),
   wall: 0,
   towers: 0,
@@ -94,6 +101,7 @@ export function requiredKeep(id: BuildingId) {
   if (isForge(id)) return FORGE_KEEP[id];
   if (isHouse(id)) return HOUSE_KEEP[id];
   if (isFarm(id)) return farmKeep(id);
+  if (isMoodBuilding(id)) return moodKeep(id);
   if (isWoodcutter(id)) return WOODCUTTER_KEEP[id];
   const unit = DWELLING_UNIT[id];
   // Stables also pull the surface wagons, so they can be built early; cavalry still wait for the keep.
@@ -109,8 +117,8 @@ export type BuildCost = { gold: number; resources: Partial<Record<Resource, numb
 // nobody at all it does nothing.
 
 /** Buildings that work without staff (the moat is part of the defensive works, like the wall). */
-// The cottages are kept by their women, who aren't workers (homes.ts).
-export const UNSTAFFED: readonly BuildingId[] = ['keep', 'wall', 'towers', 'moat', ...HOUSE_IDS];
+// The cottages are kept by their women, who aren't workers (homes.ts); the gardens are just there to look at.
+export const UNSTAFFED: readonly BuildingId[] = ['keep', 'wall', 'towers', 'moat', ...HOUSE_IDS, ...GARDENS_IDS];
 
 /** Peasants a building needs to run at a level (the keep, the wall, the towers and the cottages need nobody). */
 export function staffNeeded(id: BuildingId, level: number) {
@@ -231,8 +239,8 @@ const roundTo = (value: number, step: number) => Math.round(value / step) * step
  * level, so nothing stored is lost when hands are short. The techs bought (`techs`) add their bonuses
  * on top.
  */
-/** The hold's taxes, in gold a minute: every peasant pays the keep's level (× the tax techs). */
-export const taxPerMinute = (stats: Pick<BuildingStats, 'taxPerPeasant'>, population: number) => Math.round(stats.taxPerPeasant * population * 100) / 100;
+/** The hold's taxes, in gold a minute: every peasant pays the keep's level (× the tax techs), × the tax rate the keep sets (taxes.ts). */
+export const taxPerMinute = (stats: Pick<BuildingStats, 'taxPerPeasant'>, population: number, rate: TaxRate = 'average') => Math.round(stats.taxPerPeasant * population * TAX_INFO[rate].gold * 100) / 100;
 
 export function buildingStats(levels: BuildingLevels, staff?: Partial<Record<BuildingId, number>>, techs: readonly TechId[] = []): BuildingStats {
   const { keep, warehouse, wall, towers, moat } = levels;
@@ -323,6 +331,9 @@ export function buildingEffects(id: BuildingId, level: number, techs: readonly T
       { label: 'Lambs', value: `${String(round2(LAMBS_PER_LEVEL * level * 60))} / min` },
     ];
   }
+  if (isMoodBuilding(id)) {
+    return [{ label: `Peasants it ${isChurch(id) ? 'ministers to' : isFairground(id) ? 'entertains' : 'cheers'}`, value: String(PEASANTS_PER_LEVEL * level) }];
+  }
   if (id === 'depot') {
     return [
       { label: 'Carts', value: String(stats.wagons) },
@@ -408,6 +419,14 @@ export const BUILDING_INFO: Record<BuildingId, { name: string; role: string }> =
         ? 'A fishing hut right next to the river, along the river wall inside the town (safe from raiders); its fishermen land fish for the granary (barges buy fish too). Build up to eight, as the keep grows.'
         : 'Sheep grazing on the raiders’ ground outside the walls: the flock grows to 10 sheep a level and gives mutton for the granary and wool (barges buy it). Every raid from its side drives off a tenth of the flock — three tenths if the raiders win. Build up to eight, as the keep grows.',
   }])) as Record<FarmId, { name: string; role: string }>),
+  ...(Object.fromEntries([...FAIRGROUND_IDS, ...CHURCH_IDS, ...GARDENS_IDS].map((id) => [id, {
+    name: moodName(id),
+    role: isFairground(id)
+      ? `A fairground: a maypole, a tent and the fair’s stalls. Fun for ${String(PEASANTS_PER_LEVEL)} peasants a level (its showmen are its staff); a bigger hold needs a higher level, or a second fair. Build up to four, as the keep grows.`
+      : isChurch(id)
+        ? `A church: its priests minister to ${String(PEASANTS_PER_LEVEL)} peasants a level; a bigger hold needs a higher level, or a second church. Build up to four, as the keep grows.`
+        : `Gardens: flowerbeds, hedges and a fountain, with nobody to staff. The town looks fairer to ${String(PEASANTS_PER_LEVEL)} peasants a level; a bigger hold needs a higher level, or more gardens. Build up to four, as the keep grows.`,
+  }])) as Record<MoodBuildingId, { name: string; role: string }>),
   ...(Object.fromEntries(WOODCUTTER_IDS.map((id) => [id, { name: woodcutterName(id), role: 'Woodcutters walk out through the gate and the pass to the forest on the mountains, fell the stand nearest the road (about 100 wood each) and carry the logs home to the warehouse; every stand cut down grows back elsewhere on the mountains. Wood goes into gear, into every building from level 2, and into the pit props of every tunnel. Higher levels cut more; needs woodcutters. Build up to five, as the keep grows.' }])) as Record<WoodcutterId, { name: string; role: string }>),
   ...(Object.fromEntries(FORGE_IDS.map((id) => [id, {
     name: FORGE_NAMES[id],
@@ -451,6 +470,9 @@ const COST_MIX: Record<BuildingId, { treasury: number; uses: Partial<Record<Reso
   ...(Object.fromEntries(ORCHARD_IDS.map((id) => [id, { treasury: 25, uses: { coal: 0.3, granite: 0.3 } }])) as Record<FarmId, { treasury: number; uses: Partial<Record<Resource, number>> }>),
   ...(Object.fromEntries(FISHERY_IDS.map((id) => [id, { treasury: 20, uses: { coal: 0.3, granite: 0.2, iron: 0.2 } }])) as Record<FarmId, { treasury: number; uses: Partial<Record<Resource, number>> }>),
   ...(Object.fromEntries(PASTURE_IDS.map((id) => [id, { treasury: 25, uses: { coal: 0.3, granite: 0.2 } }])) as Record<FarmId, { treasury: number; uses: Partial<Record<Resource, number>> }>),
+  ...(Object.fromEntries(FAIRGROUND_IDS.map((id) => [id, { treasury: 30, uses: { coal: 0.3, granite: 0.3, copper: 0.3 } }])) as Record<MoodBuildingId, { treasury: number; uses: Partial<Record<Resource, number>> }>),
+  ...(Object.fromEntries(CHURCH_IDS.map((id) => [id, { treasury: 45, uses: { coal: 0.5, granite: 1.2, copper: 0.4, gold: 0.6 } }])) as Record<MoodBuildingId, { treasury: number; uses: Partial<Record<Resource, number>> }>),
+  ...(Object.fromEntries(GARDENS_IDS.map((id) => [id, { treasury: 20, uses: { coal: 0.2, granite: 0.5 } }])) as Record<MoodBuildingId, { treasury: number; uses: Partial<Record<Resource, number>> }>),
   // The hut takes no wood, so a hold without any can always start cutting.
   ...(Object.fromEntries(WOODCUTTER_IDS.map((id) => [id, { treasury: 25, uses: { coal: 0.4, granite: 0.5, iron: 0.3 } }])) as Record<WoodcutterId, { treasury: number; uses: Partial<Record<Resource, number>> }>),
   ...(Object.fromEntries(FORGE_IDS.map((id) => [id, { treasury: 40, uses: { coal: 1, granite: 0.8, iron: 0.5, copper: 0.3, gold: 0.2 } }])) as Record<ForgeId, { treasury: number; uses: Partial<Record<Resource, number>> }>),

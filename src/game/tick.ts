@@ -11,7 +11,8 @@ import { FORGE_IDS, FORGE_OUTPUT_CAP, addLoad, isForge, loadUnits, shelfMissing,
 import { isHouse } from './houses';
 import { fellWood } from './forest';
 import { FOODS, LAMBS_PER_LEVEL, MUTTON_PER_SHEEP, PASTURE_IDS, SHEEP_PER_LEVEL, WOOL_PER_SHEEP } from './farms';
-import { roomForNewcomer, tickHomes, workPace } from './homes';
+import { roomForNewcomer, tickHomes } from './homes';
+import { LEAVE_SECONDS, driftHappiness, moodDrift, moodFactors, workPaceAt } from './happiness';
 import { gearComing, gearWanted, incomingTo, supplyLoad, wagonBackAt, wagonDropAt, type WagonJob } from './wagons';
 import { SIDE_NAMES } from './cityMap';
 import { haulFactor } from './roads';
@@ -39,8 +40,8 @@ import { buildingFields, roundCoal, settleBattle, transfer } from './updates';
 const hundredths = (value: number) => Math.round(value * 100) / 100;
 
 export function tickGame(state: GameState): Partial<GameState> {
-  // Peasants sleeping where there's no water or food work slower (but the farms bring food in at full speed).
-  const work = workPace(state);
+  // The hold works as fast as it is happy: half speed at 0, full at 100 (happiness.ts).
+  const work = workPaceAt(state.happiness);
   // Each miner cuts from their own deposit into that resource's stockpile beside the miners,
   // until the deposit is mined out (or the stockpile is full).
   const vein = { ...state.vein };
@@ -383,15 +384,39 @@ export function tickGame(state: GameState): Partial<GameState> {
   }
 
   const structure = buildingStats(buildings, undefined, techs);
-  // The keep collects taxes every five seconds: each peasant pays the keep's level in gold a minute.
+  // The keep collects taxes every five seconds: each peasant pays the keep's level in gold a minute, at
+  // the rate the keep sets.
   const elapsedSeconds = state.elapsedSeconds + 1;
-  if (elapsedSeconds % 5 === 0) gold = Math.round((gold + taxPerMinute(structure, state.population) / 12) * 100) / 100;
+  if (elapsedSeconds % 5 === 0) gold = Math.round((gold + taxPerMinute(structure, state.population, state.taxRate) / 12) * 100) / 100;
 
-  // New peasants come to the campfire while there are free beds (the houses' staff keep the beds).
+  // Happiness drifts by what the peasants have to be glad or sorry about (happiness.ts), by the hold as it
+  // stood this second.
   const before = { sites, pendingSites, carts: state.carts, construction, clearOrders, buildings, paused: state.paused, staffing: state.staffing };
-  const beds = buildingStats(buildings, workforceOf({ ...before, population: state.population }).staff, techs).beds;
+  const moodStaff = workforceOf({ ...before, population: state.population }).staff;
+  const factors = moodFactors({ ...state, buildings, staff: moodStaff, warehouse: stock, hungry, homes });
+  const happiness = driftHappiness(state.happiness, moodDrift(factors));
   let population = state.population;
-  if (elapsedSeconds % structure.arrivalSeconds === 0 && population < beds && roomForNewcomer({ population, buildings, techs, homes, hungry, placements: state.placements, roads: state.roads })) population += 1;
+  if (happiness <= 0 && population > 0) {
+    // Nobody stays in a hold this wretched: every so often one of the peasants leaves — whoever is free
+    // (an idle hand, or a building's), else a miner off the last face.
+    if (elapsedSeconds % LEAVE_SECONDS === 0) {
+      const free = workforceOf({ ...before, population }).free;
+      if (free > 0) population -= 1;
+      else if (sites.length > 0) {
+        sites = sites.slice(0, -1);
+        population -= 1;
+        layoutVersion += 1;
+      }
+      if (population < state.population) {
+        notice = `A peasant has left Greyhollow: nobody stays in a hold this unhappy. Lower the taxes, bring in food, or build a fair — ${String(population)} remain.`;
+      }
+    }
+  }
+
+  // New peasants come to the campfire while there are free beds (the houses' staff keep the beds), and the
+  // hold isn't so wretched that its own people are leaving.
+  const beds = buildingStats(buildings, moodStaff, techs).beds;
+  if (happiness > 0 && elapsedSeconds % structure.arrivalSeconds === 0 && population < beds && roomForNewcomer({ population, buildings, techs, homes, hungry, placements: state.placements, roads: state.roads })) population += 1;
 
   // Staff the buildings from whoever isn't under orders; what each building does follows its staff.
   const workforce = workforceOf({ ...before, population });
@@ -447,7 +472,7 @@ export function tickGame(state: GameState): Partial<GameState> {
       // Decided before it began (no army to defend the hold), or battles are instant: fight it out and
       // settle the raid at once (the result stays on the battlefield to look at).
       const fought = created.status === 'active' ? resolveBattle(created) : created;
-      const settled = settleBattle({ ...state, gold, warehouse: toStore.to, elapsedSeconds, buildings, flocks, battleArmy: state.army }, fought);
+      const settled = settleBattle({ ...state, gold, warehouse: toStore.to, elapsedSeconds, buildings, flocks, happiness, battleArmy: state.army }, fought);
       raidFields = { ...settled, battle: fought, battleArmy: state.army, battleCommanded: false };
       notice = settled.notice;
     } else {
@@ -474,7 +499,7 @@ export function tickGame(state: GameState): Partial<GameState> {
     if (fought.status === 'active') {
       raidFields = { battle: fought, battleDeadline: due };
     } else {
-      const settled = settleBattle({ ...state, gold, warehouse: toStore.to, elapsedSeconds, buildings, flocks }, fought);
+      const settled = settleBattle({ ...state, gold, warehouse: toStore.to, elapsedSeconds, buildings, flocks, happiness }, fought);
       raidFields = { ...settled, battle: fought };
       notice = settled.notice;
     }
@@ -487,6 +512,7 @@ export function tickGame(state: GameState): Partial<GameState> {
     flocks,
     hungry,
     homes,
+    happiness,
     discovered,
     population,
     construction,

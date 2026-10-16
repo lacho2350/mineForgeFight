@@ -7,6 +7,7 @@ import { FORGE_IDS, type ForgeId } from '../game/forges';
 import { HOUSE_IDS, type HouseId } from '../game/houses';
 import { FISHERY_IDS, ORCHARD_IDS, PASTURE_IDS, type FisheryId, type OrchardId, type PastureId } from '../game/farms';
 import { WOODCUTTER_IDS, type WoodcutterId } from '../game/woodcutters';
+import { CHURCH_IDS, FAIRGROUND_IDS, GARDENS_IDS, type ChurchId, type FairgroundId, type GardensId } from '../game/moodBuildings';
 
 export { CAMPFIRE, CASTLE, DOCK_TILES, DOCKS_ROW, GATE_ROAD, GATE_TILES, HARBOUR, MAP_SIZE, PARADE, PLAZA, RIVER_ROWS, TOWER_SPOTS, WALL_TILES, zoneAt } from '../game/cityMap';
 
@@ -54,6 +55,9 @@ const TALL: Record<BuildingId, number> = {
   ...(Object.fromEntries(ORCHARD_IDS.map((id) => [id, 22])) as Record<OrchardId, number>),
   ...(Object.fromEntries(FISHERY_IDS.map((id) => [id, 26])) as Record<FisheryId, number>),
   ...(Object.fromEntries(PASTURE_IDS.map((id) => [id, 14])) as Record<PastureId, number>),
+  ...(Object.fromEntries(FAIRGROUND_IDS.map((id) => [id, 46])) as Record<FairgroundId, number>),
+  ...(Object.fromEntries(CHURCH_IDS.map((id) => [id, 78])) as Record<ChurchId, number>),
+  ...(Object.fromEntries(GARDENS_IDS.map((id) => [id, 22])) as Record<GardensId, number>),
   depot: 40,
   ...(Object.fromEntries(FORGE_IDS.map((id) => [id, 48])) as Record<ForgeId, number>),
   wall: 44,

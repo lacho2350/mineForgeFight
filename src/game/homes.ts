@@ -3,11 +3,11 @@
 // peasants who sleep there drink and eat what she brings. Peasants sleep where there's water and food
 // if there's room — the happy cottages first, then the keep's hall (fed straight from the store), and
 // only then the unhappy ones. A cottage's people are happy with water and food in and a road at its door
-// joined to the keep and the main gate; an unhappy one (run dry, or cut off) slows its sleepers down
-// (they work at HUNGRY_WORK) and nobody new moves into it. Pure TS.
+// joined to the keep and the main gate; an unhappy one (run dry, or cut off) drags the hold's happiness
+// down (happiness.ts: its sleepers count as sleeping badly) and nobody new moves into it. Pure TS.
 import { KEEP_BEDS, type BuildingLevels } from './buildings';
 import { FOOTPRINTS, MAP_SIZE, RIVER_ROWS, spotOf, zoneAt, type Footprint, type Placements, type Spot } from './cityMap';
-import { FOODS, FOOD_PER_PEASANT, HUNGRY_WORK } from './farms';
+import { FOODS, FOOD_PER_PEASANT } from './farms';
 import { HOUSE_IDS, houseBeds, type HouseId } from './houses';
 import { hasRoadAccess, walkBetween, type Roads } from './roads';
 import { techBonuses, type TechId } from './techs';
@@ -84,12 +84,11 @@ export function sleepers(state: Sleeping, storeHasFood: boolean) {
   return { residents, beds, hall, hallBeds };
 }
 
-/** How fast the hold works: everyone sleeping in an unhappy cottage — run dry, or with no road — (or in the hall with no food in store) works at HUNGRY_WORK. */
-export function workPace(state: Sleeping & { hungry: boolean }) {
-  if (state.population <= 0) return 1;
+/** Peasants sleeping badly: in an unhappy cottage — run dry, or with no road — or in the hall with no food in store. They drag the hold's happiness down (happiness.ts). */
+export function drySleepers(state: Sleeping & { hungry: boolean }) {
+  if (state.population <= 0) return 0;
   const { residents, hall } = sleepers(state, !state.hungry);
-  const dry = HOUSE_IDS.reduce((sum, id) => sum + (isHappy(id, state) ? 0 : residents[id]), 0) + (state.hungry ? hall : 0);
-  return Math.round((1 - ((1 - HUNGRY_WORK) * dry) / state.population) * 1000) / 1000;
+  return HOUSE_IDS.reduce((sum, id) => sum + (isHappy(id, state) ? 0 : residents[id]), 0) + (state.hungry ? hall : 0);
 }
 
 /** Is there a bed a newcomer can move into: in a kept cottage, or in the keep's hall while the store has food? */

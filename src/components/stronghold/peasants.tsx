@@ -6,6 +6,7 @@ import type { Construction } from '../../game/state';
 import type { BuildingId } from '../../game/buildings';
 import { WOODCUTTER_IDS } from '../../game/woodcutters';
 import { FISHERY_IDS, ORCHARD_IDS, PASTURE_IDS } from '../../game/farms';
+import { CHURCH_IDS, FAIRGROUND_IDS } from '../../game/moodBuildings';
 import { foodStore } from '../../game/homes';
 import { RESOURCES, RESOURCE_INFO, type Resource } from '../../game/resources';
 import { FOOTPRINTS, MINE_SPOT, spotOf, type Placements } from '../../game/cityMap';
@@ -151,7 +152,7 @@ const handcart = (sx: number): Look => ({ sx, sw: CART_W, ax: CART_AX, ay: CART_
 
 const MAX_WALKERS = 24;
 const MAX_CARTS = 14;
-const STAFFED_SHOWN: BuildingId[] = ['docks', 'gate', 'foundry', 'research', 'armory', 'stables', 'balloonWorks', 'monastery', 'barracks', 'guardhouse', 'archery', 'chapel', 'sanctum', 'griffinEyrie', 'granary'];
+const STAFFED_SHOWN: BuildingId[] = ['docks', 'gate', 'foundry', 'research', 'armory', 'stables', 'balloonWorks', 'monastery', 'barracks', 'guardhouse', 'archery', 'chapel', 'sanctum', 'griffinEyrie', 'granary', ...FAIRGROUND_IDS, ...CHURCH_IDS];
 /** What each farm sends to the store: orchards by cart (on the roads); fishing huts' hands carry baskets of
  * fish, and shepherds bring mutton in on foot from the pastures outside the walls (no roads out there). */
 const FARMS_SHOWN: { id: BuildingId; food: Resource }[] = [

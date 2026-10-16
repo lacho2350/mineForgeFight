@@ -3,6 +3,7 @@ import { FORGE_IDS, type ForgeId } from '../game/forges';
 import { HOUSE_IDS, type HouseId } from '../game/houses';
 import { FISHERY_IDS, ORCHARD_IDS, PASTURE_IDS, type FisheryId, type OrchardId, type PastureId } from '../game/farms';
 import { WOODCUTTER_IDS, type WoodcutterId } from '../game/woodcutters';
+import { CHURCH_IDS, FAIRGROUND_IDS, GARDENS_IDS, type ChurchId, type FairgroundId, type GardensId } from '../game/moodBuildings';
 import type { RoadKind } from '../game/roads';
 import type { TrapKind } from '../game/traps';
 
@@ -19,6 +20,9 @@ export const BUILDING_ICONS: Record<BuildingId, string> = {
   ...(Object.fromEntries(ORCHARD_IDS.map((id) => [id, '🍎'])) as Record<OrchardId, string>),
   ...(Object.fromEntries(FISHERY_IDS.map((id) => [id, '🐟'])) as Record<FisheryId, string>),
   ...(Object.fromEntries(PASTURE_IDS.map((id) => [id, '🐑'])) as Record<PastureId, string>),
+  ...(Object.fromEntries(FAIRGROUND_IDS.map((id) => [id, '🎪'])) as Record<FairgroundId, string>),
+  ...(Object.fromEntries(CHURCH_IDS.map((id) => [id, '⛪'])) as Record<ChurchId, string>),
+  ...(Object.fromEntries(GARDENS_IDS.map((id) => [id, '🌷'])) as Record<GardensId, string>),
   depot: '🛒',
   ...(Object.fromEntries(FORGE_IDS.map((id) => [id, '⚒️'])) as Record<ForgeId, string>),
   wall: '🧱',

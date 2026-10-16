@@ -9,11 +9,13 @@ import { STARTING_WOOD } from '../src/game/resources';
 import { walkBetween } from '../src/game/roads';
 import { tileKey } from '../src/game/mineLayout';
 import { FOREST_EXIT, STAND_WOOD, cleanForest, fellWood, fellingStand, forestWood, parseSpot, standFoot, startingForest } from '../src/game/forest';
+import { MAX_HAPPINESS } from '../src/game/happiness';
 import { build, game, newGame, run } from './support';
 
 describe('wood', () => {
   it('is cut by a staffed woodcutter’s hut and lands in the warehouse', () => {
-    newGame({ population: 20 });
+    // A jubilant hold works at full speed (the pace follows happiness).
+    newGame({ population: 20, happiness: MAX_HAPPINESS });
     build({ woodcutter: 4 });
     const before = game().warehouse.wood;
     run(10);
@@ -105,7 +107,7 @@ describe('the forest', () => {
   });
 
   it('feeds the warehouse while the hut is staffed', () => {
-    newGame({ population: 20 });
+    newGame({ population: 20, happiness: MAX_HAPPINESS });
     build({ woodcutter: 4 });
     const before = { wood: game().warehouse.wood, forest: forestWood(game().forest), stands: Object.keys(game().forest).length };
     run(10);

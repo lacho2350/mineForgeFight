@@ -7,6 +7,8 @@ import { RESOURCES, RESOURCE_INFO, STARTING_WOOD, emptyStock } from './resources
 import { startingForest } from './forest';
 import { STARTING_APPLES } from './farms';
 import { fullHome } from './homes';
+import { STARTING_HAPPINESS } from './happiness';
+import { DEFAULT_TAX_RATE, TAX_INFO, isTaxRate } from './taxes';
 import { BUILDING_INFO, DWELLING_UNIT, STARTING_BUILDINGS, buildingCost, buildingStats, staffNeeded } from './buildings';
 import { ARMY_RECRUITING, UNIT_STATS, emptyArmy } from './units';
 import { act, resolveBattle, stepAI } from './combat';
@@ -145,6 +147,8 @@ const gameState = (set: StoreApi<GameState>['setState']): GameState => ({
   flocks: {},
   hungry: false,
   homes: { houses: fullHome() },
+  happiness: STARTING_HAPPINESS,
+  taxRate: DEFAULT_TAX_RATE,
   discovered: ['coal', 'wood', 'apples'],
   depositMined: {},
   openedStations: [stationKey(-1, 0), stationKey(-1, 1)],
@@ -423,6 +427,8 @@ const gameState = (set: StoreApi<GameState>['setState']): GameState => ({
     if (workforce.idle <= 0) return { notice: 'Nobody is waiting at the campfire: release a miner or take staff off another building first.' };
     return { staffing: { ...state.staffing, [id]: now + 1 }, notice: `A peasant took up work at the ${name}.` };
   }),
+
+  setTaxRate: (rate) => set((state) => (isTaxRate(rate) && rate !== state.taxRate ? { taxRate: rate, notice: `${rate === 'none' ? 'No more taxes' : `${TAX_INFO[rate].name} taxes`}: ${TAX_INFO[rate].note}` } : {})),
 
   autoAssignCity: () => set((state) => {
     const workforce = workforceOf(state);

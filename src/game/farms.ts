@@ -1,8 +1,8 @@
 // Food: fishing huts along the river wall in town, sheep grazing on the land outside the walls, and
 // apple orchards in town feed the peasants; the granary stores it. Up to eight of each kind of farm, each
 // placed and levelled on its own and unlocked as the keep grows; one granary. Every peasant eats; with no
-// food left the hold goes hungry: no newcomers, and the peasants work slower (food itself is still made at
-// full speed, so a hungry hold can always feed itself again). Kept free of imports so the map
+// food left the hold goes hungry: no newcomers, and happiness sinks (happiness.ts) until everyone works
+// slower. Kept free of imports so the map
 // (cityMap.ts) can use the ids while the modules are still loading.
 
 export const FISHERY_IDS = ['fishery1', 'fishery2', 'fishery3', 'fishery4', 'fishery5', 'fishery6', 'fishery7', 'fishery8'] as const;
@@ -39,8 +39,6 @@ export type Food = (typeof FOODS)[number];
 
 /** Food a peasant eats each second (one every two minutes). */
 export const FOOD_PER_PEASANT = 1 / 120;
-/** How fast hungry peasants work. */
-export const HUNGRY_WORK = 0.7;
 /** Apples in store at the start of a game (older saves get them too). */
 export const STARTING_APPLES = 150;
 

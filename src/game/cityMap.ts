@@ -9,6 +9,7 @@ import type { BuildingId } from './buildings';
 import { FORGE_IDS, type ForgeId } from './forges';
 import { HOUSE_IDS, type HouseId } from './houses';
 import { FISHERY_IDS, ORCHARD_IDS, PASTURE_IDS, isFishery, isPasture, type FisheryId, type OrchardId, type PastureId } from './farms';
+import { CHURCH_IDS, FAIRGROUND_IDS, GARDENS_IDS, type MoodBuildingId } from './moodBuildings';
 import { WOODCUTTER_IDS, type WoodcutterId } from './woodcutters';
 
 export const MAP_SIZE = 59;
@@ -141,6 +142,7 @@ export const FOOTPRINTS: Record<BuildingId, Footprint> = {
   ...(Object.fromEntries(WOODCUTTER_IDS.map((id) => [id, { w: 2, d: 2 }])) as Record<WoodcutterId, Footprint>),
   granary: { w: 2, d: 2 },
   ...(Object.fromEntries(ORCHARD_IDS.map((id) => [id, { w: 3, d: 3 }])) as Record<OrchardId, Footprint>),
+  ...(Object.fromEntries([...FAIRGROUND_IDS, ...CHURCH_IDS, ...GARDENS_IDS].map((id) => [id, { w: 3, d: 3 }])) as Record<MoodBuildingId, Footprint>),
   ...(Object.fromEntries(FISHERY_IDS.map((id) => [id, { w: 1, d: 1 }])) as Record<FisheryId, Footprint>),
   ...(Object.fromEntries(PASTURE_IDS.map((id) => [id, { w: 3, d: 3 }])) as Record<PastureId, Footprint>),
   ...(Object.fromEntries(FORGE_IDS.map((id) => [id, { w: 2, d: 2 }])) as Record<ForgeId, Footprint>),
