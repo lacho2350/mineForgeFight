@@ -5,7 +5,7 @@ import { RESOURCE_INFO, type Resource } from './resources';
 import { BUILDING_IDS, BUILDING_INFO, buildingStats, type BuildingId } from './buildings';
 import { ARMY_RECRUITING, ARMY_UNITS, UNIT_STATS, armyValue, type ArmyUnit } from './units';
 import { holdPower, type HoldPower, type RaidParty } from './raids';
-import { allocateWorkforce, type Workforce } from './workforce';
+import { FULL_STAFFING, allocateWorkforce, type Workforce } from './workforce';
 import { CLEAR_CREW, type ClearOrder } from './rocks';
 import { ITEM_INFO, UNIT_GEAR, type ItemId } from './items';
 import { FORGE_IDS, FORGE_OUTPUT_CAP, emptyLoad, isForge, loadUnits, missingInputs, shelfMissing, type ForgeId, type Load } from './forges';
@@ -198,8 +198,12 @@ export function workforceOf(state: WorkforceState): Workforce {
     builders: state.construction.reduce((sum, job) => sum + job.crew, 0) + (state.clearOrders.length > 0 ? CLEAR_CREW : 0),
     levels: state.buildings,
     paused: state.paused,
+    staffing: state.staffing,
   });
 }
+
+/** Every building staffed as far as the peasants go (a new game; older saves, from before staffing was the player's). */
+export const fillStaffing = (state: WorkforceState) => workforceOf({ ...state, staffing: FULL_STAFFING }).staff;
 
 /** Peasants not under orders (staff and idle): what a new order or a recruit can take. */
 export const freeHands = (state: WorkforceState) => workforceOf(state).free;

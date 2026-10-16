@@ -153,3 +153,14 @@ describe('cottages', () => {
     expect(sleepers(cut, true).residents.houses).toBeLessThan(sleepers(state, true).residents.houses);
   });
 });
+
+describe('fishing huts', () => {
+  it('need no road (reached on foot along the bank): a new game can place one on the clear riverside', () => {
+    newGame({ gold: 5000 });
+    const spot = nearestFreeSpot('fishery1', { x: 20, y: 7 }, game().placements, BUILDING_NAMES, rockyTest(game().clearedRocks), onRoad(), accessRoads(game().roads));
+    expect(spot).not.toBeNull();
+    expect(needsRoad('fishery1')).toBe(false);
+    expect(needsRoad('pasture1')).toBe(false);
+    expect(needsRoad('armory')).toBe(true);
+  });
+});

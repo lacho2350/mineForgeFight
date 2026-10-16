@@ -466,7 +466,7 @@ export function getDepositInfo(layout: MineLayout, key: string): DepositInfo {
   return { ...base, standing, status: standing ? 'available' : 'unreachable' };
 }
 
-/** Where the next hired miner goes: a deposit the player dug to (coal first), else the next free gallery station. */
+/** Where the next miner goes (AUTO-ASSIGN): a deposit the player dug to (coal first), else the next free gallery station. */
 export function nextFreeSite(layout: MineLayout): Site | null {
   return freeDepositSites(layout)[0] ?? freeStationSites(layout)[0] ?? null;
 }

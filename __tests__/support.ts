@@ -2,7 +2,7 @@
 import type { BuildingId } from '../src/game/buildings';
 import { nearestFreeSpot, type Spot } from '../src/game/cityMap';
 import type { GameState } from '../src/game/state';
-import { BUILDING_NAMES } from '../src/game/hold';
+import { BUILDING_NAMES, fillStaffing } from '../src/game/hold';
 import { useGameStore } from '../src/game/gameStore';
 import { emptyStock, type Resource, type Stock } from '../src/game/resources';
 
@@ -22,10 +22,12 @@ export function writeSave(storage: ReturnType<typeof memoryStorage>, state: Reco
   storage.setItem('mineforge-save', JSON.stringify({ state, version }));
 }
 
-/** Back to a brand-new game, with raids pushed far off unless a test wants them. */
-export function newGame(overrides: Partial<GameState> = {}) {
+/** Back to a brand-new game, with raids pushed far off unless a test wants them. Its buildings are staffed
+ * as far as the peasants go (as the player would with 👷), unless `keepStaffing` (tests about staffing). */
+export function newGame(overrides: Partial<GameState> = {}, { keepStaffing = false } = {}) {
   useGameStore.setState(useGameStore.getInitialState(), true);
   useGameStore.setState({ nextRaidAt: 1e9, ...overrides });
+  if (!keepStaffing) useGameStore.setState({ staffing: fillStaffing(useGameStore.getState()) });
   return useGameStore;
 }
 
@@ -49,4 +51,6 @@ export function build(levels: Partial<Record<BuildingId, number>>, near: Spot = 
     if (spot) placements = { ...placements, [id]: spot };
   }
   useGameStore.setState({ placements, buildings: { ...state.buildings, ...levels } });
+  // Staffed as far as the peasants go (the player would press 👷).
+  useGameStore.setState({ staffing: fillStaffing(useGameStore.getState()) });
 }

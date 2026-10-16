@@ -21,7 +21,7 @@ import { isMoored } from '../game/ship';
 import { TRAP_DAMAGE, TRAP_INFO, TRAP_KINDS, TRAP_REFUND, trapAt, trapCounts, trapProblem, trapsFacing, type TrapKind } from '../game/traps';
 import { BUILDING_ICONS, ROAD_ICONS, TRAP_ICONS } from '../components/buildingIcons';
 import { plotOf } from '../components/GameSceneLayout';
-import type { Workforce } from '../game/workforce';
+import { vacancies, type Workforce } from '../game/workforce';
 import { BuildingDetail, BuildingGrid, DefenceSummary } from '../components/BuildingsPanel';
 import CityView from '../components/CityView';
 import { GameButton, SectionLabel } from '../components/GameUI';
@@ -234,6 +234,8 @@ export default function StrongholdScreen() {
   // Only live raids show over the map; the last battle's result is in the menu.
   const showRaid = !!game.raid || game.battle?.status === 'active';
   const hireable = hireableNow(game, workforce);
+  // Peasants at the campfire who'd fill empty spots in the buildings.
+  const staffable = Math.min(workforce.idle, vacancies(workforce));
 
   return (
     <View style={styles.screen}>
@@ -274,6 +276,14 @@ export default function StrongholdScreen() {
             onPress={openWar}
             alarm={!!game.raid || game.battle?.status === 'active'}
             badge={hireable > 0 ? String(hireable) : undefined}
+          />
+          {/* Staff the buildings: whoever waits at the campfire fills their empty spots (nobody goes by themselves). */}
+          <SideButton
+            icon="👷"
+            label="Auto-assign: staff the buildings from the campfire"
+            onPress={game.autoAssignCity}
+            alarm={false}
+            badge={staffable > 0 ? String(staffable) : undefined}
           />
         </View>
       )}
@@ -929,7 +939,7 @@ function Menu({ game, workforce, onPrologue }: { game: GameState; workforce: Wor
       <View style={styles.block}>
         <SectionLabel>PEASANTS {String(game.population)}/{String(beds)}</SectionLabel>
         <Text style={styles.body}>
-          {String(workforce.miners)} mining · {String(workforce.pushers)} pushing carts · {String(workforce.builders)} building · {String(workforce.staffTotal)} staffing buildings · {String(workforce.idle)} at the campfire
+          {String(workforce.miners)} mining · {String(workforce.pushers)} pushing carts · {String(workforce.builders)} building · {String(workforce.staffTotal)} staffing buildings · {String(workforce.idle)} at the campfire (nobody goes anywhere by themselves: 👷 on the side staffs the buildings, ASSIGN in the mine sends them mining)
           {dry > 0 ? ` · ${String(dry)} cottage${dry === 1 ? '' : 's'} out of water or food` : game.population < beds ? ' · a newcomer every few seconds' : ' · cottages full'}
           {cutOff > 0 ? ` · ${String(cutOff)} cottage${cutOff === 1 ? '' : 's'} with no road to the keep and the gate (unhappy: slower, nobody new moves in)` : ''}
         </Text>
@@ -987,7 +997,7 @@ const styles = StyleSheet.create({
 
   bottom: { position: 'absolute', left: 0, right: 0, bottom: 0, paddingHorizontal: 10, gap: 8, alignItems: 'center' },
   toolbar: { flexDirection: 'row', width: '100%', maxWidth: 720, gap: 6 },
-  side: { position: 'absolute', right: 12 },
+  side: { position: 'absolute', right: 12, gap: 10 },
   sideButton: {
     width: 48,
     height: 48,

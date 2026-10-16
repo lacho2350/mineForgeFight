@@ -249,12 +249,13 @@ export type RockyTest = (x: number, y: number) => boolean;
 export type RoadTest = (x: number, y: number) => boolean;
 
 // ——— Doors ———
-// Every building the player places (but the pastures, out on the raiders' ground) needs a road at its door
-// joined to the keep and the main gate before it can be placed (roads.ts, `accessRoads`). Doors face the
+// Every building the player places needs a road at its door joined to the keep and the main gate before it
+// can be placed (roads.ts, `accessRoads`) — but the pastures, out on the raiders' ground, and the fishing
+// huts on the riverbank, which are reached on foot along the bank (the town's roads don't get there early). Doors face the
 // front-left (the side along y + d); the barracks' faces the front-right (along x + w).
 
 /** Does this building need a road at its door to be placed? */
-export const needsRoad = (id: BuildingId) => isPlaceable(id) && !isPasture(id);
+export const needsRoad = (id: BuildingId) => isPlaceable(id) && !isPasture(id) && !isFishery(id);
 
 /** Which way a building's door faces, as the player sees it. */
 export const doorSide = (id: BuildingId): 'front-left' | 'front-right' => (id === 'barracks' ? 'front-right' : 'front-left');

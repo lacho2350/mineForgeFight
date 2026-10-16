@@ -31,7 +31,7 @@ import { haulFactor, isRoadKind, joinBuildings, roadProblem, startingRoads, with
 import { TRAP_INFO, TRAP_KINDS, trapProblem, type Trap } from './traps';
 import { isTechId } from './techs';
 import type { GameState, SavedState } from './state';
-import { BUILDING_NAMES, haulWalk, holdPowerOf } from './hold';
+import { BUILDING_NAMES, fillStaffing, haulWalk, holdPowerOf } from './hold';
 import { buildingFields } from './updates';
 
 /** An order from when the armory made all the gear (paid up front); kept only to pay older saves back. */
@@ -201,7 +201,9 @@ export function mergeSave(saved: Incoming | undefined, fresh: GameState): GameSt
     prologueSeen: saved.prologueSeen ?? true,
   };
   // The old timed barge's bookkeeping.
-  for (const key of ['shipVisit', 'shipSold', 'craftQueue', 'joinRoads']) delete (merged as Record<string, unknown>)[key];
+  for (const key of ['shipVisit', 'shipSold', 'craftQueue', 'joinRoads', 'autoMiners', 'releasedFaces']) delete (merged as Record<string, unknown>)[key];
+  // Saves from before staffing was the player's: the buildings keep the staff they had (filled in order).
+  if (!saved.staffing || typeof saved.staffing !== 'object') merged.staffing = fillStaffing(merged);
   // Raids sighted before field battles were sieges. One sighted under older, harsher rules (well beyond what
   // the hold's power now calls for) is sized afresh.
   if (merged.raid && merged.raid.kind !== 'field' && merged.raid.kind !== 'siege') merged.raid = { ...merged.raid, kind: 'siege' };

@@ -4,7 +4,7 @@ import { StatusBar } from 'expo-status-bar';
 import { BackHandler, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { GameState } from '../game/state';
-import { freeHands, haulWalk, minersByLevel, selectMineLayout, workforceOf } from '../game/hold';
+import { haulWalk, minersByLevel, selectMineLayout, workforceOf } from '../game/hold';
 import { TUNNEL_WOOD, cartCost, getDepthCost, techBlocker, tileDigCost, tunnelCost } from '../game/costs';
 import { MAX_DEPTH, MINE_STATIONS_PER_GALLERY, VEIN_CAPACITY_PER_DEPTH, useGame, useGameStore } from '../game/gameStore';
 import { surveyCooldown, surveyCost, surveyProblem, surveyRadius } from '../game/survey';
@@ -101,6 +101,8 @@ export default function MineScreen() {
   const showRaid = !!game.raid || game.battle?.status === 'active';
   const mineTechsReady = techsOf('mine').filter((id) => !techBlocker(game, id)).length;
   const cartsToAdd = cartLevelsOpen(game);
+  // Whoever waits at the campfire (nobody goes mining by themselves: ASSIGN sends them to the free faces).
+  const waiting = workforceOf(game).idle;
   const hint = surveyMode
     ? `Tap a tunnel (green: they can set out from there, red: they can't): the surveyors map the rock ${String(surveyRadius(game.techs))} tiles all round it, from ${String(surveyCost(MINE_SURFACE_ROWS, game.techs))} gold (dearer deeper). They're then ready again after ${String(surveyCooldown(game.techs))} s.`
     : digMode
@@ -181,7 +183,7 @@ export default function MineScreen() {
           <View style={styles.wide}>
             <DepositPanel
               info={selected}
-              idle={freeHands(game)}
+              idle={workforceOf(game).idle}
               gold={game.gold}
               wood={game.warehouse.wood}
               pending={selectedPending}
@@ -234,6 +236,13 @@ export default function MineScreen() {
               setSurveyMode((on) => !on);
             }}
           />
+          <ToolButton
+            icon="👷"
+            label="ASSIGN"
+            accessibilityLabel={`Auto-assign: send the ${String(waiting)} peasants at the campfire to the free faces`}
+            badge={waiting > 0 ? String(waiting) : undefined}
+            onPress={game.autoAssignMine}
+          />
           <ToolButton icon="📜" label="UPGRADES" badge={mineTechsReady > 0 ? String(mineTechsReady) : undefined} onPress={() => setPopup('upgrades')} />
           <ToolButton icon={CART_ICON} label="CARTS" badge={cartsToAdd > 0 ? String(cartsToAdd) : undefined} onPress={() => setPopup('carts')} />
         </View>
@@ -275,7 +284,7 @@ function MineHud({ game }: { game: GameState }) {
     <View style={styles.hud}>
       <Stat label="GOLD" value={Math.floor(game.gold).toLocaleString()} tone="#e5a565" />
       <Stat label="WOOD" value={Math.floor(game.warehouse.wood).toLocaleString()} tone="#d6bb79" />
-      <Stat label={`MINERS · ${String(freeHands(game))} FREE`} value={String(game.sites.length + game.pendingSites.length)} tone="#c0cd83" />
+      <Stat label={`MINERS · ${String(workforceOf(game).idle)} WAITING`} value={String(game.sites.length + game.pendingSites.length)} tone="#c0cd83" />
       {raidIn !== null && <Stat label={`RAID ${String(game.raidsFought + 1)}`} value={clock(Math.ceil(raidIn))} tone="#e08a72" />}
     </View>
   );

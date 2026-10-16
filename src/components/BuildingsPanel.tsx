@@ -176,8 +176,30 @@ export function BuildingDetail({ game, workforce, id, bare = false, onChooseSpot
           <Text style={[styles.staffText, (paused || staffed < need) && styles.staffShort]}>
             {paused
               ? `STOPPED · its ${String(need)} worker${need === 1 ? '' : 's'} wait at the campfire`
-              : `STAFF ${String(staffed)}/${String(need)}${staffed < need ? ` · short of peasants: works as level ${String(worked)}` : ' · fully staffed'}`}
+              : `STAFF ${String(staffed)}/${String(need)}${staffed < need ? ` · works as level ${String(worked)} · ${String(workforce.idle)} at the campfire` : ' · fully staffed'}`}
           </Text>
+          {!paused && (
+            <>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`Send a worker from the ${info.name} to the campfire`}
+                disabled={staffed <= 0}
+                onPress={() => game.assignStaff(id, -1)}
+                style={({ pressed }) => [styles.pauseButton, styles.staffStep, staffed <= 0 && styles.staffStepOff, pressed && styles.pressed]}
+              >
+                <Text style={styles.pauseText}>−</Text>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`Take a peasant from the campfire to work at the ${info.name}`}
+                disabled={staffed >= need || workforce.idle <= 0}
+                onPress={() => game.assignStaff(id, 1)}
+                style={({ pressed }) => [styles.pauseButton, styles.staffStep, (staffed >= need || workforce.idle <= 0) && styles.staffStepOff, pressed && styles.pressed]}
+              >
+                <Text style={styles.pauseText}>+</Text>
+              </Pressable>
+            </>
+          )}
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={paused ? `Restart the ${info.name}` : `Stop the ${info.name} and free its staff`}
@@ -459,6 +481,8 @@ const styles = StyleSheet.create({
   staffShort: { color: '#e08a72' },
   pauseButton: { paddingHorizontal: 10, paddingVertical: 6, borderWidth: 1, borderColor: '#4a5240' },
   pauseText: { color: '#e6dfcb', fontFamily: 'monospace', fontSize: 9, fontWeight: '700' },
+  staffStep: { minWidth: 32, alignItems: 'center' },
+  staffStepOff: { opacity: 0.35 },
   track: { height: 3, backgroundColor: '#343a31' },
   fill: { height: 3, backgroundColor: '#8d9a6a' },
   fillBuilding: { backgroundColor: '#e9c475' },

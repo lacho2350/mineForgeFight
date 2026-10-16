@@ -6,9 +6,13 @@ import { emptyArmy } from '../src/game/units';
 import { useGameStore } from '../src/game/gameStore';
 import { houseBeds } from '../src/game/houses';
 import { build, game, newGame, run, warehouseWith } from './support';
+import { fillStaffing } from '../src/game/hold';
 
-const place = (spots: Record<string, { x: number; y: number }>, levels: Record<string, number>, extra = {}) =>
+// Place and build these, and staff them as far as the peasants go (the player would press 👷).
+const place = (spots: Record<string, { x: number; y: number }>, levels: Record<string, number>, extra = {}) => {
   useGameStore.setState({ placements: { ...game().placements, ...spots }, buildings: { ...game().buildings, ...levels }, ...extra });
+  useGameStore.setState({ staffing: fillStaffing(game()) });
+};
 
 describe('where farms go', () => {
   it('puts fishing huts only right next to the river, along the river wall inside the town', () => {

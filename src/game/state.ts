@@ -14,6 +14,7 @@ import type { ForgeId, ForgeTasks } from './forges';
 import type { WagonJob } from './wagons';
 import type { Placements, Spot } from './cityMap';
 import type { ProductId } from './shop';
+import type { Staffing } from './workforce';
 import type { RoadKind, Roads } from './roads';
 import type { Trap, TrapKind } from './traps';
 import type { TechId } from './techs';
@@ -119,8 +120,8 @@ export type GameState = {
   sites: Site[];
   /** Miners on their way to a deposit whose tunnel is still being dug; they start when it's done. */
   pendingSites: Site[];
-  /** Stand tiles (`row,column`) of the miners the hold sent from the campfire itself (see `idleToTheMine`). */
-  autoMiners: string[];
+  /** The staff the player gave each building (+ / −, AUTO-ASSIGN; workforce.ts): nobody goes by themselves. */
+  staffing: Staffing;
   /** The forest beyond the gate: wood left on each standing tile (see forest.ts). */
   forest: Forest;
   /** Stands cut down so far: picks where the next one grows back. */
@@ -194,6 +195,12 @@ export type GameState = {
   placeBuilding: (id: BuildingId, spot: Spot) => void;
   /** Stop or restart a building: a stopped building sends its staff back to the campfire. */
   toggleBuildingPause: (id: BuildingId) => void;
+  /** One more (+1) or one fewer (−1) of a building's staff, from or to the campfire. */
+  assignStaff: (id: BuildingId, change: 1 | -1) => void;
+  /** Fill the buildings' empty spots with whoever waits at the campfire (in priority order). */
+  autoAssignCity: () => void;
+  /** Send whoever waits at the campfire to the mine's free faces (coal first, then gallery stations). */
+  autoAssignMine: () => void;
   /** Lay traps on these belt tiles, in order, while they can be paid for. */
   layTraps: (kind: TrapKind, tiles: Spot[]) => void;
   /** Lay (or take up) road on these town tiles, in order, while they can be paid for. */
@@ -262,4 +269,4 @@ export type SavedState = { [K in keyof GameState as GameState[K] extends (...arg
 
 export type WalkState = Pick<GameState, 'placements' | 'roads' | 'clearedRocks'>;
 
-export type WorkforceState = Pick<GameState, 'population' | 'sites' | 'pendingSites' | 'carts' | 'construction' | 'clearOrders' | 'buildings' | 'paused'>;
+export type WorkforceState = Pick<GameState, 'population' | 'sites' | 'pendingSites' | 'carts' | 'construction' | 'clearOrders' | 'buildings' | 'paused' | 'staffing'>;

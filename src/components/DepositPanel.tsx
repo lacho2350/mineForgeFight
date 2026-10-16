@@ -39,8 +39,8 @@ export default function DepositPanel({
   const detail = {
     worked: 'A miner is working this deposit.',
     available: idle > 0
-      ? `${String(idle)} free peasant${idle === 1 ? '' : 's'} can mine. Tip: double-tap a deposit to assign straight away.`
-      : 'No free peasants: wait for newcomers, stop a building, or release a miner.',
+      ? `${String(idle)} peasant${idle === 1 ? '' : 's'} at the campfire can mine. Tip: double-tap a deposit to assign straight away, or 👷 ASSIGN to fill every free face.`
+      : 'Nobody is waiting at the campfire: take someone off a building (−), release a miner, or wait for newcomers.',
     unreachable: route
       ? `Nothing dug beside it yet. Diggers can cut a ${String(route.tiles)}-tile tunnel to it for ${String(route.cost)} gold and ${String(route.tiles * TUNNEL_WOOD)} wood, then a miner starts. Double-tap does the same.`
       : 'No legal tunnel reaches it from nearby. Dig closer to it first.',
@@ -81,13 +81,13 @@ export default function DepositPanel({
       {!pending && info.status === 'unreachable' && route && (
         <GameButton
           label="DIG & ASSIGN"
-          detail={`${String(route.tiles)} tiles · ${String(route.cost)} gold · ${String(route.tiles * TUNNEL_WOOD)} wood · ${String(idle)} free`}
+          detail={`${String(route.tiles)} tiles · ${String(route.cost)} gold · ${String(route.tiles * TUNNEL_WOOD)} wood · ${String(idle)} waiting`}
           onPress={onAssign}
           disabled={idle <= 0 || gold < route.cost || wood < route.tiles * TUNNEL_WOOD}
         />
       )}
       {info.status === 'available' && (
-        <GameButton label="ASSIGN MINER" detail={`${String(idle)} free peasants`} onPress={onAssign} disabled={idle <= 0} />
+        <GameButton label="ASSIGN MINER" detail={`${String(idle)} at the campfire`} onPress={onAssign} disabled={idle <= 0} />
       )}
       {info.status === 'worked' && <GameButton label="RELEASE MINER" detail="back to the campfire" onPress={onRelease} secondary />}
     </View>

@@ -32,14 +32,17 @@ import {
   stationSite,
   depositAt,
   depositRemaining,
+  nextFreeSite,
   type Site,
 } from './mineLayout';
 import { creditPurchase } from './shop';
+import { STAFF_PRIORITY, vacancies } from './workforce';
 import { darkTiles, surveyAt, surveyCooldown, surveyCost, surveyProblem } from './survey';
 import type { GameState, SavedState } from './state';
 import {
   BUILDING_NAMES,
   affordableRecruits,
+  fillStaffing,
   freeHands,
   haulWalk,
   loadText,
@@ -135,7 +138,8 @@ const gameState = (set: StoreApi<GameState>['setState']): GameState => ({
   carts: {},
   sites: startingSites,
   pendingSites: [],
-  autoMiners: [],
+  // A new game's buildings start staffed; from then on the player staffs them.
+  staffing: fillStaffing({ population: 10, sites: startingSites, pendingSites: [], carts: {}, construction: [], clearOrders: [], buildings: STARTING_BUILDINGS, paused: [], staffing: {} }),
   forest: startingForest(),
   forestSerial: 0,
   flocks: {},
@@ -173,8 +177,9 @@ const gameState = (set: StoreApi<GameState>['setState']): GameState => ({
   tick: () => set(tickGame),
 
   assignMiner: (key) => set((state) => {
-    const free = freeHands(state);
-    if (free <= 0) return { notice: 'No free peasants. Wait for more to arrive, pause a building, or release a miner.' };
+    // Miners come from the campfire only (building staff stay where the player put them).
+    const free = workforceOf(state).idle;
+    if (free <= 0) return { notice: 'Nobody is waiting at the campfire: take someone off a building (− in its pop-up), release a miner, or wait for newcomers.' };
     const info = getDepositInfo(selectMineLayout(state), key);
     if (info.status === 'unknown') return { notice: 'Nobody knows what’s in that dark rock yet: survey it first from a tunnel near it (🔦 SURVEY), or dig closer.' };
     if (info.status === 'empty') return { notice: 'Nothing to mine there.' };
@@ -195,7 +200,7 @@ const gameState = (set: StoreApi<GameState>['setState']): GameState => ({
       const stand = parseKey(route[route.length - 1]);
       const pending: Site = { row: stand.row, column: stand.column, faceRow: info.row, faceColumn: info.column, kind: 'deposit' };
       const crew = minerCrew(state, pending);
-      if (free < crew) return { notice: 'The first miner on a level needs a cart pusher too: 2 free peasants.' };
+      if (free < crew) return { notice: 'The first miner on a level needs a cart pusher too: 2 peasants waiting at the campfire.' };
       return {
         gold: state.gold - cost,
         warehouse: { ...state.warehouse, wood: roundCoal(state.warehouse.wood - wood) },
@@ -204,7 +209,7 @@ const gameState = (set: StoreApi<GameState>['setState']): GameState => ({
         notice: `Digging ${String(route.length)} tile${route.length === 1 ? '' : 's'} to the ${RESOURCE_INFO[info.deposit ?? 'coal'].deposit.toLowerCase()} for ${String(cost)} gold and ${String(wood)} wood. A miner will start when it’s through.`,
       };
     }
-    if (free < minerCrew(state, info.standing)) return { notice: 'The first miner on a level needs a cart pusher too: 2 free peasants.' };
+    if (free < minerCrew(state, info.standing)) return { notice: 'The first miner on a level needs a cart pusher too: 2 peasants waiting at the campfire.' };
     return {
       ...withSite(state, info.standing),
       notice: `A miner is now working ${withArticle(RESOURCE_INFO[siteResource(info.standing)].deposit.toLowerCase())} with ${info.remaining.toLocaleString()} ${RESOURCE_INFO[siteResource(info.standing)].unit.toLowerCase()} left.`,
@@ -214,14 +219,14 @@ const gameState = (set: StoreApi<GameState>['setState']): GameState => ({
   releaseMiner: (key) => set((state) => {
     const { row, column } = parseKey(key);
     // A miner still waiting on a tunnel just stays idle (the tunnel is still dug).
+    // The miner goes back to the campfire and waits there (nobody is sent anywhere by themselves).
     const pendingSites = state.pendingSites.filter((site) => !(site.faceRow === row && site.faceColumn === column));
     if (pendingSites.length !== state.pendingSites.length) {
       return { pendingSites, notice: 'The miner won’t wait for that tunnel and went back to the campfire.' };
     }
     const sites = state.sites.filter((site) => !(site.faceRow === row && site.faceColumn === column));
     if (sites.length === state.sites.length) return {};
-    const autoMiners = state.autoMiners.filter((stand) => sites.some((site) => tileKey(site.row, site.column) === stand));
-    return { sites, autoMiners, layoutVersion: state.layoutVersion + 1, notice: 'The miner left the deposit and went back to the campfire.' };
+    return { sites, layoutVersion: state.layoutVersion + 1, notice: 'The miner left the deposit and is waiting at the campfire.' };
   }),
 
   buyCart: (level) => set((state) => {
@@ -234,7 +239,7 @@ const gameState = (set: StoreApi<GameState>['setState']): GameState => ({
     if (!canAfford(state, cost)) {
       return { notice: `Another cart costs ${String(cost.coal)} coal and ${String(cost.gold)} gold.` };
     }
-    if (freeHands(state) <= 0) return { notice: 'A new cart needs a free peasant to push it.' };
+    if (workforceOf(state).idle <= 0) return { notice: 'A new cart needs a peasant from the campfire to push it.' };
     return {
       warehouse: { ...state.warehouse, coal: roundCoal(state.warehouse.coal - cost.coal) },
       gold: state.gold - cost.gold,
@@ -391,9 +396,69 @@ const gameState = (set: StoreApi<GameState>['setState']): GameState => ({
 
   toggleBuildingPause: (id) => set((state) => {
     const { name } = BUILDING_INFO[id];
-    if (state.paused.includes(id)) return { paused: state.paused.filter((other) => other !== id), notice: `The ${name} is back at work.` };
+    if (state.paused.includes(id)) {
+      // Restarted with whoever waits at the campfire (its old staff went there when it stopped).
+      const paused = state.paused.filter((other) => other !== id);
+      const take = Math.min(staffNeeded(id, state.buildings[id]), workforceOf(state).idle);
+      return {
+        paused,
+        staffing: { ...state.staffing, [id]: take },
+        notice: `The ${name} is back at work with ${String(take)} of its ${String(staffNeeded(id, state.buildings[id]))} staff.`,
+      };
+    }
     if (staffNeeded(id, state.buildings[id]) === 0) return { notice: `The ${name} needs no staff.` };
     return { paused: [...state.paused, id], notice: `The ${name} is stopped; its staff went back to the campfire.` };
+  }),
+
+  assignStaff: (id, change) => set((state) => {
+    const { name } = BUILDING_INFO[id];
+    const workforce = workforceOf(state);
+    const now = workforce.staff[id];
+    if (change < 0) {
+      if (now <= 0) return {};
+      return { staffing: { ...state.staffing, [id]: now - 1 }, notice: `A worker from the ${name} went back to the campfire.` };
+    }
+    if (state.paused.includes(id)) return { notice: `The ${name} is stopped: restart it first.` };
+    if (now >= workforce.needed[id]) return { notice: workforce.needed[id] === 0 ? `The ${name} needs no staff.` : `The ${name} has all the staff it can take.` };
+    if (workforce.idle <= 0) return { notice: 'Nobody is waiting at the campfire: release a miner or take staff off another building first.' };
+    return { staffing: { ...state.staffing, [id]: now + 1 }, notice: `A peasant took up work at the ${name}.` };
+  }),
+
+  autoAssignCity: () => set((state) => {
+    const workforce = workforceOf(state);
+    if (workforce.idle <= 0) return { notice: 'Nobody is waiting at the campfire.' };
+    if (vacancies(workforce) <= 0) return { notice: 'Every building has all the staff it can take.' };
+    const staffing = { ...state.staffing };
+    let left = workforce.idle;
+    for (const id of STAFF_PRIORITY) {
+      const take = Math.min(workforce.needed[id] - workforce.staff[id], left);
+      if (take <= 0) continue;
+      staffing[id] = workforce.staff[id] + take;
+      left -= take;
+    }
+    const sent = workforce.idle - left;
+    return { staffing, notice: `${String(sent)} peasant${sent === 1 ? '' : 's'} took up work in the buildings${left > 0 ? `; ${String(left)} still wait at the campfire` : ''}.` };
+  }),
+
+  autoAssignMine: () => set((state) => {
+    if (workforceOf(state).idle <= 0) return { notice: 'Nobody is waiting at the campfire.' };
+    let next: GameState = state;
+    let sent = 0;
+    // Each free face in turn (coal first, then gallery stations) while there are hands for it (the first
+    // miner on a level brings a cart pusher too).
+    for (let i = 0; i < 400; i++) {
+      const site = nextFreeSite(selectMineLayout(next));
+      if (!site || workforceOf(next).idle < minerCrew(next, site)) break;
+      next = { ...next, ...withSite(next, site) };
+      sent += 1;
+    }
+    if (sent === 0) return { notice: 'No free face to send anyone to: dig to more ore, or open the next gallery.' };
+    return {
+      sites: next.sites,
+      openedStations: next.openedStations,
+      layoutVersion: next.layoutVersion,
+      notice: `${String(sent)} peasant${sent === 1 ? '' : 's'} went down the mine to work the free faces.`,
+    };
   }),
 
   upgradeBuilding: (id) => set((state) => {
@@ -743,7 +808,8 @@ if (kept) {
       continue;
     }
     if (!(key in current)) {
-      added[key] = value;
+      // Staffing (2026-10-13) follows the running game's own buildings, not a new game's.
+      added[key] = key === 'staffing' ? fillStaffing(current as unknown as GameState) : value;
       continue;
     }
     if (!FIXED_RECORDS.includes(key)) continue;

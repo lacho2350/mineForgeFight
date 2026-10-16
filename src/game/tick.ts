@@ -1,6 +1,6 @@
 import { cartEventsBetween, getCartRoutes } from './haulage';
 import { RESOURCES, RESOURCE_INFO, emptyStock, type Resource } from './resources';
-import { BUILDING_IDS, BUILDING_INFO, DWELLING_UNIT, buildingStats, taxPerMinute, workedLevel, type BuildingId } from './buildings';
+import { BUILDING_INFO, DWELLING_UNIT, buildingStats, staffNeeded, taxPerMinute, workedLevel, type BuildingId } from './buildings';
 import { ARMY_RECRUITING, ARMY_UNITS, MAX_MUSTERS_WAITING, MUSTER_SECONDS, unitGrowth, type ArmyUnit } from './units';
 import { actionSeconds, createBattle, resolveBattle, stepAI, type Battle } from './combat';
 import { RAID_AUTO_AFTER, RAID_WARNING, raidKind, raidParty, raidSide, raidStrength } from './raids';
@@ -16,7 +16,7 @@ import { gearComing, gearWanted, incomingTo, supplyLoad, wagonBackAt, wagonDropA
 import { SIDE_NAMES } from './cityMap';
 import { haulFactor } from './roads';
 import { trapCounts, trapsFacing } from './traps';
-import { depositRemaining, depositStep, depositTotal, digTime, nextFreeSite, tileKey, parseKey, type Site } from './mineLayout';
+import { depositRemaining, depositStep, depositTotal, digTime, tileKey, parseKey, type Site } from './mineLayout';
 import { raidBattleKind, type CartLoad, type GameState } from './state';
 import {
   describeParty,
@@ -25,7 +25,6 @@ import {
   haulWalk,
   holdPowerOf,
   itemsCounted,
-  minerCrew,
   selectMineLayout,
   siteFactor,
   siteResource,
@@ -33,7 +32,7 @@ import {
   wagonLegs,
   workforceOf,
 } from './hold';
-import { buildingFields, roundCoal, settleBattle, transfer, withSite } from './updates';
+import { buildingFields, roundCoal, settleBattle, transfer } from './updates';
 
 // One second of the game: miners cut, carts and haulers move the goods, builders, smiths and carts work,
 // recruits muster, raids and barges come and go.
@@ -215,6 +214,9 @@ export function tickGame(state: GameState): Partial<GameState> {
       for (const job of finished) buildings[job.building] = job.level;
       const job = finished[0];
       notice = `${BUILDING_INFO[job.building].name} reached level ${String(job.level)}; the crew is back at the campfire.`;
+      // Staff aren't sent by themselves: say when the building has room for more.
+      const more = staffNeeded(job.building, job.level) - (state.staffing[job.building] ?? 0);
+      if (more > 0) notice += ` It has room for ${String(more)} more staff: + in its pop-up, or 👷 to staff every building.`;
       if (isHouse(job.building)) notice += ` The hold now sleeps ${String(buildingStats(buildings, undefined, techs).beds)} peasants.`;
     }
   }
@@ -386,7 +388,7 @@ export function tickGame(state: GameState): Partial<GameState> {
   if (elapsedSeconds % 5 === 0) gold = Math.round((gold + taxPerMinute(structure, state.population) / 12) * 100) / 100;
 
   // New peasants come to the campfire while there are free beds (the houses' staff keep the beds).
-  const before = { sites, pendingSites, carts: state.carts, construction, clearOrders, buildings, paused: state.paused };
+  const before = { sites, pendingSites, carts: state.carts, construction, clearOrders, buildings, paused: state.paused, staffing: state.staffing };
   const beds = buildingStats(buildings, workforceOf({ ...before, population: state.population }).staff, techs).beds;
   let population = state.population;
   if (elapsedSeconds % structure.arrivalSeconds === 0 && population < beds && roomForNewcomer({ population, buildings, techs, homes, hungry, placements: state.placements, roads: state.roads })) population += 1;
@@ -496,6 +498,9 @@ export function tickGame(state: GameState): Partial<GameState> {
     pendingSites,
     layoutVersion,
     sites,
+    // What each building actually has (an order may have taken someone off one): it stays so until
+    // the player staffs it again, and whoever was freed waits at the campfire.
+    staffing: workforce.staff,
     clearedRocks,
     clearOrders,
     items,
@@ -519,33 +524,5 @@ export function tickGame(state: GameState): Partial<GameState> {
     ...raidFields,
     notice,
   };
-  return { ...next, ...idleToTheMine({ ...state, ...next }) };
-}
-
-/**
- * Idle peasants go mining: once every building has its staff, a peasant from the campfire takes the next
- * free face each second (`nextFreeSite`: a dug tile beside a deposit, coal first, then a gallery station).
- * They come back when the hold needs hands — while any building is short of staff (after recruiting, or
- * a new building's crew) the latest of them goes back to the campfire each second. Miners the player
- * placed are never moved.
- */
-export function idleToTheMine(state: GameState): Partial<GameState> {
-  const autoMiners = state.autoMiners.filter((stand) => state.sites.some((site) => tileKey(site.row, site.column) === stand));
-  const workforce = workforceOf(state);
-  const needed = BUILDING_IDS.reduce((sum, id) => sum + workforce.needed[id], 0);
-  if (workforce.staffTotal < needed && autoMiners.length > 0) {
-    const stand = autoMiners[autoMiners.length - 1];
-    return {
-      sites: state.sites.filter((site) => tileKey(site.row, site.column) !== stand),
-      autoMiners: autoMiners.slice(0, -1),
-      layoutVersion: state.layoutVersion + 1,
-    };
-  }
-  if (workforce.idle > 0) {
-    const site = nextFreeSite(selectMineLayout(state));
-    if (site && workforce.idle >= minerCrew(state, site)) {
-      return { ...withSite(state, site), autoMiners: [...autoMiners, tileKey(site.row, site.column)] };
-    }
-  }
-  return autoMiners.length === state.autoMiners.length ? {} : { autoMiners };
+  return next;
 }

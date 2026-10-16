@@ -102,6 +102,7 @@ function GameSceneCanvas({ width, height, camX, camY, zoom, selected, ghost, act
   const pendingSites = useGameSlice((state) => state.pendingSites, active);
   const carts = useGameSlice((state) => state.carts, active);
   const paused = useGameSlice((state) => state.paused, active);
+  const staffing = useGameSlice((state) => state.staffing, active);
   const raid = useGameSlice((state) => state.raid, active);
   const forest = useGameSlice((state) => forestLook(state.forest), active);
   const felling = useGameSlice((state) => fellingStand(state.forest) ?? '', active);
@@ -131,8 +132,8 @@ function GameSceneCanvas({ width, height, camX, camY, zoom, selected, ghost, act
   );
   const atGate = useGameSlice((state) => state.battle?.status === 'active', active);
   const workforce = useMemo(
-    () => workforceOf({ population, sites, pendingSites, carts, construction, clearOrders, buildings, paused }),
-    [population, sites, pendingSites, carts, construction, clearOrders, buildings, paused],
+    () => workforceOf({ population, sites, pendingSites, carts, construction, clearOrders, buildings, paused, staffing }),
+    [population, sites, pendingSites, carts, construction, clearOrders, buildings, paused, staffing],
   );
   const clock = useCityClock(active);
   const transform = useDerivedValue(() => [{ scale: zoom.get() }, { translateX: -camX.get() }, { translateY: -camY.get() }]);
