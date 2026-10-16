@@ -13,7 +13,6 @@ import { fellWood } from './forest';
 import { FOODS, LAMBS_PER_LEVEL, MUTTON_PER_SHEEP, PASTURE_IDS, SHEEP_PER_LEVEL, WOOL_PER_SHEEP } from './farms';
 import { roomForNewcomer, tickHomes } from './homes';
 import { LEAVE_SECONDS, driftHappiness, moodDrift, moodFactors, workPaceAt } from './happiness';
-import { TAX_INFO } from './taxes';
 import { gearComing, gearWanted, incomingTo, supplyLoad, wagonBackAt, wagonDropAt, type WagonJob } from './wagons';
 import { SIDE_NAMES } from './cityMap';
 import { haulFactor } from './roads';
