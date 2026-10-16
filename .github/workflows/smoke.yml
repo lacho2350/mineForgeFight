@@ -25,10 +25,10 @@ jobs:
           npx playwright install --with-deps chromium
       - name: Start the web dev server
         env:
-          CI: ''
           EXPO_NO_TELEMETRY: '1'
         run: |
-          nohup npx expo start --web --port 8081 > expo.log 2>&1 &
+          # Metro must not see CI (it then stops watching files and serves stale lazy chunks).
+          nohup env -u CI -u GITHUB_ACTIONS npx expo start --web --port 8081 > expo.log 2>&1 &
           for i in $(seq 1 60); do
             if curl -sf -o /dev/null http://localhost:8081; then echo up; break; fi
             sleep 2
@@ -46,6 +46,7 @@ jobs:
         if: always()
         run: |
           set -e
+          mkdir -p smoke
           cp expo.log smoke/ || true
           cd smoke
           git init -q
