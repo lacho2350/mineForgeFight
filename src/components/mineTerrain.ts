@@ -508,11 +508,11 @@ const BLOCK_REACH = FOG_ALPHA.length; // tiles around a change whose drawing may
 // (`keepBlocksInView`), or it would redraw blocks every frame.
 const MAX_CACHED_BLOCKS = 72;
 const SPARE_BLOCKS = 12;
-let blocksInView = 0;
+let shownBlocks = 0;
 
 /** How many blocks the view is showing now: the cache keeps at least those (and a few spare). */
 export function keepBlocksInView(count: number) {
-  blocksInView = count;
+  shownBlocks = count;
 }
 
 let surfacePicture: SkPicture | null = null;
@@ -696,7 +696,7 @@ export function getBlockImage(blockRow: number, blockColumn: number, layout: Min
   if (cached) retire(cached.image);
   blockCache.delete(key);
   blockCache.set(key, { stamp, image });
-  while (blockCache.size > Math.max(MAX_CACHED_BLOCKS, blocksInView + SPARE_BLOCKS)) {
+  while (blockCache.size > Math.max(MAX_CACHED_BLOCKS, shownBlocks + SPARE_BLOCKS)) {
     const [oldestKey, oldest] = blockCache.entries().next().value as [string, CachedBlock];
     retire(oldest.image);
     blockCache.delete(oldestKey);

@@ -152,19 +152,15 @@ export function useScenePicture(key: string, active: boolean, render: () => Reac
     if (!active || built.current === key) return;
     let cancelled = false;
     const element = render();
-    if (!element) {
-      built.current = key;
-      setPicture(null);
-      return;
-    }
     const bounds = Skia.XYWHRect(0, 0, sceneWidth, SCENE_HEIGHT);
+    // Nothing to draw records nothing and clears the picture (set from the same callback, so it's never
+    // set from the effect itself).
     void collectPaths(
-      () => (cancelled ? Promise.resolve(null) : drawAsPicture(element, bounds)),
+      () => (cancelled || !element ? Promise.resolve(null) : drawAsPicture(element, bounds)),
       (next) => next,
     ).then((next) => {
-      if (!next) return;
       if (cancelled || !mounted.current) {
-        next.dispose();
+        next?.dispose();
         return;
       }
       built.current = key;
