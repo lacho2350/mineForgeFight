@@ -85,6 +85,31 @@ try {
   await page.locator('[aria-label="Close"]').last().click();
   await wait(800);
 
+  // A raid: sighted (drawn on their ground), then a battle in the field the captains fight; the clock must
+  // keep running throughout. Then a reload: the saved game resumes and keeps ticking.
+  const clockAt = () => page.evaluate(() => globalThis.mineforgeStore.getState().elapsedSeconds);
+  await page.evaluate(() => {
+    const store = globalThis.mineforgeStore;
+    store.setState({ nextRaidAt: store.getState().elapsedSeconds + 65, army: { ...store.getState().army, pikeman: 3 } });
+  });
+  for (let i = 0; i < 4; i += 1) {
+    await wait(25_000);
+    consoleLog.push(`[smoke] raid phase ${i}: clock ${await clockAt()} raid=${JSON.stringify(await page.evaluate(() => { const s = globalThis.mineforgeStore.getState(); return { raid: !!s.raid, battle: s.battle?.status ?? null, happiness: s.happiness, population: s.population }; }))}`);
+    await shot(page, `03e-raid-${i}`);
+  }
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.locator('[aria-label="MINE"]').first().waitFor({ timeout: 120_000 });
+  await wait(12_000);
+  const t1 = await clockAt();
+  await wait(5000);
+  const t2 = await clockAt();
+  consoleLog.push(`[smoke] after reload: clock ${t1} -> ${t2}`);
+  if (t2 <= t1) errors.push(`[smoke] the clock stopped after a reload: ${t1} -> ${t2}`);
+  await shot(page, '03f-reloaded');
+  await page.locator('[aria-label="Zoom in"]').first().click();
+  await page.locator('[aria-label="Zoom in"]').first().click();
+  await wait(2500);
+
   // Tap the warehouse from the Buildings list: whatever stands in front of it should fade.
   await page.locator('[aria-label="BUILDINGS"]').first().click();
   await wait(800);
