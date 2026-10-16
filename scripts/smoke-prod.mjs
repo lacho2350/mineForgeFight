@@ -48,8 +48,16 @@ try {
     save.state.warehouse.fish = 0;
     save.state.warehouse.mutton = 0;
     save.state.hungry = true;
-    await page.evaluate((text) => localStorage.setItem('mineforge-save', text), JSON.stringify(save));
+    consoleLog.push(`[prod] save.json: ${String(fs.statSync(`${out}/save.json`).size)} bytes, elapsed ${String(save.state.elapsedSeconds)}, version ${String(save.version)}`);
+    // The running game writes its own save every few seconds and on page hide: put ours in and stop the
+    // game's writes, then reload.
+    await page.evaluate((text) => {
+      localStorage.setItem('mineforge-save', text);
+      Storage.prototype.setItem = () => {};
+      Storage.prototype.removeItem = () => {};
+    }, JSON.stringify(save));
     await page.reload({ waitUntil: 'domcontentloaded' });
+    consoleLog.push(`[prod] reloaded with: ${(await page.evaluate(() => localStorage.getItem('mineforge-save') ?? '')).slice(0, 120)}`);
     await page.locator('[aria-label="MINE"]').first().waitFor({ timeout: 120_000 });
     for (let i = 0; i < 6; i += 1) {
       await wait(10_000);
