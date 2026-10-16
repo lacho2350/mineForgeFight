@@ -36,10 +36,21 @@ jobs:
           curl -sf -o /dev/null http://localhost:8081 || (cat expo.log; exit 1)
       - name: Smoke test
         run: node scripts/smoke.mjs
+      - name: Export the web build and smoke it with the saved game
+        if: always()
+        env:
+          EXPO_NO_TELEMETRY: '1'
+        run: |
+          npx expo export --platform web --output-dir dist
+          cp node_modules/canvaskit-wasm/bin/full/canvaskit.wasm dist/canvaskit.wasm
+          for f in dist/_expo/static/js/web/*.js; do sed -i 's#https://cdn.jsdelivr.net/npm/canvaskit-wasm@[0-9.]*/bin/full/##g' "$f"; done
+          node scripts/smoke-prod.mjs dist
       - name: Show logs
         if: always()
         run: |
           echo "=== errors.log ==="; cat smoke/errors.log || true
+          echo; echo "=== prod-errors.log ==="; cat smoke/prod-errors.log || true
+          echo; echo "=== prod-console.log (tail) ==="; tail -n 60 smoke/prod-console.log || true
           echo; echo "=== console.log (tail) ==="; tail -n 80 smoke/console.log || true
           echo; echo "=== expo.log (tail) ==="; tail -n 40 expo.log || true
       - name: Publish the results to the ci-smoke-results branch

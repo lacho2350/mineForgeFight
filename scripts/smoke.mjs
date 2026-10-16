@@ -144,6 +144,9 @@ try {
   await shot(page, '09-city-first-frame');
   await wait(3000);
   await shot(page, '10-city-again');
+  // The saved game, for the production build's run (smoke-prod.mjs).
+  const save = await page.evaluate(() => localStorage.getItem('mineforge-save'));
+  if (save) fs.writeFileSync(`${out}/save.json`, save);
 } catch (e) {
   errors.push(`[smoke] ${e.stack ?? e.message}`);
   await shot(page, '99-failure').catch(() => {});
