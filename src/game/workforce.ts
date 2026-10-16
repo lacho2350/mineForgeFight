@@ -7,6 +7,7 @@
 import { BUILDING_IDS, staffNeeded, type BuildingId, type BuildingLevels } from './buildings';
 import { FORGE_IDS } from './forges';
 import { FISHERY_IDS, ORCHARD_IDS, PASTURE_IDS } from './farms';
+import { CHURCH_IDS, FAIRGROUND_IDS } from './moodBuildings';
 import { WOODCUTTER_IDS } from './woodcutters';
 
 export { PEASANT_ARRIVAL_SECONDS } from './buildings';
@@ -22,6 +23,8 @@ export const STAFF_PRIORITY: BuildingId[] = [
   ...PASTURE_IDS,
   'granary',
   ...WOODCUTTER_IDS,
+  ...FAIRGROUND_IDS,
+  ...CHURCH_IDS,
   'foundry',
   'docks',
   'gate',

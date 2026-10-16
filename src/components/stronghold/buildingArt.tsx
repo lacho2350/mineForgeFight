@@ -521,6 +521,105 @@ export function BuildingArt({ id, plot, tier, level }: { id: BuildingId; plot: P
         </Group>
       );
     }
+    case 'fairground1':
+    case 'fairground2':
+    case 'fairground3':
+    case 'fairground4': {
+      // A fairground: a maypole with ribbons in the middle, a striped tent behind it, and stalls along the
+      // front (more as it grows), bunting between the poles.
+      const poleTop = iso(x + w / 2, y + d / 2, 34);
+      const poleBase = iso(x + w / 2, y + d / 2);
+      const stalls = Math.min(3, 1 + Math.floor(tier / 2));
+      const ribbons = [iso(x + 0.9, y + 1.2), iso(x + 2.1, y + 1.0), iso(x + 1.0, y + 2.2), iso(x + 2.2, y + 2.3)];
+      return (
+        <Group>
+          <Box x={x + 1.7} y={y + 0.3} w={1.1} d={1.0} h={8} m={m} />
+          <Hip x={x + 1.55} y={y + 0.15} w={1.4} d={1.3} z={8} rise={14 + 2 * tier} m={{ ...m, roof: BANNER, roofDark: '#8a3328' }} />
+          <Flag x={x + 2.25} y={y + 0.8} z={22 + 2 * tier} color={GOLD} />
+          {Array.from({ length: stalls }, (_, index) => (
+            <Group key={index}>
+              <Box x={x + 0.25 + index * 0.95} y={y + d - 0.9} w={0.7} d={0.6} h={6} m={MATS[0]} />
+              <Gable x={x + 0.18 + index * 0.95} y={y + d - 0.98} w={0.84} d={0.76} z={6} rise={4} m={{ ...MATS[0], roof: index % 2 ? '#e2b84f' : '#3f6f8a', roofDark: index % 2 ? '#b8902f' : '#2a4b60' }} along="y" />
+            </Group>
+          ))}
+          <Box x={x + w / 2 - 0.08} y={y + d / 2 - 0.08} w={0.16} d={0.16} h={34} m={MATS[0]} />
+          {ribbons.map((end, index) => (
+            <Line key={index} p1={vec(poleTop.x, poleTop.y)} p2={vec(end.x, end.y - 1)} strokeWidth={1} color={index % 2 ? BANNER : '#e2b84f'} />
+          ))}
+          <Circle cx={poleTop.x} cy={poleTop.y} r={2} color={GOLD} />
+          <Circle cx={poleBase.x} cy={poleBase.y} r={1.2} color={DARK} />
+        </Group>
+      );
+    }
+    case 'church1':
+    case 'church2':
+    case 'church3':
+    case 'church4': {
+      // A church: a nave with a steep roof and lit windows, a bell tower at the front corner with a spire
+      // that grows with it, and a gold finial on top.
+      const h = 14 + 3 * tier;
+      const th = 30 + 6 * tier;
+      const finial = iso(x + 0.6, y + d - 0.6, th + 20);
+      return (
+        <Group>
+          <Box x={x + 0.2} y={y + 0.2} w={w - 0.4} d={d - 1.1} h={h} m={m} />
+          <Gable x={x + 0.12} y={y + 0.12} w={w - 0.24} d={d - 0.94} z={h} rise={11} m={m} along="x" />
+          {[0.5, 1.1, 1.7, 2.3].map((u) => <LeftFace key={u} x={x + 0.2} yFront={y + d - 0.9} u0={u} u1={u + 0.18} v0={h - 10} v1={h - 2} color={GLOW} />)}
+          <Box x={x + 0.2} y={y + d - 1.0} w={0.8} d={0.8} h={th} m={m} />
+          <LeftFace x={x + 0.2} yFront={y + d - 0.2} u0={0.3} u1={0.5} v0={th - 9} v1={th - 3} color={DARK} />
+          <Hip x={x + 0.12} y={y + d - 1.08} w={0.96} d={0.96} z={th} rise={20} m={m} />
+          <Circle cx={finial.x} cy={finial.y - 1} r={1.6} color={GOLD} />
+          {tier >= 3 && <Flag x={x + w - 0.5} y={y + 0.5} z={h + 11} color={GOLD} />}
+        </Group>
+      );
+    }
+    case 'gardens1':
+    case 'gardens2':
+    case 'gardens3':
+    case 'gardens4': {
+      // Gardens: a low hedge round the plot, four flowerbeds and a fountain in the middle (a marble one
+      // from the second tier), trees at the corners as it grows.
+      const flowers = ['#d9534f', '#e2b84f', '#c86bb0', '#f0ead8'];
+      const beds: [number, number][] = [[0.5, 0.5], [1.9, 0.5], [0.5, 1.9], [1.9, 1.9]];
+      const trees = Math.min(4, tier);
+      const corners: [number, number][] = [[0.25, 0.25], [w - 0.25, 0.25], [0.25, d - 0.25], [w - 0.25, d - 0.25]];
+      const hedge: Mat = { left: '#4f7a36', right: '#3c5e29', top: '#5f8f40', roof: '#4f7a36', roofDark: '#3c5e29' };
+      return (
+        <Group>
+          <Box x={x + 0.05} y={y + 0.05} w={w - 0.1} d={0.12} h={3} m={hedge} outline={false} />
+          <Box x={x + 0.05} y={y + 0.05} w={0.12} d={d - 0.1} h={3} m={hedge} outline={false} />
+          {beds.map(([bx, by], index) => (
+            <Group key={index}>
+              <Box x={x + bx} y={y + by} w={0.6} d={0.6} h={1} m={MATS[0]} outline={false} />
+              {[[0.15, 0.15], [0.45, 0.2], [0.3, 0.45]].map(([fx, fy], f) => {
+                const at = iso(x + bx + fx, y + by + fy, 1);
+                return <Circle key={f} cx={at.x} cy={at.y - 1.5} r={1.4} color={flowers[(index + f) % flowers.length]} />;
+              })}
+            </Group>
+          ))}
+          <Cylinder cx={x + w / 2} cy={y + d / 2} r={0.32} h={4} m={tier >= 2 ? MARBLE : STONE} merlons={false} />
+          {(() => {
+            const top = iso(x + w / 2, y + d / 2, 4);
+            return (
+              <Group>
+                <Circle cx={top.x} cy={top.y} r={5} color="#3f6f8a" />
+                <Rect x={top.x - 0.8} y={top.y - 9} width={1.6} height={9} color={tier >= 2 ? MARBLE.left : STONE.left} />
+                <Circle cx={top.x} cy={top.y - 10} r={1.6} color="#9fc8dc" />
+              </Group>
+            );
+          })()}
+          {corners.slice(0, trees).map(([cx, cy], index) => {
+            const at = iso(x + cx, y + cy);
+            return (
+              <Group key={index}>
+                <Rect x={at.x - 1} y={at.y - 8} width={2} height={8} color="#5e4630" />
+                <Circle cx={at.x} cy={at.y - 11} r={5.5} color="#4f7a36" />
+              </Group>
+            );
+          })}
+        </Group>
+      );
+    }
     case 'balloonWorks': {
       const h = 12 + 3 * tier;
       return (

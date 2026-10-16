@@ -82,8 +82,8 @@ game, and starts the 1-second simulation (`startSimulation()`).
   (`hasHomeRoad`, the same test as placing a building — but kept up all the time: a cottage whose road is
   taken up turns unhappy). **Who sleeps where** (`sleepers`): the happy cottages fill first, then the
   keep's hall (while the store has food; the hall eats straight from the store), then the unhappy ones.
-  Anyone sleeping in an unhappy cottage (or in the hall with the store empty, `hungry`) works at
-  `HUNGRY_WORK` (`workPace` = the share, applied to mining, digging, building, forges and woodcutting), and
+  Anyone sleeping in an unhappy cottage (or in the hall with the store empty, `hungry`) counts as
+  **sleeping badly** (`drySleepers`), which drags the hold's happiness down (below), and
   nobody new moves into an unhappy cottage. The HUD's peasants label says "N HOMES NO ROAD" (red) while
   any are cut off; the cottage's pop-up and the Menu say so too. New cottages start empty (their women
   set off at once); a new game's first starts full. The map draws each cottage (plaster then stone,
@@ -174,8 +174,8 @@ game, and starts the 1-second simulation (`startSimulation()`).
   level). Every peasant eats `FOOD_PER_PEASANT` (one food every two minutes): those in the keep's hall
   straight from the store, a little of each food in proportion to what's in, those in cottages from what
   their women bring (homes, above). With none left in store the hold is `hungry`: the hall sleeps dry, no
-  cottage can be stocked with food, and whoever sleeps dry works at `HUNGRY_WORK` 70% (the farms keep their
-  full speed, so a hungry hold can always feed itself again). Up to eight of each farm, built in order and unlocked with the keep
+  cottage can be stocked with food, and happiness sinks (`FOOD_MOOD[0]`, −6 a minute) until everyone works
+  slower (the farms are slowed like everything else, so a hungry hold should keep a granary stocked). Up to eight of each farm, built in order and unlocked with the keep
   (`FARM_SERIES`, `farmKeep`): **Apple orchards** (3×3, in town, 0.1 apples/s per worked level),
   **Fishing huts** (1×1, only right next to the river, along the river wall inside the town — the row
   y 7, x 7–51 but for the harbour's walls (x 26–32); safe from raids; none outside the walls; 0.12 fish/s per
@@ -196,6 +196,24 @@ game, and starts the 1-second simulation (`startSimulation()`).
   catch grows with the level as before): drawn drifting about the water in front of the hut, further the
   bigger it is (`FishingBoats`, stronghold/boats.tsx), and named in the hut's pop-up (`BoatStatus`). Farms and food are rounded to hundredths each tick (wood too), since
   tenths would swallow small rates.
+- **Happiness** (`src/game/happiness.ts`, Stronghold-style, since 2026-10-16): one number for the hold,
+  `happiness` 0–100 (`STARTING_HAPPINESS` 70), shown in the top bar (MOOD · a word from `moodWord`: Jubilant /
+  Content / Grumbling / Unhappy / Wretched / Leaving; tap it for the sheet). It **drifts** every second by
+  the sum of its factors, in points a minute (`moodFactors` → `moodDrift` → `driftHappiness`, clamped):
+  **food** by the kinds of food in store (`FOOD_MOOD`: hungry −6, one kind 0, two +2, three +4); **homes**
+  −4 × the share of peasants sleeping badly (`drySleepers`); **taxes** by the keep's rate (`src/game/taxes.ts`:
+  none +3 and no gold, low +1 at half, average 0, high −3 at ×1.5, cruel −6 at ×2 — `taxRate` in the save,
+  `setTaxRate`, chips in the happiness sheet and the keep's pop-up; `taxPerMinute(stats, population, rate)`);
+  **fun / piety / a fair town** from the **fairgrounds, churches and gardens** (`src/game/moodBuildings.ts`:
+  `fairground1–4`, `church1–4`, `gardens1–4`, 3×3, offered one at a time like the farms and unlocked with the
+  keep at 1 / 4 / 8 / 12; fairs and churches are staffed, gardens aren't) — each kind gives `BUILDING_MOOD`
+  (+3, +3, +2) when its worked levels × `PEASANTS_PER_LEVEL` (50) cover the whole population, less in
+  proportion when they don't (`moodCoverage`: raise the level or build another); and a **siege** −3 while
+  raiders are at the walls (`underSiege`). A battle moves it once (`afterBattle` in `settleBattle`): won +10,
+  lost −15. **Effects**: the hold works at `workPaceAt` = 50% at 0 … 100% at 100 (`work` in the tick: mining,
+  digging, building, forges, woodcutting — the old hungry slowdown is gone); at **0** a peasant **leaves**
+  every `LEAVE_SECONDS` (30) — a free hand first, else the miner on the last face — with a notice, and nobody
+  new arrives while it's 0. `happiness-test`.
 - **Stockpiles, per resource**: `vein` (miners' bins) → `mineExit` (surface bins) → `mineStock` →
   `warehouse`. Capacities apply per resource. Surface carts move exit→mine→warehouse each tick
   (per-tick totals shared across resources).
@@ -795,7 +813,7 @@ src/
   changes, gear deliveries, auto-resolve / orders / riding out), `mine-test` (galleries reach past the lift,
   digging under a main tunnel and joining the gallery below, the rock rule), `houses-test` (beds add up, the
   200 cap, houses offered in order), `miners-test` (idle peasants go mining and come back when buildings
-  need hands), `fade-test` (see-through buildings) and `save-test` (v2→v3 map growth, the old armory refund, the save guard, new houses on load) — the save tests load a fresh copy of the store over an in-memory
+  need hands), `fade-test` (see-through buildings), `happiness-test` (the mood's factors, taxes, the buildings' coverage, leaving) and `save-test` (v2→v3 map growth, the old armory refund, the save guard, new houses on load) — the save tests load a fresh copy of the store over an in-memory
   `localStorage`, so they never touch a real save.
 - Web dev server: `npx expo start --web --port 8081` (`.claude/launch.json` has an `expo-web` config).
 - **Android** (tested 2026-10-12 in an emulator with Expo Go 57.0.9 — no native build needed): JDK 21 and

@@ -2,7 +2,7 @@ import { STARTING_BUILDINGS, buildingStats, KEEP_BEDS, staffNeeded } from '../sr
 import { FOOTPRINTS } from '../src/game/cityMap';
 import { FOODS } from '../src/game/farms';
 import { HOUSE_IDS, MAX_PEASANTS, houseBeds } from '../src/game/houses';
-import { LOAD, PANTRY, foodStore, roomForNewcomer, waterSpot, workPace } from '../src/game/homes';
+import { LOAD, PANTRY, drySleepers, foodStore, roomForNewcomer, waterSpot } from '../src/game/homes';
 import { isShownBuilding } from '../src/game/hold';
 import { build, game, newGame, run, warehouseWith } from './support';
 
@@ -87,13 +87,14 @@ describe('a cottage’s woman', () => {
 });
 
 describe('a cottage run dry', () => {
-  it('slows down whoever sleeps there', () => {
+  it('counts whoever sleeps there as sleeping badly (they drag happiness down)', () => {
     newGame({ population: 4, warehouse: warehouseWith({ apples: 100 }) });
-    expect(workPace(game())).toBe(1);
+    expect(drySleepers(game())).toBe(0);
     newGame({ population: 4, warehouse: warehouseWith({ apples: 100 }), homes: { houses: dry } });
     // With room in the keep's hall they'd sleep there; once it's full, the rest sleep dry.
+    expect(drySleepers(game())).toBe(0);
     newGame({ ...game(), population: 12 });
-    expect(workPace(game())).toBeCloseTo(1 - (0.3 * 4) / 12, 3);
+    expect(drySleepers(game())).toBe(4);
   });
 
   it('takes nobody new until its woman stocks it again', () => {

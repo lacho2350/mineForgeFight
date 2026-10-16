@@ -14,6 +14,8 @@ import { PANTRY, errandText, hasHomeRoad, isKept, sleepers } from '../game/homes
 import { fellingStand, forestWood } from '../game/forest';
 import { FOODS, isFishery, isPasture } from '../game/farms';
 import { isWoodcutter } from '../game/woodcutters';
+import { MAX_HAPPINESS, moodDrift, moodFactors, moodWord, workPaceAt } from '../game/happiness';
+import { TAX_INFO, TAX_RATES, type TaxRate } from '../game/taxes';
 import { DEFAULT_SPOTS, FOOTPRINTS, MAP_SIZE, SIDE_NAMES, buildSpots, coveredTiles, doorText, doorTiles, isOpenGround, onMainRoad, isPlaceable, nearestFreeSpot, needsRoad, placementProblem, sidesOf, tileKey, zoneAt, type Spot } from '../game/cityMap';
 import { GROUND_SPEED, ROAD_INFO, ROAD_KINDS, accessRoads, haulFactor, roadProblem, type RoadKind, type Roads } from '../game/roads';
 import { CLEAR_CREW, ROCK_INFO, rockAt, rockyTest, rocksLeft } from '../game/rocks';
@@ -50,6 +52,7 @@ type Popup =
   | { kind: 'buildings' }
   | { kind: 'tech' }
   | { kind: 'menu' }
+  | { kind: 'mood' }
   | { kind: 'combat' }
   | { kind: 'leave' }
   | null;
@@ -109,6 +112,7 @@ export default function StrongholdScreen() {
   const openTech = useCallback(() => setPopup({ kind: 'tech' }), []);
   const openDocks = useCallback(() => setPopup({ kind: 'market' }), []);
   const openMenu = useCallback(() => setPopup({ kind: 'menu' }), []);
+  const openMood = useCallback(() => setPopup({ kind: 'mood' }), []);
   // Going down the mine and closing a pop-up are pauses in play: an ad may show then (every few minutes).
   // The mine's first blocks are drawn before the screen opens, so it doesn't open on black rock.
   const openMine = useCallback(() => {
@@ -275,7 +279,7 @@ export default function StrongholdScreen() {
 
       {/* Top: resources, peasants, the raid clock */}
       <View style={[styles.top, { paddingTop: insets.top + 8, pointerEvents: 'box-none' }]} onLayout={(event) => setHudHeight(event.nativeEvent.layout.height)}>
-        <Hud game={game} workforce={workforce} />
+        <Hud game={game} workforce={workforce} onMood={openMood} />
         {showRaid && (
           <View style={styles.raid}>
             <RaidBanner />
@@ -428,6 +432,11 @@ export default function StrongholdScreen() {
           />
         </Sheet>
       )}
+      {popup?.kind === 'mood' && (
+        <Sheet title="Happiness" subtitle={`${moodWord(game.happiness).toUpperCase()} · THE HOLD WORKS AT ${String(Math.round(workPaceAt(game.happiness) * 100))}%`} onClose={close}>
+          <MoodPanel game={game} workforce={workforce} />
+        </Sheet>
+      )}
       {popup?.kind === 'leave' && (
         <Sheet title="Leave Greyhollow?" subtitle="THE HOLD IS SAVED AS IT STANDS" onClose={() => setPopup(null)}>
           <Text style={styles.body}>The game is saved on this device and goes on from here when you come back. The mine and the hold rest while you are away.</Text>
@@ -456,8 +465,9 @@ export default function StrongholdScreen() {
 
 // ——— The resource bar ———
 
-function Hud({ game, workforce }: { game: GameState; workforce: Workforce }) {
+function Hud({ game, workforce, onMood }: { game: GameState; workforce: Workforce; onMood: () => void }) {
   const beds = buildingStats(game.buildings, workforce.staff, game.techs).beds;
+  const happiness = Math.round(game.happiness);
   const raidIn = game.raid ? null : game.nextRaidAt - game.elapsedSeconds;
   // Cottages out of water or food, or with no road to the keep and the gate: their sleepers work slower.
   const dry = HOUSE_IDS.filter((id) => game.buildings[id] > 0 && !isKept(game.homes[id])).length;
@@ -476,8 +486,80 @@ function Hud({ game, workforce }: { game: GameState; workforce: Workforce }) {
           value={Math.floor(FOODS.reduce((sum, food) => sum + game.warehouse[food], 0)).toLocaleString()}
           tone={game.hungry || dry > 0 ? '#e08a72' : '#d6bb79'}
         />
+        <Pressable accessibilityRole="button" accessibilityLabel={`Happiness ${String(happiness)}: ${moodWord(game.happiness)}`} onPress={onMood} style={({ pressed }) => pressed && styles.pressed}>
+          <Stat label={`MOOD · ${moodWord(game.happiness).toUpperCase()}`} value={String(happiness)} tone={moodTone(game.happiness)} />
+        </Pressable>
         {raidIn !== null && <Stat label={`RAID ${String(game.raidsFought + 1)}`} value={clock(raidIn)} tone="#e08a72" />}
       </View>
+    </View>
+  );
+}
+
+/** The colour of a happiness: green while content, amber while grumbling, red once the peasants are unhappy. */
+const moodTone = (happiness: number) => (happiness >= 60 ? '#c0cd83' : happiness >= 40 ? '#d6bb79' : '#e08a72');
+
+// The happiness sheet: the number, everything moving it, in points a minute, and the keep's tax rate.
+function MoodPanel({ game, workforce }: { game: GameState; workforce: Workforce }) {
+  const factors = moodFactors({ ...game, staff: workforce.staff });
+  const drift = moodDrift(factors);
+  const sign = (value: number) => (value > 0 ? `+${String(value)}` : String(value));
+  return (
+    <View style={styles.block}>
+      <View style={styles.blockHeader}>
+        <Text style={[styles.moodValue, { color: moodTone(game.happiness) }]}>{String(Math.round(game.happiness))} / {String(MAX_HAPPINESS)}</Text>
+        <Text style={[styles.body, { color: drift >= 0 ? '#c0cd83' : '#e08a72' }]}>{sign(drift)} A MINUTE</Text>
+      </View>
+      <Text style={styles.body}>
+        The peasants work at half speed at 0 and full speed at 100. At 0 one of them leaves every half minute, and nobody new comes until the hold cheers up.
+      </Text>
+      {factors.map((factor) => (
+        <View key={factor.id} style={styles.moodRow}>
+          <View style={styles.moodCopy}>
+            <Text style={styles.moodLabel}>{factor.label.toUpperCase()}</Text>
+            <Text style={styles.note}>{factor.detail}</Text>
+          </View>
+          <Text style={[styles.moodPoints, { color: factor.perMinute > 0 ? '#c0cd83' : factor.perMinute < 0 ? '#e08a72' : '#858d7c' }]}>{sign(factor.perMinute)}</Text>
+        </View>
+      ))}
+      <TaxRateChips game={game} />
+    </View>
+  );
+}
+
+// The keep's tax rate: no taxes to cruel, each with what it brings in and what the peasants think of it.
+function TaxRateChips({ game }: { game: GameState }) {
+  const stats = buildingStats(game.buildings, undefined, game.techs);
+  const onPick = (rate: TaxRate) => game.setTaxRate(rate);
+  return (
+    <View style={styles.block}>
+      <View style={styles.blockHeader}>
+        <SectionLabel>TAXES</SectionLabel>
+        <Text style={styles.note}>{taxPerMinute(stats, game.population, game.taxRate).toLocaleString()} GOLD / MIN</Text>
+      </View>
+      <View style={styles.trapKinds}>
+        {TAX_RATES.map((rate) => {
+          const on = rate === game.taxRate;
+          const info = TAX_INFO[rate];
+          return (
+            <Pressable
+              key={rate}
+              accessibilityRole="button"
+              accessibilityLabel={`${info.name} taxes`}
+              accessibilityState={{ selected: on }}
+              onPress={() => onPick(rate)}
+              style={({ pressed }) => [styles.trapKind, on && styles.trapKindOn, pressed && styles.pressed]}
+            >
+              <Text style={[styles.trapKindLabel, on && styles.trapKindLabelOn]} numberOfLines={1}>
+                {(rate === 'none' ? 'NONE' : info.name).toUpperCase()}
+              </Text>
+              <Text style={[styles.note, { color: info.mood > 0 ? '#c0cd83' : info.mood < 0 ? '#e08a72' : '#858d7c' }]}>
+                {info.mood > 0 ? `+${String(info.mood)}` : String(info.mood)}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+      <Text style={styles.note}>{TAX_INFO[game.taxRate].note.toUpperCase()} · ×{String(TAX_INFO[game.taxRate].gold)} GOLD, {TAX_INFO[game.taxRate].mood >= 0 ? '+' : ''}{String(TAX_INFO[game.taxRate].mood)} HAPPINESS A MINUTE</Text>
     </View>
   );
 }
@@ -882,18 +964,15 @@ function HomeStatus({ game, id }: { game: GameState; id: HouseId }) {
   );
 }
 
-// The keep's taxes: every peasant pays the keep's level in gold a minute (× the tax techs).
+// The keep's taxes: every peasant pays the keep's level in gold a minute (× the tax techs), at the rate set here.
 function TaxStatus({ game }: { game: GameState }) {
   const stats = buildingStats(game.buildings, undefined, game.techs);
   const boost = stats.taxPerPeasant / Math.max(1, game.buildings.keep);
   return (
     <View style={styles.block}>
-      <View style={styles.blockHeader}>
-        <SectionLabel>TAXES</SectionLabel>
-        <Text style={styles.note}>{taxPerMinute(stats, game.population).toLocaleString()} GOLD / MIN</Text>
-      </View>
+      <TaxRateChips game={game} />
       <Text style={styles.note}>
-        KEEP LEVEL {String(game.buildings.keep)} × {String(game.population)} PEASANTS{boost > 1 ? ` × ${String(Math.round(boost * 100) / 100)} (TAX TECHS)` : ''} · MORE PEOPLE, MORE TAX
+        KEEP LEVEL {String(game.buildings.keep)} × {String(game.population)} PEASANTS{boost > 1 ? ` × ${String(Math.round(boost * 100) / 100)} (TAX TECHS)` : ''} × THE RATE · MORE PEOPLE, MORE TAX
       </Text>
     </View>
   );
@@ -1043,6 +1122,11 @@ const styles = StyleSheet.create({
   sideBadgeAlarm: { backgroundColor: '#e8604a', color: '#fff4ee' },
 
   block: { gap: 8 },
+  moodValue: { color: '#f0ead8', fontFamily: 'Georgia', fontSize: 22, fontWeight: 'bold' },
+  moodRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 4, borderBottomWidth: 1, borderBottomColor: '#2a3028' },
+  moodCopy: { flex: 1, gap: 2 },
+  moodLabel: { color: '#e8e3d1', fontFamily: 'monospace', fontSize: 9, fontWeight: '700' },
+  moodPoints: { fontFamily: 'Georgia', fontSize: 16, fontWeight: 'bold', minWidth: 44, textAlign: 'right' },
   blockHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 },
   note: { color: '#858d7c', fontFamily: 'monospace', fontSize: 8 },
   body: { color: '#c9c4b2', fontFamily: 'monospace', fontSize: 10, lineHeight: 15 },

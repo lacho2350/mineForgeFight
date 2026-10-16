@@ -30,6 +30,8 @@ import {
 import { haulFactor, isRoadKind, joinBuildings, roadProblem, startingRoads, withMainRoad, type RoadKind, type Roads } from './roads';
 import { TRAP_INFO, TRAP_KINDS, trapProblem, type Trap } from './traps';
 import { isTechId } from './techs';
+import { MAX_HAPPINESS } from './happiness';
+import { isTaxRate } from './taxes';
 import type { GameState, SavedState } from './state';
 import { BUILDING_NAMES, fillStaffing, haulWalk, holdPowerOf } from './hold';
 import { buildingFields } from './updates';
@@ -156,6 +158,9 @@ export function mergeSave(saved: Incoming | undefined, fresh: GameState): GameSt
     ...buildingFields(buildings, undefined, techs, haulFactor(haulWalk({ placements, roads, clearedRocks }))),
     techs,
     population: saved.population ?? Math.max(fresh.population, (oldMiners ?? 0) + 8),
+    // Saves from before happiness start where a new game does; a damaged value is clamped.
+    happiness: typeof saved.happiness === 'number' && Number.isFinite(saved.happiness) ? Math.max(0, Math.min(MAX_HAPPINESS, saved.happiness)) : fresh.happiness,
+    taxRate: isTaxRate(saved.taxRate) ? saved.taxRate : fresh.taxRate,
     paused: saved.paused ?? [],
     construction: (saved.construction ?? []).map((job) => ({ ...job, crew: job.crew ?? crewSize(job.level) })),
     // Saves from before buildings were placed: every existing building gets a spot.

@@ -5,7 +5,7 @@ import { rockyTest } from '../src/game/rocks';
 import { mergeSave, migrateSave } from '../src/game/saveMigration';
 import { SAVE_VERSION } from '../src/game/save';
 import { useGameStore } from '../src/game/gameStore';
-import { hasHomeRoad, isHappy, sleepers, workPace } from '../src/game/homes';
+import { drySleepers, hasHomeRoad, isHappy, sleepers } from '../src/game/homes';
 import type { BuildingId } from '../src/game/buildings';
 import { game, newGame } from './support';
 
@@ -153,18 +153,18 @@ describe('ways about the town', () => {
 });
 
 describe('cottages', () => {
-  it('need their road for happy people: cut off, they work slower and nobody new moves in', () => {
+  it('need their road for happy people: cut off, their sleepers count as sleeping badly and nobody new moves in', () => {
     newGame();
     const state = { ...game(), hungry: false };
     expect(hasHomeRoad('houses', state)).toBe(true);
-    expect(workPace(state)).toBe(1);
+    expect(drySleepers(state)).toBe(0);
     // The same hold with the starting cottage's road gone.
     const door = doorTiles('houses', game().placements.houses as { x: number; y: number }).map((tile) => tileKey(tile.x, tile.y));
     const roads = Object.fromEntries(Object.entries(game().roads).filter(([key]) => !door.includes(key)));
     const cut = { ...state, roads };
     expect(hasHomeRoad('houses', cut)).toBe(false);
     expect(isHappy('houses', cut)).toBe(false);
-    expect(workPace(cut)).toBeLessThan(1);
+    expect(drySleepers(cut)).toBeGreaterThan(0);
     // Its beds fill last, after the hall's.
     expect(sleepers(cut, true).residents.houses).toBeLessThan(sleepers(state, true).residents.houses);
   });

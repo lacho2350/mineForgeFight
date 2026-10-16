@@ -20,6 +20,7 @@ import type { Trap, TrapKind } from './traps';
 import type { TechId } from './techs';
 import type { Site, Survey } from './mineLayout';
 import type { Homes } from './homes';
+import type { TaxRate } from './taxes';
 
 export type Cost = { coal: number; gold: number };
 
@@ -134,6 +135,10 @@ export type GameState = {
   hungry: boolean;
   /** Each built cottage's water and food, and its woman's errand (homes.ts). */
   homes: Homes;
+  /** How glad the peasants are of their hold, 0–100 (happiness.ts): it sets how fast they work, and at 0 they leave. */
+  happiness: number;
+  /** How hard the keep taxes them (taxes.ts). */
+  taxRate: TaxRate;
   /** Units taken from each deposit so far, keyed by tile; a deposit is mined out at its total. */
   depositMined: Record<string, number>;
   /** Gallery stations that have been cut ("level:station"); their chamber and shaft stay dug. */
@@ -199,6 +204,8 @@ export type GameState = {
   assignStaff: (id: BuildingId, change: 1 | -1) => void;
   /** Fill the buildings' empty spots with whoever waits at the campfire (in priority order). */
   autoAssignCity: () => void;
+  /** Set the keep's tax rate. */
+  setTaxRate: (rate: TaxRate) => void;
   /** Send whoever waits at the campfire to the mine's free faces (coal first, then gallery stations). */
   autoAssignMine: () => void;
   /** Lay traps on these belt tiles, in order, while they can be paid for. */

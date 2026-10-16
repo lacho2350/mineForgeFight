@@ -12,6 +12,7 @@ import { FORGE_IDS, FORGE_OUTPUT_CAP, emptyLoad, isForge, loadUnits, missingInpu
 import { HOUSE_IDS, isHouse } from './houses';
 import { FARM_SERIES, type FarmId } from './farms';
 import { WOODCUTTER_IDS, isWoodcutter } from './woodcutters';
+import { MOOD_SERIES, isMoodBuilding } from './moodBuildings';
 import { itemsInTransit, wagonBackAt, wagonDropAt, wagonStops, type WagonJob } from './wagons';
 import { FOOTPRINTS, MINE_SPOT, RAID_SIDES, spotOf, type Footprint, type Placements, type Spot } from './cityMap';
 import { buildFactor, cartWay, walkBetween, type Walk } from './roads';
@@ -168,7 +169,7 @@ export const forgesMaking = (state: Pick<GameState, 'buildings' | 'forgeTasks'>,
 
 /** Lists show only the next forge, house, woodcutter's hut or farm of a kind to build (each kind is built in order). */
 export function isShownBuilding(state: Pick<GameState, 'buildings' | 'construction'>, id: BuildingId) {
-  const series: readonly BuildingId[] | null = isForge(id) ? FORGE_IDS : isHouse(id) ? HOUSE_IDS : isWoodcutter(id) ? WOODCUTTER_IDS : (FARM_SERIES.find((kind) => kind.includes(id as FarmId)) ?? null);
+  const series: readonly BuildingId[] | null = isForge(id) ? FORGE_IDS : isHouse(id) ? HOUSE_IDS : isWoodcutter(id) ? WOODCUTTER_IDS : isMoodBuilding(id) ? (MOOD_SERIES.find((kind) => kind.includes(id)) ?? null) : (FARM_SERIES.find((kind) => kind.includes(id as FarmId)) ?? null);
   if (!series) return true;
   const started = (other: BuildingId) => state.buildings[other] > 0 || state.construction.some((job) => job.building === other);
   return started(id) || series.find((other) => !started(other)) === id;
