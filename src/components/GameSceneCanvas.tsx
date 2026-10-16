@@ -1,5 +1,5 @@
 import { memo, useMemo, type ReactNode } from 'react';
-import { BlurMask, Canvas, Group, Image, Path, Picture, Rect } from '@shopify/react-native-skia';
+import { BlurMask, Canvas, Group, Image, Paint, Path, Picture, Rect, Skia } from '@shopify/react-native-skia';
 import { PixelRatio, StyleSheet, View } from 'react-native';
 import { useDerivedValue, useFrameCallback, useSharedValue, type SharedValue } from 'react-native-reanimated';
 import { workforceOf } from '../game/hold';
@@ -30,6 +30,7 @@ import {
   fadedBuildings,
   iso,
   plotOf,
+  plotRect,
   watch,
   type Plot,
   type Watched,
@@ -177,6 +178,17 @@ function GameSceneCanvas({ width, height, camX, camY, zoom, selected, ghost, act
   ]);
   const fadedKey = JSON.stringify([faded, faded.map((id) => [buildings[id], placements[id]])]);
   const fadedPicture = useScenePicture(fadedKey, active, () => (faded.length > 0 ? <FadedBuildings buildings={buildings} placements={placements} faded={faded} /> : null));
+  // The faint picture is drawn through a layer (a picture ignores a group's opacity), kept to the
+  // rectangle round the faded buildings so the layer stays small.
+  const fadedClip = useMemo(() => {
+    const rects = faded.map((id) => plotOf(id, placements)).filter((plot): plot is Plot => plot !== null).map(plotRect);
+    if (rects.length === 0) return null;
+    const left = Math.min(...rects.map((r) => r.x));
+    const top = Math.min(...rects.map((r) => r.y));
+    const right = Math.max(...rects.map((r) => r.x + r.width));
+    const bottom = Math.max(...rects.map((r) => r.y + r.height));
+    return Skia.XYWHRect(left - 4, top - 4, right - left + 8, bottom - top + 8);
+  }, [faded, placements]);
 
   // Two canvases, one over the other. Below, everything that stands still — the mountains, the castle
   // image and the forest, big and costly to fill — drawn again only when the camera moves or they change.
@@ -198,8 +210,8 @@ function GameSceneCanvas({ width, height, camX, camY, zoom, selected, ghost, act
         <Group transform={transform}>
           {warehousePlot && buildings.warehouse > 0 && <Stockpile resources={STORE_RESOURCES} steps={stockpile} plot={warehousePlot} />}
           {granaryPlot && buildings.granary > 0 && <Piles resources={FOOD_RESOURCES} steps={foodPiles} plot={granaryPlot} />}
-          {fadedPicture && (
-            <Group opacity={FADED_OPACITY}>
+          {fadedPicture && fadedClip && (
+            <Group clip={fadedClip} layer={<Paint opacity={FADED_OPACITY} />}>
               <Picture picture={fadedPicture} />
             </Group>
           )}
