@@ -816,6 +816,18 @@ src/
   need hands), `fade-test` (see-through buildings), `happiness-test` (the mood's factors, taxes, the buildings' coverage, leaving) and `save-test` (v2→v3 map growth, the old armory refund, the save guard, new houses on load) — the save tests load a fresh copy of the store over an in-memory
   `localStorage`, so they never touch a real save.
 - Web dev server: `npx expo start --web --port 8081` (`.claude/launch.json` has an `expo-web` config).
+- **A hosted, playable build** (since 2026-10-16): the web export runs as a Claude artifact ("Mine Forge
+  Fight", claude.ai/artifact/9NgwBFCcYYtmY9S8ET6ywy). Branch `ci-smoke` holds the tooling: `smoke.yml`
+  drives the dev server with Playwright (`scripts/smoke.mjs`: prologue, stockpile, the mood buildings and
+  sheet, a raid, a reload, the fade, placing, the mine) and then the production export with a saved game
+  (`scripts/smoke-prod.mjs`), pushing screenshots and logs to branch `ci-smoke-results`; `web-build.yml`
+  (run by hand) pushes `expo export --platform web` there with CanvasKit copied in. The artifact is the
+  export with `_expo/` renamed `expo/` (the service reserves leading underscores), the entry bundle's
+  `url:location.origin+location.pathname` and `locateFile` pointed at `globalThis.__MFF_BASE`, and a page
+  fragment that sets `__MFF_BASE`, wipes the save on `#new`, `history.replaceState('/')` (the router sees
+  the stronghold) and shows errors in a `<pre>` at the foot. Note: a page whose `document.hidden` is true
+  (a background tab, the desktop app's hidden browser pane) ticks but draws nothing — rAF and the
+  screens' updates wait for it to be shown; that isn't a freeze.
 - **Android** (tested 2026-10-12 in an emulator with Expo Go 57.0.9 — no native build needed): JDK 21 and
   the Android SDK live in `~/Android` (`jdk-21.0.12.1+1`, `Sdk` with platform-tools, emulator and the
   `system-images;android-36;google_apis;x86_64` image; AVD `mff_pixel`, a Pixel 7). Run
