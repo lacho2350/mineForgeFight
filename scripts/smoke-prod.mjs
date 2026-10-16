@@ -48,6 +48,11 @@ try {
     save.state.warehouse.fish = 0;
     save.state.warehouse.mutton = 0;
     save.state.hungry = true;
+    // The hosted build froze with everyone gone: nobody left, nobody working.
+    save.state.population = 0;
+    save.state.staffing = {};
+    save.state.sites = [];
+    save.state.pendingSites = [];
     consoleLog.push(`[prod] save.json: ${String(fs.statSync(`${out}/save.json`).size)} bytes, elapsed ${String(save.state.elapsedSeconds)}, version ${String(save.version)}`);
     // The running game writes its own save every few seconds and on page hide: put ours in and stop the
     // game's writes, then reload.
@@ -59,7 +64,7 @@ try {
     await page.reload({ waitUntil: 'domcontentloaded' });
     consoleLog.push(`[prod] reloaded with: ${(await page.evaluate(() => localStorage.getItem('mineforge-save') ?? '')).slice(0, 120)}`);
     await page.locator('[aria-label="MINE"]').first().waitFor({ timeout: 120_000 });
-    for (let i = 0; i < 6; i += 1) {
+    for (let i = 0; i < 4; i += 1) {
       await wait(10_000);
       consoleLog.push(`[prod] saved game +${String((i + 1) * 10)}s: ${await hudText()}`);
       await page.screenshot({ path: `${out}/prod-01-saved-${String(i)}.png` });
