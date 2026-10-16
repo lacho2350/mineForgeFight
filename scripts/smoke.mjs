@@ -57,6 +57,34 @@ try {
   await wait(2500);
   await shot(page, '03-stockpile-zoomed');
 
+  // The happiness buildings: a fairground, a church and gardens on free ground, staffed from the campfire.
+  await page.evaluate(() => {
+    const store = globalThis.mineforgeStore;
+    const state = store.getState();
+    const spots = { fairground1: { x: 36, y: 29 }, church1: { x: 17, y: 22 }, gardens1: { x: 24, y: 22 } };
+    const cleared = [...state.clearedRocks];
+    for (const spot of Object.values(spots)) for (let x = spot.x; x < spot.x + 3; x++) for (let y = spot.y; y < spot.y + 3; y++) cleared.push(`${x},${y}`);
+    store.setState({
+      placements: { ...state.placements, ...spots },
+      buildings: { ...state.buildings, fairground1: 6, church1: 11, gardens1: 6 },
+      clearedRocks: cleared,
+      population: 30,
+      warehouse: { ...state.warehouse, fish: 40, mutton: 40 },
+    });
+    store.getState().autoAssignCity();
+  });
+  await wait(4000);
+  await shot(page, '03b-mood-buildings');
+  await page.locator('[aria-label^="Happiness"]').first().click();
+  await wait(1000);
+  await shot(page, '03c-mood-sheet');
+  const cruel = page.locator('[aria-label="Cruel taxes"]');
+  if (await cruel.count()) await cruel.first().click();
+  await wait(500);
+  await shot(page, '03d-mood-cruel');
+  await page.locator('[aria-label="Close"]').last().click();
+  await wait(800);
+
   // Tap the warehouse from the Buildings list: whatever stands in front of it should fade.
   await page.locator('[aria-label="BUILDINGS"]').first().click();
   await wait(800);
