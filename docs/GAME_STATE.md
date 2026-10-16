@@ -1,6 +1,6 @@
 # Mine Forge Fight — current state (handover)
 
-_Last updated 2026-10-12. Read this before changing anything; then read the files it points to._
+_Last updated 2026-10-16. Read this before changing anything; then read the files it points to._
 _Releasing to Google Play, the App Store and PC: see [`RELEASE_PLAN.md`](RELEASE_PLAN.md)._
 
 ## What the game is
@@ -220,8 +220,12 @@ game, and starts the 1-second simulation (`startSimulation()`).
   fades for its own yard), `faded` in the still image's key and `StaticScene` (shadows stay), and
   `FadedBuildings` recorded as a **picture** by `useScenePicture` (stillImage.tsx: `drawAsPicture` under
   `collectPaths`, so its `svgPath`s are freed; the replaced picture is freed with `freeAfterDrawn`) and drawn
-  in the live layer with `<Picture>`. Changing what's faded rebuilds the castle image (a few hundred ms,
-  in strips); until then the old image shows the building solid under the faint one.
+  in the live layer with `<Picture>` **through a layer** (`Group clip layer={<Paint opacity>}`, the clip the
+  rectangle round the faded buildings, `fadedClip`): a picture ignores its group's plain `opacity`, so
+  without the layer the faded buildings drew solid (seen 2026-10-16 — the foundry hid the yard as before).
+  Changing what's faded rebuilds the castle image (a few hundred ms, in strips); until then the old image
+  shows the building solid under the faint one. `fade-test` checks `fadedBuildings` on a new game (the
+  foundry fades for the tapped warehouse; never the building itself or the fortifications).
 - **The stronghold map** (`src/game/cityMap.ts`): 59×59 tiles in rings from the edge inward
   (`zoneAt`): tiles 0–2 **raider ground** (raiders are drawn there, on the side they come from, while a
   raid is sighted or attacking), 3–4 the **trap belt** (traps only, see below), 5 the **moat**
@@ -781,6 +785,8 @@ src/
 
 - Node is only available via **nvm** (v24). In a non-interactive shell: `source ~/.nvm/nvm.sh` first.
 - Checks (run before calling anything done): `npx tsc --noEmit` · `npx expo lint` · `npx expo-doctor`.
+  **GitHub Actions** runs the first two and `npm test` on every push (`.github/workflows/checks.yml`,
+  since 2026-10-16) — a way to typecheck work written where nothing can be installed.
 - **Tests**: `npm test` (jest with the `jest-expo` preset) runs `__tests__/*-test.ts` — never put tests in
   `src/app/` (every file there is a route). `support.ts` has helpers: `newGame(overrides)` resets the store
   (no raid comes unless a test asks), `run(seconds)` ticks it, `build(levels)` places buildings like the
@@ -789,7 +795,7 @@ src/
   changes, gear deliveries, auto-resolve / orders / riding out), `mine-test` (galleries reach past the lift,
   digging under a main tunnel and joining the gallery below, the rock rule), `houses-test` (beds add up, the
   200 cap, houses offered in order), `miners-test` (idle peasants go mining and come back when buildings
-  need hands) and `save-test` (v2→v3 map growth, the old armory refund, the save guard, new houses on load) — the save tests load a fresh copy of the store over an in-memory
+  need hands), `fade-test` (see-through buildings) and `save-test` (v2→v3 map growth, the old armory refund, the save guard, new houses on load) — the save tests load a fresh copy of the store over an in-memory
   `localStorage`, so they never touch a real save.
 - Web dev server: `npx expo start --web --port 8081` (`.claude/launch.json` has an `expo-web` config).
 - **Android** (tested 2026-10-12 in an emulator with Expo Go 57.0.9 — no native build needed): JDK 21 and
