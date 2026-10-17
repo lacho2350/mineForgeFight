@@ -710,7 +710,14 @@ src/
     GameSceneLayout.ts     drawing the tile map: `iso()` / `groundAt()` projection, `plotOf()` (plots from
                            placements), doors and peasant routes, silhouettes and the depth-ordered
                            tap list (the wall is tapped at the front end of its left run);
-                           ORIGIN_X / ORIGIN_Y for worklets
+                           **tapping** (`pickBuilding`, since 2026-10-17): the front-most building whose
+                           *drawn* shape holds the tap (`tapShape`: as tall as it is at its tier —
+                           `tapHeight` = 70% of `TALL` at tier 1, all of it at tier 4 —, set in 0.12 tile
+                           from its plot's edges like the art, walls to 62% of that height and a roof
+                           narrowing to its ridge), else the building whose footprint is under the finger,
+                           else the ground. (The old test used the plot's full box at the tallest tier's
+                           height, so a building in front caught taps meant for its neighbours.)
+                           `pick-test`; ORIGIN_X / ORIGIN_Y for worklets
     buildingIcons.ts       an emoji icon per building and per trap (build palette, trap bar)
     TechTree.tsx           the tech tree (all branches) and one branch with its tiers, details, Research
     BattleBoard(.web).tsx, BattleBoardCanvas.tsx   battlefield (Skia): hexes, wall/gate, towers, sprites
@@ -722,7 +729,7 @@ src/
                            side · clock; party · strength vs yours); rules, traps and the auto-resolve
                            switch live in the War panel
     CityView.tsx           the stronghold's full-screen map: camera (shared values), gestures, wheel,
-                           +/− buttons, tap hit-testing on building silhouettes (else `onTapGround`, for
+                           +/− buttons, taps (`pickBuilding` in GameSceneLayout; else `onTapGround`, for
                            traps), dragging the building being placed (judged by the press point,
                            `onBegin`), paint strokes for roads/traps, right/middle-drag pan, level badges
     Sheet.tsx              pop-up panel (slides up, scrolls, closes on ✕ or backdrop)

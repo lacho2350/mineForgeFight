@@ -115,6 +115,69 @@ const WALL_TAP: Plot = { x: CASTLE.x0, y: CASTLE.y1 - 4, w: 1, d: 4, tall: 40 };
 const MOAT_TAP: Plot = { x: CASTLE.x0 + 4, y: CASTLE.y1 + 1, w: 12, d: 1, tall: 6 };
 const depth = (plot: Plot) => plot.x + plot.w + plot.y + plot.d;
 
+// ——— Tapping a building ———
+// A tap goes to the front-most building whose drawn shape holds it. The shape is what's actually drawn, not
+// the plot's full box: as tall as the building is at its tier (`TALL` is its tallest look, chimneys and towers
+// included), set in from the plot's edges as the art is, and with the roof narrowing to its ridge — so a
+// building in front no longer catches taps meant for its neighbours. A tap that hits no shape goes to the
+// building whose footprint is under it (small cottages stay easy to hit), else to the ground.
+
+// Is (x, y) inside the polygon? (Even-odd ray casting.)
+export function inside(points: { x: number; y: number }[], x: number, y: number) {
+  let hit = false;
+  for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
+    const a = points[i];
+    const b = points[j];
+    if (a.y > y !== b.y > y && x < ((b.x - a.x) * (y - a.y)) / (b.y - a.y) + a.x) hit = !hit;
+  }
+  return hit;
+}
+
+/** Empty plots are tapped on the ground; built ones on the building. */
+const EMPTY_TALL = 8;
+/** How far in from its plot's edges a building is drawn (tiles). */
+const ART_INSET = 0.12;
+/** The walls rise this share of a building's height; the roof above narrows to its ridge. */
+const WALL_SHARE = 0.62;
+const RIDGE_SHARE = 0.45;
+
+/** How tall a building is drawn at this level (pixels): 70% of its tallest look at the first tier, all of it at the last. */
+export const tapHeight = (plot: Plot, level: number) => (level <= 0 ? EMPTY_TALL : plot.tall * Math.min(1, 0.55 + 0.15 * Math.min(4, Math.ceil(level / 5))));
+
+/** The shape a tap must land in to pick a building: walls up from its inset footprint, and a roof narrowing to its ridge. */
+export function tapShape(plot: Plot, level: number) {
+  const tall = tapHeight(plot, level);
+  const inset = Math.min(ART_INSET, plot.w / 4, plot.d / 4);
+  const x0 = plot.x + inset;
+  const y0 = plot.y + inset;
+  const x1 = plot.x + plot.w - inset;
+  const y1 = plot.y + plot.d - inset;
+  if (level <= 0) return silhouette({ ...plot, x: x0, y: y0, w: x1 - x0, d: y1 - y0 }, tall);
+  const walls = tall * WALL_SHARE;
+  const left = iso(x0, y1);
+  const right = iso(x1, y0);
+  const top = iso((x0 + x1) / 2, (y0 + y1) / 2, tall);
+  const half = ((right.x - left.x) / 2) * RIDGE_SHARE;
+  return [left, iso(x1, y1), right, iso(x1, y0, walls), { x: top.x + half, y: top.y }, { x: top.x - half, y: top.y }, iso(x0, y1, walls)];
+}
+
+/** The building a tap at screen point (x, y) picks (built or a staked plot), or null for the ground. */
+export function pickBuilding(placements: Placements, levels: Partial<Record<BuildingId, number>>, x: number, y: number): BuildingId | null {
+  const targets = tapTargets(placements);
+  for (let index = targets.length - 1; index >= 0; index--) {
+    const { id, plot } = targets[index];
+    if (inside(tapShape(plot, levels[id] ?? 0), x, y)) return id;
+  }
+  // Nothing drawn there: the building standing on that ground, if any (front-most first).
+  const at = groundAt(x, y);
+  for (let index = targets.length - 1; index >= 0; index--) {
+    const { id, plot } = targets[index];
+    if (id === 'wall' || id === 'moat') continue;
+    if (at.x >= plot.x && at.x < plot.x + plot.w && at.y >= plot.y && at.y < plot.y + plot.d) return id;
+  }
+  return null;
+}
+
 /** What can be tapped on the map, back to front (later ones win where they overlap). */
 export function tapTargets(placements: Placements): { id: BuildingId; plot: Plot }[] {
   const targets: { id: BuildingId; plot: Plot }[] = [];
