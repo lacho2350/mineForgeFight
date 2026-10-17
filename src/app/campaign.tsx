@@ -24,10 +24,13 @@ export default function CampaignScreen() {
   const next = nextStage(campaign);
   const [picked, setPicked] = useState<number>(next ?? CAMPAIGN_BATTLES);
   const [mapWidth, setMapWidth] = useState(0);
-  // After a battle the next site is the one to look at.
-  useEffect(() => {
+  // After a battle the next site is the one to look at: when it changes, the pick follows it (set during the
+  // render, as React has it for state that follows a prop).
+  const [followed, setFollowed] = useState(next);
+  if (next !== followed) {
+    setFollowed(next);
     if (next) setPicked(next);
-  }, [next]);
+  }
   const leave = () => (router.canGoBack() ? router.back() : router.replace('/'));
   const back = useRef(leave);
   useEffect(() => {
