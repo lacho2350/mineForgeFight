@@ -24,7 +24,24 @@ jobs:
         continue-on-error: true
       - name: Lint
         id: lint
-        run: npx expo lint
+        # Problems are repeated as annotations (readable from the run page and the API without the log).
+        run: |
+          npx expo lint -- --format json --output-file /tmp/eslint.json || true
+          node -e '
+            const fs = require("fs");
+            if (!fs.existsSync("/tmp/eslint.json")) { console.log("::error::expo lint produced no report (did it start?)"); process.exit(1); }
+            const files = JSON.parse(fs.readFileSync("/tmp/eslint.json", "utf8"));
+            let errors = 0;
+            for (const f of files) {
+              for (const m of f.messages) {
+                const level = m.severity === 2 ? "error" : "warning";
+                if (m.severity === 2) errors += 1;
+                console.log(`::${level} file=${f.filePath.replace(process.cwd() + "/", "")},line=${m.line || 1},col=${m.column || 1},title=${m.ruleId || "eslint"}::${String(m.message).replace(/\s+/g, " ")}`);
+              }
+            }
+            console.log(`${errors} error(s)`);
+            process.exit(errors > 0 ? 1 : 0);
+          '
         continue-on-error: true
       - name: Test
         id: test

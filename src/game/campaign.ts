@@ -4,8 +4,7 @@
 // against the Red Hand's warlord in his court. Winning it ends the story (the victory epilogue); the hold
 // plays on. Pure TS.
 import { raidParty, type RaidParty } from './raids';
-import type { Army } from './units';
-import { armyValue } from './units';
+import { armyValue, type Army } from './units';
 
 /** Battle sites on the road to Aldmere. */
 export const CAMPAIGN_BATTLES = 12;
