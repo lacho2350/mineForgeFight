@@ -16,7 +16,7 @@ import { FOODS, isFishery, isPasture } from '../game/farms';
 import { isWoodcutter } from '../game/woodcutters';
 import { MAX_HAPPINESS, moodDrift, moodFactors, moodWord, workPaceAt } from '../game/happiness';
 import { TAX_INFO, TAX_RATES, type TaxRate } from '../game/taxes';
-import { DEFAULT_SPOTS, FOOTPRINTS, MAP_SIZE, SIDE_NAMES, buildSpots, coveredTiles, doorText, doorTiles, isOpenGround, onMainRoad, isPlaceable, nearestFreeSpot, needsRoad, placementProblem, sidesOf, tileKey, zoneAt, type Spot } from '../game/cityMap';
+import { DEFAULT_SPOTS, FOOTPRINTS, MAP_SIZE, SIDE_NAMES, buildSpots, coveredTiles, doorSide, doorText, doorTiles, isOpenGround, onMainRoad, isPlaceable, nearestFreeSpot, needsRoad, placementProblem, sidesOf, tileKey, zoneAt, type Spot } from '../game/cityMap';
 import { GROUND_SPEED, ROAD_INFO, ROAD_KINDS, accessRoads, haulFactor, roadProblem, type RoadKind, type Roads } from '../game/roads';
 import { CLEAR_CREW, ROCK_INFO, rockAt, rockyTest, rocksLeft } from '../game/rocks';
 import { BOAT_INFO, fishingBoat, nextBoat } from '../game/boats';
@@ -245,9 +245,11 @@ export default function StrongholdScreen() {
       return { plot: null, valid: true, belt: painting.tool === 'trap', tiles: stroke.map((tile) => ({ ...tile, ok: ok(tile) })) };
     }
     if (!placing) return null;
-    // The tiles in front of the door, green where a road joined to the keep and the gate reaches them.
+    // The tiles in front of the door, green where a road joined to the keep and the gate reaches them. A one-tile
+    // building opens on whichever side has a road: it's marked with that one tile (the front one, red, if none has).
     const access = accessRoads(roads);
-    const doors = needsRoad(placing.id) ? doorTiles(placing.id, placing).map((tile) => ({ ...tile, ok: access.has(tileKey(tile.x, tile.y)) })) : undefined;
+    const marked = needsRoad(placing.id) ? doorTiles(placing.id, placing).map((tile) => ({ ...tile, ok: access.has(tileKey(tile.x, tile.y)) })) : undefined;
+    const doors = marked && doorSide(placing.id) === 'any' ? [marked.find((tile) => tile.ok) ?? marked[marked.length - 1]] : marked;
     return { plot: plotOf(placing.id, {}, placing), valid: !spotProblem, allowed: spots?.clear, rocky: spots?.rocky, water: isFishery(placing.id), doors };
   }, [painting, stroke, roads, traps, clearedRocks, clearOrders, covered, placing, spotProblem, spots]);
   const confirmPlacing = () => {

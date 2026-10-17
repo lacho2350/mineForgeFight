@@ -219,10 +219,13 @@ game, and starts the 1-second simulation (`startSimulation()`).
   `warehouse`. Capacities apply per resource. Surface carts move exit→mine→warehouse each tick
   (per-tick totals shared across resources).
 - **The warehouse's stockpile on the map** (`stronghold/stockpile.tsx`, since 2026-10-15, Stronghold-style):
-  the yard in front of the shed is a grid of 7 × 4 squares, **two to a resource** (`SLOTS_PER_RESOURCE`;
+  the warehouse's floor is a grid of 6 × 5 squares, **two to a resource** (`SLOTS_PER_RESOURCE`;
   the 14 non-food resources, each with its own place), on which the goods pile up as the stock grows — a
   resource's first square fills with the first half of the warehouse's capacity for it, the second with the
-  rest, so **a full warehouse is a yard covered end to end**. Looks by resource (`lookOf`): wood as stacked
+  rest, so **a full warehouse is a floor covered end to end**. **Seen only while the warehouse is tapped**
+  (since 2026-10-17: the warehouse is drawn as a full building on its plot — a barn, a lower store with
+  double doors, a lean-to — and when selected it and whatever stands in front of its floor go see-through,
+  so the goods show inside; untapped, it's a building like any other). Looks by resource (`lookOf`): wood as stacked
   logs, granite as blocks in courses, ores and coal and salt and sulfur as heaps, gold / silver / diamonds /
   emeralds / mithril as chests (wood with the goods on the lid), wool as bales; in `STACK_STEPS` (8) steps
   (`stockpileSteps` is the memo key), drawn live with `useSvgPaths`. The granary keeps the old `Piles`.
@@ -233,7 +236,8 @@ game, and starts the 1-second simulation (`startSimulation()`).
   their food, woodcutters their logs. The load shows on the way to the store and is gone on the way back.
 - **See-through buildings** (Stronghold-style, since 2026-10-15): a built building that stands in front of
   something that must stay in view and overlaps it on screen — the **tapped building**, the **warehouse's
-  stockpile yard** (always), or the **building being placed** — is left out of the castle image and drawn
+  stockpile** (while the warehouse is tapped, the warehouse itself included), or the **building being
+  placed** — is left out of the castle image and drawn
   over it faint (`FADED_OPACITY` 0.38): `fadedBuildings` / `watch` in GameSceneLayout.ts (`plotDepth` says
   what's in front; fortifications never fade; a watch's `except` is its own building, so the shed never
   fades for its own yard), `faded` in the still image's key and `StaticScene` (shadows stay), and

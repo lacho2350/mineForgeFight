@@ -167,8 +167,10 @@ function GameSceneCanvas({ width, height, camX, camY, zoom, selected, ghost, act
     const watched: Watched[] = [];
     if (selected && selectedPlot && selected !== 'wall' && selected !== 'moat') watched.push(watch(selectedPlot, selected));
     if (ghostPlot) watched.push(watch(ghostPlot));
-    if (warehousePlot && buildings.warehouse > 0) watched.push(watch(stockpilePlot(warehousePlot, STORE_RESOURCES.length * SLOTS_PER_RESOURCE), 'warehouse'));
-    return fadedBuildings(buildings, placements, watched);
+    // The warehouse tapped: it goes see-through itself, and so does anything in front of its stockpile.
+    if (selected === 'warehouse' && warehousePlot && buildings.warehouse > 0) watched.push(watch(stockpilePlot(warehousePlot, STORE_RESOURCES.length * SLOTS_PER_RESOURCE)));
+    const faded = fadedBuildings(buildings, placements, watched);
+    return selected === 'warehouse' && buildings.warehouse > 0 && !faded.includes('warehouse') ? [...faded, 'warehouse'].sort() : faded;
   }, [buildings, placements, selected, selectedPlot, ghostPlot, warehousePlot]);
   const key = JSON.stringify([buildings, placements, roads, clearedRocks.length, traps, parade, building, raiders, faded]);
   // In two layers, each drawn in a step of its own: the ground, then everything standing on it.
@@ -208,7 +210,7 @@ function GameSceneCanvas({ width, height, camX, camY, zoom, selected, ghost, act
       </Canvas>
       <Canvas style={styles.over}>
         <Group transform={transform}>
-          {warehousePlot && buildings.warehouse > 0 && <Stockpile resources={STORE_RESOURCES} steps={stockpile} plot={warehousePlot} />}
+          {selected === 'warehouse' && warehousePlot && buildings.warehouse > 0 && <Stockpile resources={STORE_RESOURCES} steps={stockpile} plot={warehousePlot} />}
           {granaryPlot && buildings.granary > 0 && <Piles resources={FOOD_RESOURCES} steps={foodPiles} plot={granaryPlot} />}
           {fadedPicture && fadedClip && (
             <Group clip={fadedClip} layer={<Paint opacity={FADED_OPACITY} />}>
