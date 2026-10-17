@@ -40,6 +40,42 @@ try {
   await wait(8000);
   await page.screenshot({ path: `${out}/prod-00-fresh.png` });
   consoleLog.push(`[prod] fresh: ${await hudText()}`);
+  const prefix = 'prod-';
+  // The mine's DIG and SURVEY modes with a mouse: a drag across rock in dig mode (the path should show and
+  // the hint say why it stopped), the survey patch following the pointer, then back to the city.
+  await page.locator('[aria-label="MINE"]').first().click();
+  await wait(8000);
+  await page.screenshot({ path: `${out}/${prefix}mine-0.png` });
+  await page.locator('[aria-label="Dig tunnels"]').first().click();
+  await wait(800);
+  await page.mouse.move(600, 330);
+  await page.mouse.down();
+  for (let i = 1; i <= 8; i += 1) {
+    await page.mouse.move(600 + i * 40, 330 + (i > 4 ? (i - 4) * 48 : 0));
+    await wait(120);
+  }
+  await page.screenshot({ path: `${out}/${prefix}mine-1-dig-drag.png` });
+  await page.mouse.up();
+  await wait(1500);
+  await page.screenshot({ path: `${out}/${prefix}mine-2-dig-released.png` });
+  await page.locator('[aria-label="Stop digging and move the map"]').first().click();
+  await wait(500);
+  await page.locator('[aria-label="Survey the dark rock from a tunnel"]').first().click();
+  await wait(800);
+  await page.mouse.move(560, 330);
+  await wait(600);
+  await page.screenshot({ path: `${out}/${prefix}mine-3-survey-hover.png` });
+  await page.mouse.move(300, 500, { steps: 10 });
+  await wait(600);
+  await page.screenshot({ path: `${out}/${prefix}mine-4-survey-rock.png` });
+  await page.mouse.click(560, 330);
+  await wait(1500);
+  await page.screenshot({ path: `${out}/${prefix}mine-5-surveyed.png` });
+  const stop = page.locator('[aria-label="Stop surveying"]');
+  if (await stop.count()) await stop.first().click();
+  await page.locator('[aria-label="Go up to the city"]').first().click();
+  await wait(2000);
+
   // The dev run's save, with a raid due in 20 s and no food.
   if (fs.existsSync(`${out}/save.json`)) {
     const save = JSON.parse(fs.readFileSync(`${out}/save.json`, 'utf8'));
