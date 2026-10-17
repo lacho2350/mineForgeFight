@@ -10,7 +10,7 @@ import type { Placements } from '../../game/cityMap';
 import { BERTHS, bargePose, bargeRoute } from '../../game/ship';
 import { wagonStops, type WagonJob } from '../../game/wagons';
 import { cartWay, type Roads } from '../../game/roads';
-import { RESOURCE_INFO, type Resource } from '../../game/resources';
+import { RESOURCE_INFO } from '../../game/resources';
 import { CAMPFIRE, TILE_HH, TILE_HW, iso, plotOf, type Plot } from '../GameSceneLayout';
 import { parseSvg } from '../skiaPaths';
 import { BANNER, DARK, ORIGIN, poly, tierOf, type P } from './shapes';
