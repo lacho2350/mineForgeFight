@@ -1,0 +1,23 @@
+[info] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+[log] Running application "main" with appParams:
+ {rootTag: #root, hydrate: undefined} 
+Development-level warnings: ON.
+Performance optimizations: OFF.
+[warning] "shadow*" style props are deprecated. Use "boxShadow".
+[warning] [.WebGL-0x18cc0584fc00]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels
+[warning] [.WebGL-0x18cc0584fc00]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels
+[warning] [.WebGL-0x18cc05856200]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels
+[warning] [.WebGL-0x18cc05856200]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels (this message will no longer repeat)
+[smoke] warehouseCapacity=300
+[smoke] raid phase 0: clock 74 raid={"raid":true,"battle":null,"happiness":75.7,"population":30}
+[smoke] raid phase 1: clock 99 raid={"raid":true,"battle":null,"happiness":78.2,"population":30}
+[smoke] raid phase 2: clock 124 raid={"raid":true,"battle":"active","happiness":80.7,"population":30}
+[smoke] raid phase 3: clock 149 raid={"raid":true,"battle":"active","happiness":83.2,"population":30}
+[info] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+[log] Running application "main" with appParams:
+ {rootTag: #root, hydrate: undefined} 
+Development-level warnings: ON.
+Performance optimizations: OFF.
+[warning] "shadow*" style props are deprecated. Use "boxShadow".
+[smoke] after reload: clock 162 -> 167
+[smoke] build options: Build the Cottage II | Build the Research Facility | Build the Armory | Build the Cart Depot | Build the Woodcutter’s Hut | Build the Granary | Build the Apple Orchard I | Build the Fishing Hut I | Build the Sheep Pasture I | Build the Fairground II | Build the Church II | Build the Gardens II | Build the Forge I | Build the Archery Range | Build the Barracks | Build the Monastery | Build the Balloon Works | Build the Stables | Build the Griffin Eyrie | Build the Paladin Chapel | Build the Celestial Sanctum

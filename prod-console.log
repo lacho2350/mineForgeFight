@@ -1,0 +1,11 @@
+[warning] [.WebGL-0x37c4001d1600]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels
+[warning] [.WebGL-0x37c4001d1600]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels
+[warning] [.WebGL-0x37c4023b6000]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels
+[warning] [.WebGL-0x37c4023b6000]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels (this message will no longer repeat)
+[prod] fresh: 1 1 1 1 + + + + 1 1 MINE + − GOLD 1,000 PEASANTS · 4 IDLE 12/12 FOOD 149 MOOD · CONTENT 70 RAID 1 5:52 ⚔️ 7 👷 ⛏️ MINE 🔨 BUILD 🏰 BUILDINGS 📜 TECH 9 ⚓ DOCKS ☰ MENU
+[prod] save.json: 12753 bytes, elapsed 194, version 6
+[prod] reloaded with: {"state":{"elapsedSeconds":194,"depth":1,"gold":1169.4,"population":0,"paused":[],"placements":{"houses":{"x":18,"y":35}
+[prod] saved game +10s: 1 1 1 1 6 11 6 + + + + 1 1 MINE + − GOLD 1,169 PEASANTS · 3 IDLE 3/12 FOOD · HUNGRY 0 MOOD · JUBILANT 96 RAIDERS · SOUTH-WEST · 0:10 2 goblins · 120 vs 240 ⚔️ ! 👷 3 ⛏️ MINE 🔨 BUILD 🏰 BUILDINGS 📜 TECH 9 ⚓ DOCKS 2 ☰ MENU
+[prod] saved game +20s: 1 1 1 1 6 11 6 + + + + 1 1 MINE + − GOLD 1,170 PEASANTS · 4 IDLE 4/12 FOOD · HUNGRY 0 MOOD · JUBILANT 95 BATTLE IN THE FIELD 2 goblins · the captains take over in 30 s COMMAND RESOLVE NOW ⚔️ ! 👷 4 Battle in the field! Take command within 30 s, or the captains fight it. ⛏️ MINE 🔨 BUILD 🏰 BUILDINGS
+[prod] saved game +30s: 1 1 1 1 6 11 6 + + + + 1 1 MINE + − GOLD 1,172 PEASANTS · 4 IDLE 4/12 FOOD · HUNGRY 0 MOOD · JUBILANT 93 BATTLE IN THE FIELD 2 goblins · the captains take over in 20 s COMMAND RESOLVE NOW ⚔️ ! 👷 4 ⛏️ MINE 🔨 BUILD 🏰 BUILDINGS 📜 TECH 9 ⚓ DOCKS 2 ☰ MENU
+[prod] saved game +40s: 1 1 1 1 6 11 6 + + + + 1 1 MINE + − GOLD 1,173 PEASANTS · 4 IDLE 4/12 FOOD · HUNGRY 0 MOOD · JUBILANT 91 BATTLE IN THE FIELD 2 goblins · the captains take over in 10 s COMMAND RESOLVE NOW ⚔️ ! 👷 4 ⛏️ MINE 🔨 BUILD 🏰 BUILDINGS 📜 TECH 9 ⚓ DOCKS 2 ☰ MENU

@@ -1,0 +1,35 @@
+🔍 [expo-iap] Config values: horizonAppId=undefined, pinnedStore=auto, amazonAppstoreKey=none, vega=auto, onside=false
+📦 [expo-iap] Using OpenIAP from CocoaPods
+Starting project at /home/runner/work/mineForgeFight/mineForgeFight
+Using src/app as the root directory for Expo Router.
+Starting Metro Bundler
+
+ ERROR  An unknown error occurred while installing React Native DevTools. Details:
+
+[3060:1017/125357.902023:FATAL:sandbox/linux/suid/client/setuid_sandbox_host.cc:166] The SUID sandbox helper binary was found, but is not configured correctly. Rather than run without sandboxing I'm aborting now. You need to make sure that /home/runner/.cache/dotslash/64/ed7915e5fef86802e862c274e17f780fa75388/React Native DevTools-linux-x64/chrome-sandbox is owned by root and has mode 4755.
+
+Waiting on http://localhost:8081
+
+An update for expo is available: 57.0.26 → ~57.0.30
+6 other packages may need updating. Run npx expo install --check for details.
+Logs for your project will appear below.
+| 🔍 [expo-iap] Config values: horizonAppId=undefined, pinnedStore=auto, amazonAppstoreKey=none, vega=auto, onside=false
+| 📦 [expo-iap] Using OpenIAP from CocoaPods
+Web Bundled 10954ms node_modules/expo-router/entry.js (1540 modules)
+Web  INFO  %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+Web  LOG  Running application "main" with appParams:
+ {"hydrate": undefined, "rootTag": "#root"} 
+Development-level warnings: ON.
+Performance optimizations: OFF.
+Web  WARN  "shadow*" style props are deprecated. Use "boxShadow".
+Web Bundled 2156ms src/components/GameSceneCanvas.tsx (848 modules)
+Web Bundled 715ms src/components/MineSceneCanvas.tsx (1327 modules)
+Web Bundled 54ms node_modules/expo-router/entry.js (1 module)
+Web  INFO  %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+Web  LOG  Running application "main" with appParams:
+ {"hydrate": undefined, "rootTag": "#root"} 
+Development-level warnings: ON.
+Performance optimizations: OFF.
+Web  WARN  "shadow*" style props are deprecated. Use "boxShadow".
+Web Bundled 32ms src/components/GameSceneCanvas.tsx (1 module)
+Web Bundled 56ms src/components/MineSceneCanvas.tsx (1 module)
