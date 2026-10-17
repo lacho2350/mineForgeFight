@@ -169,8 +169,9 @@ function GameSceneCanvas({ width, height, camX, camY, zoom, selected, ghost, act
     if (ghostPlot) watched.push(watch(ghostPlot));
     // The warehouse tapped: it goes see-through itself, and so does anything in front of its stockpile.
     if (selected === 'warehouse' && warehousePlot && buildings.warehouse > 0) watched.push(watch(stockpilePlot(warehousePlot, STORE_RESOURCES.length * SLOTS_PER_RESOURCE)));
-    const faded = fadedBuildings(buildings, placements, watched);
-    return selected === 'warehouse' && buildings.warehouse > 0 && !faded.includes('warehouse') ? [...faded, 'warehouse'].sort() : faded;
+    const faded: BuildingId[] = fadedBuildings(buildings, placements, watched);
+    if (selected === 'warehouse' && buildings.warehouse > 0 && !faded.includes('warehouse')) faded.push('warehouse');
+    return faded.sort();
   }, [buildings, placements, selected, selectedPlot, ghostPlot, warehousePlot]);
   const key = JSON.stringify([buildings, placements, roads, clearedRocks.length, traps, parade, building, raiders, faded]);
   // In two layers, each drawn in a step of its own: the ground, then everything standing on it.
