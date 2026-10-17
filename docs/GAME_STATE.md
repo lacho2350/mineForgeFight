@@ -805,6 +805,15 @@ src/
 - Checks (run before calling anything done): `npx tsc --noEmit` · `npx expo lint` · `npx expo-doctor`.
   **GitHub Actions** runs the first two and `npm test` on every push (`.github/workflows/checks.yml`,
   since 2026-10-16) — a way to typecheck work written where nothing can be installed.
+- **An Android APK on every push** to `main` and `release-prep` (`.github/workflows/android-apk.yml`, since
+  2026-10-17), for testing on a real phone: `expo prebuild --platform android` in CI (nothing native is
+  committed), then `./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a` on JDK 17 — a standalone
+  release build (JS bundled, no dev server), signed with the template's debug keystore so every build
+  installs over the last and keeps the save; `versionCode` = the run number. Published to the GitHub release
+  `apk-<branch>` (replaced each build, so the link is fixed):
+  `https://github.com/lacho2350/mineForgeFight/releases/download/apk-<branch>/mineforgefight-<branch>.apk`,
+  and kept 14 days as a workflow artifact. Not for Google Play (that build goes through EAS, NEXT_STEPS.md).
+  Run it by hand from the Actions tab (`workflow_dispatch`) for any other branch.
 - **Tests**: `npm test` (jest with the `jest-expo` preset) runs `__tests__/*-test.ts` — never put tests in
   `src/app/` (every file there is a route). `support.ts` has helpers: `newGame(overrides)` resets the store
   (no raid comes unless a test asks), `run(seconds)` ticks it, `build(levels)` places buildings like the

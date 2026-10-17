@@ -1,0 +1,100 @@
+# An installable Android APK on every push, for testing on a real phone.
+#
+# The native project is generated in CI (`expo prebuild` — /android is never committed) and built with
+# Gradle as a release build: the JavaScript is bundled into the app, so it runs on its own, no dev server.
+# Expo's template signs release builds with its bundled debug keystore, the same on every run, so each new
+# APK installs over the last one and keeps the saved game. (Not for Google Play: that build is signed by EAS.)
+#
+# Every build is published to a GitHub Release named after its branch (`apk-<branch>`), replaced each
+# time, so the download link stays the same:
+#   https://github.com/lacho2350/mineForgeFight/releases/download/apk-<branch>/mineforgefight-<branch>.apk
+# It is also kept as a workflow artifact for 14 days.
+name: android-apk
+
+on:
+  push:
+    branches: [main, release-prep]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: android-apk-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Install
+        run: npm install --no-audit --no-fund
+
+      - name: Names and version
+        id: meta
+        run: |
+          branch="${GITHUB_REF_NAME//\//-}"
+          echo "branch=$branch" >> "$GITHUB_OUTPUT"
+          echo "tag=apk-$branch" >> "$GITHUB_OUTPUT"
+          echo "file=mineforgefight-$branch.apk" >> "$GITHUB_OUTPUT"
+          echo "short=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+          # A rising versionCode, so each APK installs as an update over the one before.
+          node -e '
+            const fs = require("fs");
+            const config = JSON.parse(fs.readFileSync("app.json", "utf8"));
+            config.expo.android.versionCode = Number(process.env.GITHUB_RUN_NUMBER);
+            fs.writeFileSync("app.json", JSON.stringify(config, null, 2));
+          '
+
+      - name: Generate the native project
+        run: npx expo prebuild --platform android --no-install --clean
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Build the APK
+        working-directory: android
+        # Phones only (arm64): about a third of the size of an all-architectures APK.
+        run: ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a --no-daemon
+
+      - name: Collect
+        run: |
+          apk=$(ls android/app/build/outputs/apk/release/*.apk | head -n 1)
+          cp "$apk" "${{ steps.meta.outputs.file }}"
+          ls -lh "${{ steps.meta.outputs.file }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.meta.outputs.file }}
+          path: ${{ steps.meta.outputs.file }}
+          retention-days: 14
+
+      - name: Publish to the branch's release (fixed link)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.meta.outputs.tag }}
+          FILE: ${{ steps.meta.outputs.file }}
+        run: |
+          gh release delete "$TAG" --yes --cleanup-tag 2>/dev/null || true
+          notes="Test build of \`${GITHUB_REF_NAME}\` at ${{ steps.meta.outputs.short }} (run ${GITHUB_RUN_NUMBER}, $(date -u '+%Y-%m-%d %H:%M UTC')).
+
+          Install on an Android phone (arm64): open this link on the phone, download, allow installing from the browser, and open.
+          https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/${FILE}
+
+          Each new build installs over the last one and keeps the saved game. Release build: no dev server needed, test ads only in development builds (none here until the real AdMob id is set), the shop shows \"store can't be reached\" outside Google Play."
+          gh release create "$TAG" "$FILE" --target "$GITHUB_SHA" --prerelease \
+            --title "Android test build — ${GITHUB_REF_NAME} (${{ steps.meta.outputs.short }})" --notes "$notes"
+          echo "### APK ready" >> "$GITHUB_STEP_SUMMARY"
+          echo "https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/${FILE}" >> "$GITHUB_STEP_SUMMARY"
