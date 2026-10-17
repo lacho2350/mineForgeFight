@@ -5,9 +5,10 @@ import { BATTLE_MOOD, afterBattle } from './happiness';
 import { FOOTPRINTS, sideOf, type MapSide } from './cityMap';
 import { LOST_RAID_SHEEP_TAKEN, PASTURE_IDS, RAID_SHEEP_TAKEN } from './farms';
 import { BUILDING_INFO, buildingCost, buildingStats, buildingTime, crewSize, type BuildingId, type BuildingLevels } from './buildings';
-import { ARMY_UNITS } from './units';
+import { ARMY_UNITS, type Army } from './units';
 import { battleOutcome, raiderStrength, type Battle } from './combat';
 import { FIELD_BOUNTY, FIELD_PLUNDER_SHARE, PLUNDER_SHARE, RAID_INTERVAL, raidBounty, raidSide } from './raids';
+import { CAMPAIGN_BATTLES, CAMPAIGN_STAGES, afterCampaignBattle, campaignBounty } from './campaign';
 import { BARGE_SAIL, type Barge } from './ship';
 import { ITEM_INFO, type ItemId, type ItemStock } from './items';
 import { FORGE_NAMES, addLoad, isForge, type ForgeTask, type ForgeTasks } from './forges';
@@ -70,13 +71,14 @@ export function undoWagonTrip(
   return 'in the store';
 }
 
-type SettleState = Pick<GameState, 'gold' | 'warehouse' | 'army' | 'battleArmy' | 'elapsedSeconds' | 'raid' | 'raidsFought' | 'raidsLostInARow' | 'buildings' | 'placements' | 'flocks' | 'happiness'>;
+type SettleState = Pick<GameState, 'gold' | 'warehouse' | 'army' | 'battleArmy' | 'elapsedSeconds' | 'raid' | 'raidsFought' | 'raidsLostInARow' | 'buildings' | 'placements' | 'flocks' | 'happiness' | 'campaign'>;
 
 // A battle just ended: survivors rejoin the army, and the bounty is paid or the plunder taken.
 export function settleBattle(state: SettleState, battle: Battle) {
   const { survivors, losses, slain } = battleOutcome(battle, state.battleArmy);
   const army = { ...state.army };
   for (const unit of ARMY_UNITS) army[unit] = Math.max(0, army[unit] - state.battleArmy[unit] + survivors[unit]);
+  if (battle.campaign) return settleCampaignBattle(state, battle, battle.campaign, { army, losses, slain });
   const number = state.raid?.number ?? battle.raid;
   const field = battle.kind === 'field';
   const report: RaidReport = {
@@ -132,6 +134,38 @@ export function settleBattle(state: SettleState, battle: Battle) {
     nextRaidAt: state.elapsedSeconds + RAID_INTERVAL,
     notice,
   };
+}
+
+// A campaign battle just ended (campaign.ts): the raid clock is untouched (the raiders weren't here), nothing
+// is plundered — the army was away — and a win pays the site's bounty and opens the next site; the last one
+// wins the war.
+function settleCampaignBattle(state: SettleState, battle: Battle, stage: number, { army, losses, slain }: { army: Army; losses: RaidReport['losses']; slain: number }) {
+  const site = CAMPAIGN_STAGES[stage - 1];
+  const won = battle.status === 'won';
+  const report: RaidReport = {
+    number: stage,
+    kind: 'field',
+    outcome: won ? 'won' : battle.status === 'lost' ? 'lost' : 'withdrawn',
+    bounty: won ? campaignBounty(raiderStrength(battle)) : 0,
+    losses,
+    slain,
+    trapKills: 0,
+    plundered: null,
+    campaign: stage,
+  };
+  const campaign = afterCampaignBattle(state.campaign, stage, won);
+  const happiness = afterBattle(state.happiness, report.outcome);
+  let notice: string;
+  if (won && stage >= CAMPAIGN_BATTLES) {
+    notice = `${site.title} has fallen: the Red Hand is broken and Aldmere is free! +${String(report.bounty)} gold. The hold celebrates (+${String(BATTLE_MOOD.won)} happiness).`;
+  } else if (won) {
+    notice = `${site.title} is won: +${String(report.bounty)} gold. The road to ${CAMPAIGN_STAGES[stage].title} is open. The hold celebrates (+${String(BATTLE_MOOD.won)} happiness).`;
+  } else if (report.outcome === 'lost') {
+    notice = `Beaten at ${site.title}: the survivors fall back to Greyhollow. The hold mourns (${String(BATTLE_MOOD.lost)} happiness).`;
+  } else {
+    notice = `${site.title}: night fell with the Horde still standing. The army falls back to camp.`;
+  }
+  return { army, gold: state.gold + report.bounty, happiness, raidReport: report, campaign, notice };
 }
 
 // What raiders from `side` do to the land outside the walls: they drive off a share of every flock grazing

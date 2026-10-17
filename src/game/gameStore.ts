@@ -11,8 +11,9 @@ import { STARTING_HAPPINESS } from './happiness';
 import { DEFAULT_TAX_RATE, TAX_INFO, isTaxRate } from './taxes';
 import { BUILDING_INFO, DWELLING_UNIT, STARTING_BUILDINGS, buildingCost, buildingStats, staffNeeded } from './buildings';
 import { ARMY_RECRUITING, UNIT_STATS, emptyArmy } from './units';
-import { act, resolveBattle, stepAI } from './combat';
+import { act, createBattle, resolveBattle, stepAI } from './combat';
 import { FIRST_RAID_AT } from './raids';
+import { CAMPAIGN_STAGES, RAID_AUTO_AFTER_CAMPAIGN, campaignBlocker, campaignParty, emptyCampaign, nextStage } from './campaign';
 import { SAVE_KEY, SAVE_VERSION, createSaveStorage } from './save';
 import { isMoored, isWaiting } from './ship';
 import { CLEAR_CREW, ROCK_INFO, rockAt, rockyTest, startingRock } from './rocks';
@@ -74,6 +75,7 @@ import {
   buildingFields,
   returnForgeGoods,
   roundCoal,
+  settleBattle,
   startBuilding,
   turnBack,
   undoWagonTrip,
@@ -163,6 +165,7 @@ const gameState = (set: StoreApi<GameState>['setState']): GameState => ({
   raidsLostInARow: 0,
   autoResolveRaids: false,
   prologueSeen: false,
+  campaign: emptyCampaign(),
   adsRemoved: false,
   creditedPurchases: [],
   recruits: { ...emptyArmy(), pikeman: 7 },
@@ -373,6 +376,45 @@ const gameState = (set: StoreApi<GameState>['setState']): GameState => ({
   }),
 
   seePrologue: () => set({ prologueSeen: true }),
+
+  // The campaign (campaign.ts): march on the next site. The battle is one in the field — the hold's defences
+  // stay home — and runs like a raid's: command it on the battle screen, or the captains fight it from
+  // RAID_AUTO_AFTER_CAMPAIGN on. Settling it (updates.ts) pays the bounty and opens the next site.
+  startCampaignBattle: () => set((state) => {
+    const blocker = campaignBlocker(state);
+    const stage = nextStage(state.campaign);
+    if (blocker || stage === null) return { notice: blocker ?? '' };
+    const workforce = workforceOf(state);
+    const stats = buildingStats(state.buildings, workforce.staff, state.techs);
+    const created = createBattle({
+      kind: 'field',
+      raid: 1000 + stage,
+      campaign: stage,
+      army: state.army,
+      enemies: campaignParty(stage, state.campaign.scale),
+      wallHp: 0,
+      gateHp: 0,
+      towers: 0,
+      towerDamage: 0,
+      attackBonus: stats.attackBonus,
+      defenceBonus: stats.defenceBonus,
+      unitBonus: stats.unitBonus,
+    });
+    const site = CAMPAIGN_STAGES[stage - 1];
+    if (created.status !== 'active') {
+      // Decided before it began (nothing could stand): settled at once, the result left on the battlefield.
+      return { battle: created, battleArmy: state.army, battleCommanded: false, ...settleBattle({ ...state, battleArmy: state.army }, created) };
+    }
+    return {
+      battle: created,
+      battleArmy: state.army,
+      battleCommanded: false,
+      battleDeadline: state.elapsedSeconds + RAID_AUTO_AFTER_CAMPAIGN,
+      notice: `The army marches on ${site.title}. Take command, or the captains fight it in ${String(RAID_AUTO_AFTER_CAMPAIGN)} s.`,
+    };
+  }),
+
+  seeVictory: () => set((state) => ({ campaign: { ...state.campaign, victorySeen: true } })),
 
   creditPurchase: (id, key) => {
     const change = creditPurchase(useGameStore.getState(), id, key);

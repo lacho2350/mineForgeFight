@@ -4,6 +4,7 @@ import { BUILDING_INFO, DWELLING_UNIT, buildingStats, staffNeeded, taxPerMinute,
 import { ARMY_RECRUITING, ARMY_UNITS, MAX_MUSTERS_WAITING, MUSTER_SECONDS, unitGrowth, type ArmyUnit } from './units';
 import { actionSeconds, createBattle, resolveBattle, stepAI, type Battle } from './combat';
 import { RAID_AUTO_AFTER, RAID_WARNING, raidKind, raidParty, raidSide, raidStrength } from './raids';
+import { campaignOpens, openCampaign } from './campaign';
 import { BERTHS, MAX_BARGES, bargeOrder, isWaiting, BARGE_SAIL } from './ship';
 import { ROCK_INFO, startingRock } from './rocks';
 import { ITEM_INFO, UNIT_GEAR, type ItemId } from './items';
@@ -505,8 +506,16 @@ export function tickGame(state: GameState): Partial<GameState> {
     }
   }
 
+  // The end game opens with the hold's first angel: the lands the Horde took lie on the map (campaign.ts).
+  let campaign = state.campaign;
+  if (!campaign.unlocked && campaignOpens(state.army)) {
+    campaign = openCampaign(campaign, state.army);
+    notice = 'An angel stands on the parade ground, and the Horde’s lands lie open: the road to Aldmere is on the map (🗺️). Twelve battles to the Red Hand’s court.';
+  }
+
   const next: Partial<GameState> = {
     ...fields,
+    campaign,
     forest,
     forestSerial,
     flocks,

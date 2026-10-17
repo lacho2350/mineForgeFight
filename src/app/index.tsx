@@ -35,6 +35,8 @@ import CombatPanel, { hireableNow } from '../components/CombatPanel';
 import RaidBanner from '../components/RaidBanner';
 import Sheet from '../components/Sheet';
 import Prologue from '../components/Prologue';
+import Victory from '../components/Victory';
+import { CAMPAIGN_BATTLES, CAMPAIGN_STAGES, nextStage } from '../game/campaign';
 import ShopPanel from '../components/ShopPanel';
 import { adBreak } from '../components/ads';
 import { warmMine } from '../components/mineWarmup';
@@ -86,8 +88,9 @@ export default function StrongholdScreen() {
   const game = useGame(focused);
   const insets = useSafeAreaInsets();
   const [popup, setPopup] = useState<Popup>(null);
-  // The prologue: before a new game, and again from the menu.
+  // The prologue: before a new game, and again from the menu. The victory epilogue: again from the menu.
   const [replaying, setReplaying] = useState(false);
+  const [replayingVictory, setReplayingVictory] = useState(false);
   const [placing, setPlacing] = useState<Placing>(null);
   const [painting, setPainting] = useState<Painting | null>(null);
   const [stroke, setStroke] = useState<Spot[]>([]);
@@ -173,7 +176,8 @@ export default function StrongholdScreen() {
   }, [busy, focused]);
   // On the bare map, Android's Back would leave the app at once: ask first ("Leave Greyhollow?", a pop-up
   // like any other, so Back on it just stays). The prologue listens for itself while it's showing.
-  const bare = !busy && !popup && focused && game.prologueSeen && !replaying && Platform.OS === 'android';
+  const storyShowing = !game.prologueSeen || replaying || (game.campaign.victory && !game.campaign.victorySeen) || replayingVictory;
+  const bare = !busy && !popup && focused && !storyShowing && Platform.OS === 'android';
   useEffect(() => {
     if (!bare) return;
     const back = BackHandler.addEventListener('hardwareBackPress', () => {
@@ -305,6 +309,16 @@ export default function StrongholdScreen() {
             alarm={false}
             badge={staffable > 0 ? String(staffable) : undefined}
           />
+          {/* The campaign (campaign.ts): the road to Aldmere, once the first angel is raised; the badge is the next site. */}
+          {game.campaign.unlocked && (
+            <SideButton
+              icon="🗺️"
+              label="The campaign: the road to Aldmere"
+              onPress={() => router.push('/campaign')}
+              alarm={game.battle?.status === 'active' && !!game.battle.campaign}
+              badge={game.campaign.victory ? '★' : `${String(game.campaign.won)}/${String(CAMPAIGN_BATTLES)}`}
+            />
+          )}
         </View>
       )}
 
@@ -429,6 +443,10 @@ export default function StrongholdScreen() {
               setPopup(null);
               setReplaying(true);
             }}
+            onVictory={() => {
+              setPopup(null);
+              setReplayingVictory(true);
+            }}
           />
         </Sheet>
       )}
@@ -456,6 +474,15 @@ export default function StrongholdScreen() {
           onDone={() => {
             setReplaying(false);
             if (!game.prologueSeen) game.seePrologue();
+          }}
+        />
+      )}
+      {/* The war is won: the epilogue, once (and again from the Menu). */}
+      {game.prologueSeen && !replaying && ((game.campaign.victory && !game.campaign.victorySeen) || replayingVictory) && (
+        <Victory
+          onDone={() => {
+            setReplayingVictory(false);
+            if (!game.campaign.victorySeen) game.seeVictory();
           }}
         />
       )}
@@ -1039,7 +1066,8 @@ function Stockpiles({ game }: { game: GameState }) {
   );
 }
 
-function Menu({ game, workforce, onPrologue }: { game: GameState; workforce: Workforce; onPrologue: () => void }) {
+function Menu({ game, workforce, onPrologue, onVictory }: { game: GameState; workforce: Workforce; onPrologue: () => void; onVictory: () => void }) {
+  const stage = nextStage(game.campaign);
   const beds = buildingStats(game.buildings, workforce.staff, game.techs).beds;
   const dry = HOUSE_IDS.filter((id) => game.buildings[id] > 0 && !isKept(game.homes[id])).length;
   const cutOff = HOUSE_IDS.filter((id) => game.buildings[id] > 0 && !hasHomeRoad(id, game)).length;
@@ -1057,9 +1085,20 @@ function Menu({ game, workforce, onPrologue }: { game: GameState; workforce: Wor
         <SectionLabel>RAIDS</SectionLabel>
         <Text style={styles.body}>Raids, the army, recruiting, instant or fought-out battles and the defences: the ⚔️ button on the side of the map.</Text>
       </View>
+      <View style={styles.block}>
+        <SectionLabel>THE CAMPAIGN</SectionLabel>
+        <Text style={styles.body}>
+          {!game.campaign.unlocked
+            ? 'The end game: when the hold raises its first angel, the lands the Horde took open on a map — twelve battles down the road to Aldmere, the last against the Red Hand’s warlord.'
+            : game.campaign.victory
+              ? 'The war is won: the Red Hand is broken and Aldmere is free. The hold plays on; the road is on the 🗺️ button.'
+              : `${String(game.campaign.won)} of ${String(CAMPAIGN_BATTLES)} sites won; next: ${stage ? CAMPAIGN_STAGES[stage - 1].title : ''}. The map is on the 🗺️ button on the side of the map.`}
+        </Text>
+      </View>
       <Stockpiles game={game} />
       <ShopPanel adsRemoved={game.adsRemoved} />
       <GameButton label="THE STORY SO FAR" detail="the prologue: how Greyhollow came to be" onPress={onPrologue} secondary />
+      {game.campaign.victory && <GameButton label="THE VICTORY" detail="the epilogue: how the war was won" onPress={onVictory} secondary />}
       <NewGameButton onConfirm={game.resetGame} />
       <Text style={styles.footer}>DIG BELOW. BUILD ABOVE. · PROGRESS SAVES AUTOMATICALLY</Text>
     </>

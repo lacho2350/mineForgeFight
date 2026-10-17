@@ -31,6 +31,7 @@ import { haulFactor, isRoadKind, joinBuildings, roadProblem, startingRoads, with
 import { TRAP_INFO, TRAP_KINDS, trapProblem, type Trap } from './traps';
 import { isTechId } from './techs';
 import { MAX_HAPPINESS } from './happiness';
+import { cleanCampaign } from './campaign';
 import { isTaxRate } from './taxes';
 import type { GameState, SavedState } from './state';
 import { BUILDING_NAMES, fillStaffing, haulWalk, holdPowerOf } from './hold';
@@ -204,6 +205,8 @@ export function mergeSave(saved: Incoming | undefined, fresh: GameState): GameSt
     battleDeadline: saved.battle?.status === 'active' ? elapsedSeconds + (saved.battle.auto ? 0 : RAID_AUTO_AFTER) : (saved.battleDeadline ?? 0),
     // Holds from before the prologue are well under way: it's in the menu for them, not shown at once.
     prologueSeen: saved.prologueSeen ?? true,
+    // The campaign as it was left (saves from before it start with it closed; the tick opens it for a hold with an angel).
+    campaign: cleanCampaign(saved.campaign),
   };
   // The old timed barge's bookkeeping.
   for (const key of ['shipVisit', 'shipSold', 'craftQueue', 'joinRoads', 'autoMiners', 'releasedFaces']) delete (merged as Record<string, unknown>)[key];

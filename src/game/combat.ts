@@ -65,6 +65,8 @@ export type Battle = {
   raid: number;
   /** Missing in battles saved before field battles: a siege. */
   kind?: BattleKind;
+  /** A campaign battle (campaign.ts): the site's number. A raid otherwise. */
+  campaign?: number;
   rng: number;
   round: number;
   stacks: Stack[];
@@ -186,6 +188,7 @@ function spreadRows(count: number) {
 export function createBattle({
   kind = 'siege',
   raid,
+  campaign,
   army,
   enemies,
   wallHp,
@@ -205,6 +208,8 @@ export function createBattle({
   /** In the field none of the hold's defences take part: no wall, gate, towers, oil, moat or traps. */
   kind?: BattleKind;
   raid: number;
+  /** A campaign battle: the site's number (campaign.ts). */
+  campaign?: number;
   army: Army;
   enemies: { unit: UnitId; count: number }[];
   wallHp: number;
@@ -279,6 +284,7 @@ export function createBattle({
     unitBonus,
     queue: [],
     status: 'active',
+    ...(campaign ? { campaign } : {}),
     auto: false,
     log: [],
     last: [],
@@ -299,7 +305,7 @@ function startRound(battle: Battle) {
   battle.round += 1;
   if (battle.round > MAX_ROUNDS) {
     battle.status = 'withdrawn';
-    emit(battle, { kind: 'end', text: 'The raiders give up and fall back.' });
+    emit(battle, { kind: 'end', text: battle.campaign ? 'Night falls over the field: the army falls back to camp, the site unwon.' : 'The raiders give up and fall back.' });
     return;
   }
   emit(battle, { kind: 'round', text: `Round ${String(battle.round)}` });
@@ -469,10 +475,10 @@ function checkEnd(battle: Battle) {
   if (battle.status !== 'active') return;
   if (living(battle, 'attacker').length === 0) {
     battle.status = 'won';
-    emit(battle, { kind: 'end', text: 'The raiders are beaten!' });
+    emit(battle, { kind: 'end', text: battle.campaign ? 'The Horde is broken: the field is ours!' : 'The raiders are beaten!' });
   } else if (living(battle, 'defender').length === 0) {
     battle.status = 'lost';
-    emit(battle, { kind: 'end', text: 'The defenders have fallen. The raiders plunder the hold.' });
+    emit(battle, { kind: 'end', text: battle.campaign ? 'The army is beaten. The survivors fall back to Greyhollow.' : 'The defenders have fallen. The raiders plunder the hold.' });
   }
 }
 
