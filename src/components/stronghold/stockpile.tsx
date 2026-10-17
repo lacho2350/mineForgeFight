@@ -1,8 +1,9 @@
-// The warehouse's stockpile, Stronghold-style: the yard in front of the shed is a grid of squares, two to a
+// The warehouse's stockpile, Stronghold-style: the floor of the warehouse is a grid of squares, two to a
 // resource, each with its own place. Goods pile up on them as the stock grows — logs stacked, granite in
 // blocks, ores and coal in heaps, the precious things in chests, wool in bales — a square filling before
-// the next is started, so a full warehouse is a yard covered end to end. Drawn live (the stock changes
-// often), in steps so ordinary ticks don't redraw it.
+// the next is started, so a full warehouse is a floor covered end to end. Seen when the warehouse is tapped
+// (the building is then drawn see-through, GameSceneCanvas). Drawn live (the stock changes often), in steps
+// so ordinary ticks don't redraw it.
 import { memo } from 'react';
 import { Group, Path } from '@shopify/react-native-skia';
 import { RESOURCE_INFO, type Resource } from '../../game/resources';
@@ -14,12 +15,12 @@ import { poly, seg, type P } from './shapes';
 export const SLOTS_PER_RESOURCE = 2;
 /** A square's look changes in this many steps as it fills. */
 export const STACK_STEPS = 8;
-const COLUMNS = 7;
-const SLOT_W = 0.7;
-const SLOT_D = 0.62;
-// The shed stands at the back of the plot (buildingArt: 2.1 deep from y + 0.15); the yard is in front of it.
-const YARD_Y = 2.45;
-const MARGIN_X = 0.05;
+// The whole floor of the 5 × 5 plot, inside the walls (buildingArt draws the warehouse 0.15 in from its edges).
+const COLUMNS = 6;
+const SLOT_W = 0.78;
+const SLOT_D = 0.94;
+const YARD_Y = 0.15;
+const MARGIN_X = 0.15;
 const GROUND = 'rgba(96, 78, 52, 0.55)';
 const GROUND_LINE = 'rgba(236, 222, 180, 0.35)';
 

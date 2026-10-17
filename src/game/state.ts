@@ -21,6 +21,7 @@ import type { TechId } from './techs';
 import type { Site, Survey } from './mineLayout';
 import type { Homes } from './homes';
 import type { TaxRate } from './taxes';
+import type { Campaign } from './campaign';
 
 export type Cost = { coal: number; gold: number };
 
@@ -55,6 +56,8 @@ export type RaidReport = {
   /** Raiders the traps killed (counted in `slain` too). */
   trapKills?: number;
   plundered: { gold: number; resources: Partial<Stock> } | null;
+  /** A campaign battle (campaign.ts): the site's number; `number` is the same. */
+  campaign?: number;
 };
 
 /** What a level's cart is carrying. */
@@ -167,6 +170,8 @@ export type GameState = {
   autoResolveRaids: boolean;
   /** The prologue (the story of the hold) has been read or skipped: a new game shows it first. */
   prologueSeen: boolean;
+  /** The end game: the road back to Aldmere, open once the first angel is raised (campaign.ts). */
+  campaign: Campaign;
   /** No more ads was bought (shop.ts). */
   adsRemoved: boolean;
   /** Store tokens of the purchases already credited (so one handed over again pays nothing twice). */
@@ -251,6 +256,10 @@ export type GameState = {
   setAutoResolveRaids: (on: boolean) => void;
   /** The prologue has been read (or skipped). */
   seePrologue: () => void;
+  /** March on the next campaign site: a battle in the field against the Horde's force there. */
+  startCampaignBattle: () => void;
+  /** The victory epilogue has been read. */
+  seeVictory: () => void;
   /** A purchase the store confirmed: credit it (once per store token). Returns whether it was new. */
   creditPurchase: (id: ProductId, key: string) => boolean;
   /** Take command of the battle at the gate (it then waits for the player's orders). */

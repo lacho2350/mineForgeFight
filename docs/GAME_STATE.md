@@ -17,6 +17,7 @@ Two screens (Expo Router, `src/app/`):
 |---|---|---|
 | `/` | `src/app/index.tsx` | **Prologue first** on a new game (`Prologue`: six pages of the story — Aldmere lost to the Horde of the Red Hand, the flight north, the abandoned mining town of Greyhollow, what the mountain still holds, the Horde's scouts finding the valley, "the hold is yours" — with Next / Back / Skip and Android's Back turning back a page; `prologueSeen` in the store, `seePrologue()`; saves from before it count as seen, and the Menu's THE STORY SO FAR replays it). Stronghold, full screen: the isometric castle map (`CityView`: drag to pan, pinch / wheel / +− to zoom, tap a building), a slim bar on top (gold, peasants, raid clock — the warehouse's resources are in the warehouse's pop-up and the Menu, not on screen), a 👷 **auto-assign** button under the ⚔️ one (fills the buildings' empty spots from the campfire; badge = spots it would fill), a ⚔️ **War** button on the right edge under it (red with "!" while raiders are sighted or a battle waits; otherwise a badge with the recruits that can be hired now) opening the War sheet (`CombatPanel`: the raid now via `RaidBanner inPanel` — with ride out / hold the walls, command / watch, resolve now, the next raid's kind and strength —, the instant / fought-out battles switch, every unit with army / waiting / gear and RECRUIT ALL, the defences summary with traps per side, LAY TRAPS and links to the keep, wall, towers, gate, moat and armory, and the stakes), live raid alerts, a news toast, and a toolbar (Mine — the only way down; tapping the headframe does nothing —, Build, Buildings, Tech, Docks, Menu; Tech shows how many techs are ready to research, Docks shows how many barges are moored). Build opens a palette of unbuilt buildings, rock clearing, roads and traps; picking a building enters placement mode (the ground it may go on lit blue, yellow where rocks must be cleared first; drag the green/red footprint — a drag that starts on it moves it, any other drag pans — or tap where it should go, then Build here); picking Clear rocks, a road or a trap enters paint mode (one finger paints a stroke of tiles, laid on release; two fingers / right-drag pan; the bar switches kind; Done ends it). Tapping a building opens its pop-up (`Sheet` + `BuildingDetail`, with Destroy; the warehouse adds the haul-route table, the keep the defence summary); tapping a trap opens its sheet (effect, side, Take it up); tapping a road tile opens `RoadSheet` (its speed, CLEAR ROAD for that tile — free, no refund — or CLEAR MORE… for the eraser); tapping rocks or open ground inside the wall opens `GroundSheet`: rocks show their size, clearing time and granite with CLEAR ROCK (an order for the crew; shown as ordered after) and CLEAR MORE…, open ground offers LAY DIRT / STONE / GRANITE ROAD on that tile, LAY MORE ROAD…, and BUILD HERE… (the Build palette; the building picked starts centred on that tile). |
 | `/mine` | `src/app/mine.tsx` | The mine, full screen: the map (pan/zoom camera) fills it, and everything else floats over it or pops up. Top: a 🏰 CITY button (the only way back up, besides Android's Back), the mine's HUD (gold, wood, miners · free peasants, the raid clock) and, only while raiders are sighted or a battle is on, the raid banner; the zoom buttons sit under them. Bottom: a toolbar — ⛏ DIG and 🔦 SURVEY (modes that switch each other off; Survey counts down while the surveyors are out), 👷 ASSIGN (everyone at the campfire to the free faces; badge = how many wait), 📜 UPGRADES (badge: mine techs ready) and CARTS (a drawn mining cart, `MineCartIcon`; badge: levels where a cart can be added now) — with the mode's hint and the news toast (`Toast`, new notices only) above it. A tapped tile (`DepositPanel`) or stockpile bin (`BinPanel`: that resource's stock at every stage) opens as a card above the toolbar; with a mouse, resting on a pile (a miner's bin or an exit bin) shows every resource the mine holds — in the miners' bins, at the exit, in the mine stockpile, and the total — with that pile's resource picked out (`MinePileTip`). UPGRADES opens a sheet with Dig Deeper and the mine's tech branch; CARTS a sheet with the haulage (Add Cart per level), the hauling chain and the warehouse's coal and gold. Android's Back leaves a mode, then closes the card, then goes up. The map scrolls clear of the bars (`insetTop` / `insetBottom` on `MineScene`). |
+| `/campaign` | `src/app/campaign.tsx` | **The campaign map** (the end game, since 2026-10-17; `src/game/campaign.ts`): the road back south from Greyhollow to Aldmere, twelve battle sites on it — won ones gilded, the next one lit, the rest locked — on a parchment map drawn with plain views (no Skia, so it opens at once everywhere). A tapped site shows its story, the Horde's force there (`campaignParty`) against the army's worth, the bounty, and for the next site MARCH (`startCampaignBattle`, then `/battle`). Reached by the 🗺️ side button on the stronghold (shown once the campaign is open; badge: sites won, ★ after the victory), and described in the Menu. |
 | `/battle` | `src/app/battle.tsx` | The battle — a siege at the walls or a battle in the field: hex board where every action plays out at the battlefield's pace (stacks walk their path hex by hex, lunge, shots fly, hits flash and their damage shows as they land — `battlePlayback.ts`), orders (taken once the action has played), auto-battle / quick resolve, log, result. Opening it takes command of the battle (also of one that starts while it's open); leaving mid-battle hands it to the captains (`releaseBattle`). |
 
 The mine screen shows a `RaidBanner` (next raid countdown → raiders sighted → at the gate → result); the
@@ -218,10 +219,13 @@ game, and starts the 1-second simulation (`startSimulation()`).
   `warehouse`. Capacities apply per resource. Surface carts move exit→mine→warehouse each tick
   (per-tick totals shared across resources).
 - **The warehouse's stockpile on the map** (`stronghold/stockpile.tsx`, since 2026-10-15, Stronghold-style):
-  the yard in front of the shed is a grid of 7 × 4 squares, **two to a resource** (`SLOTS_PER_RESOURCE`;
+  the warehouse's floor is a grid of 6 × 5 squares, **two to a resource** (`SLOTS_PER_RESOURCE`;
   the 14 non-food resources, each with its own place), on which the goods pile up as the stock grows — a
   resource's first square fills with the first half of the warehouse's capacity for it, the second with the
-  rest, so **a full warehouse is a yard covered end to end**. Looks by resource (`lookOf`): wood as stacked
+  rest, so **a full warehouse is a floor covered end to end**. **Seen only while the warehouse is tapped**
+  (since 2026-10-17: the warehouse is drawn as a full building on its plot — a barn, a lower store with
+  double doors, a lean-to — and when selected it and whatever stands in front of its floor go see-through,
+  so the goods show inside; untapped, it's a building like any other). Looks by resource (`lookOf`): wood as stacked
   logs, granite as blocks in courses, ores and coal and salt and sulfur as heaps, gold / silver / diamonds /
   emeralds / mithril as chests (wood with the goods on the lid), wool as bales; in `STACK_STEPS` (8) steps
   (`stockpileSteps` is the memo key), drawn live with `useSvgPaths`. The granary keeps the old `Piles`.
@@ -232,7 +236,8 @@ game, and starts the 1-second simulation (`startSimulation()`).
   their food, woodcutters their logs. The load shows on the way to the store and is gone on the way back.
 - **See-through buildings** (Stronghold-style, since 2026-10-15): a built building that stands in front of
   something that must stay in view and overlaps it on screen — the **tapped building**, the **warehouse's
-  stockpile yard** (always), or the **building being placed** — is left out of the castle image and drawn
+  stockpile** (while the warehouse is tapped, the warehouse itself included), or the **building being
+  placed** — is left out of the castle image and drawn
   over it faint (`FADED_OPACITY` 0.38): `fadedBuildings` / `watch` in GameSceneLayout.ts (`plotDepth` says
   what's in front; fortifications never fade; a watch's `except` is its own building, so the shed never
   fades for its own yard), `faded` in the still image's key and `StaticScene` (shadows stay), and
@@ -489,6 +494,31 @@ game, and starts the 1-second simulation (`startSimulation()`).
   fight it" with WATCH. RESOLVE NOW (banner) / QUICK RESOLVE (battle screen) settle it at once
   (`quickResolveBattle`). A save with a battle the captains were fighting goes straight on when loaded.
   Reports say which kind it was.
+- **The campaign** (`src/game/campaign.ts`, the end game, since 2026-10-17): **opens the tick the hold has its
+  first angel** (`campaignOpens`; `openCampaign` sets `campaign.scale` = the army's worth that moment, at least
+  `CAMPAIGN_MIN_SCALE` 5,500 — one angel's). `CAMPAIGN_STAGES`: 12 sites (`CAMPAIGN_BATTLES`) from the High Pass
+  over Wolfrun Ford, the Burnt Mill, Thornback Woods, Saltmarsh Causeway, Hollin Bridge, the Ash Fields,
+  Harrowfield, the Iron Road and Kingsmoor to the Walls of Aldmere and the Red Hand's Court, each with its
+  story and its place on the map. **Difficulty**: site n's strength = max(`campaignFloor` 3,000 → 25,000,
+  `scale` × `campaignShare` 60% → 200%) (`campaignStrength`); the force is `raidParty(1 + 2n, strength,
+  'siege')` — every raider kind, the stronger ones joining down the road (harpies and ogres from site 2,
+  cyclopes from 4, behemoths from 5, more companies as it goes), and the court always has a bodyguard of
+  behemoths (`campaignParty`). So the sites are fixed when the campaign opens, and growing the army is the
+  way through. **Battles**: `startCampaignBattle` (refused by `campaignBlocker`: not open, won, a battle on,
+  raiders sighted, no army) makes a **field** battle (`createBattle` with `campaign: n` and `raid: 1000 + n`;
+  no walls, towers, oil, moat or traps — the armory's and the dwellings' bonuses apply) and runs it like a
+  raid's: `battleArmy`, `battleCommanded` false, the captains fight it from `RAID_AUTO_AFTER_CAMPAIGN` (60) s
+  unless the battle screen takes command; `Battle.campaign` marks it (`battleTitle` on the battle screen, the
+  banner says "THE ARMY FIGHTS AT …", the end-of-battle lines differ). **Settling** (`settleCampaignBattle` in
+  updates.ts, from `settleBattle`): the raid clock, `raidsFought`, the losing streak and the flocks are
+  untouched and nothing is plundered; a win pays `campaignBounty` (50% of the force's worth) and
+  `afterCampaignBattle` opens the next site (`won`, `fought`); the twelfth win sets `campaign.victory`. The
+  report is a `RaidReport` with `campaign: n`. Happiness moves as after a raid. Raids keep coming: one
+  arriving during a campaign battle waits for it (the tick's `battleRunning`). **Victory** (`Victory.tsx`,
+  pages like the prologue): shown over the stronghold once `victory` is set and `victorySeen` isn't
+  (`seeVictory`), again from the Menu's THE VICTORY; then the hold plays on (`nextStage` is null, MARCH is
+  gone). `campaign` is saved (`cleanCampaign` on load; older saves start closed and open on the next tick if
+  they have an angel). `campaign-test` covers it.
 - **Raids** (`src/game/raids.ts`): first raiders arrive at 6:00, then 5 min after each raid ends; sighted
   60 s ahead. **Raids are sized to the hold**: at sighting, `holdPowerOf(state)` = army value +
   defences at half their worth (`holdPower`: towers × damage × shots × 5 rounds × 11 value/HP, wall HP
@@ -547,6 +577,7 @@ src/
     index.tsx              stronghold screen
     mine.tsx               mine screen: the full-screen map, its top bar and toolbar, the tile/bin card,
                            the upgrades and carts sheets
+    campaign.tsx           the campaign map: the twelve sites, the picked site's card, MARCH
   game/                    simulation + pure model (no React Native / Skia)
     gameStore.ts           Zustand store: the starting state, the actions, persistence, loadGame,
                            startSimulation; `useGame(live)` / `useGameSlice(selector, live)` for screens
@@ -584,6 +615,8 @@ src/
     wagons.ts              the depot's carts: trips, what to bring a forge, goods on the move
     combat.ts              hex battle engine: setup, turns, damage, walls/towers, AI, quick resolve
     raids.ts               raid timing, strength, composition, side, bounty/plunder constants
+    campaign.ts            the end game: the twelve sites on the road to Aldmere, their strength and forces,
+                           opening on the first angel, what a battle's result does, the victory
     techs.ts               the tech tree: 78 gold upgrades in branches (mine + every building), bonuses
     ship.ts                river barges: berths, orders (`bargeOrder`), course and pose (`bargePose`)
     rocks.ts               the rocks the town starts under: where they lie, sizes, clearing work and yield
@@ -694,6 +727,7 @@ src/
                            `onBegin`), paint strokes for roads/traps, right/middle-drag pan, level badges
     Sheet.tsx              pop-up panel (slides up, scrolls, closes on ✕ or backdrop)
     Prologue.tsx           the story before a new game (and from the Menu), a page at a time
+    Victory.tsx            the epilogue when the campaign's last site falls (and from the Menu)
     ShopPanel.tsx          the shop in the Menu: No more ads, the packs, restore, privacy choices
     purchases(.web).ts     the store (expo-iap): prices, buying, crediting and finishing purchases
     ads(.web).ts           the ads (Google Mobile Ads): consent, the interstitial at pauses every 3 min
@@ -805,6 +839,18 @@ src/
 - Checks (run before calling anything done): `npx tsc --noEmit` · `npx expo lint` · `npx expo-doctor`.
   **GitHub Actions** runs the first two and `npm test` on every push (`.github/workflows/checks.yml`,
   since 2026-10-16) — a way to typecheck work written where nothing can be installed.
+- **An Android APK on every push** to `main` and `release-prep` (`.github/workflows/android-apk.yml`, since
+  2026-10-17), for testing on a real phone: `expo prebuild --platform android` in CI (nothing native is
+  committed), then `./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a` on JDK 21 — a standalone
+  release build (JS bundled, no dev server), signed with the template's debug keystore so every build
+  installs over the last and keeps the save; `versionCode` = the run number. Published to the GitHub release
+  `apk-<branch>` (replaced each build, so the link is fixed):
+  `https://github.com/lacho2350/mineForgeFight/releases/download/apk-<branch>/mineforgefight-<branch>.apk`,
+  and kept 14 days as a workflow artifact. Not for Google Play (that build goes through EAS, NEXT_STEPS.md).
+  Run it by hand from the Actions tab (`workflow_dispatch`) for any other branch. **Gotcha**: with
+  react-native-google-mobile-ads 17.2 every Android build (CI or `npx expo run:android`) fails in Gradle
+  with "Cannot get property 'googleMobileAdsJson'" unless built with `-PRNGMA_ANDROID_BACKEND=classic` (the
+  CI passes it); 17.3.0 fixes it — `npx expo install react-native-google-mobile-ads` on the computer.
 - **Tests**: `npm test` (jest with the `jest-expo` preset) runs `__tests__/*-test.ts` — never put tests in
   `src/app/` (every file there is a route). `support.ts` has helpers: `newGame(overrides)` resets the store
   (no raid comes unless a test asks), `run(seconds)` ticks it, `build(levels)` places buildings like the
@@ -816,6 +862,18 @@ src/
   need hands), `fade-test` (see-through buildings), `happiness-test` (the mood's factors, taxes, the buildings' coverage, leaving) and `save-test` (v2→v3 map growth, the old armory refund, the save guard, new houses on load) — the save tests load a fresh copy of the store over an in-memory
   `localStorage`, so they never touch a real save.
 - Web dev server: `npx expo start --web --port 8081` (`.claude/launch.json` has an `expo-web` config).
+- **A hosted, playable build** (since 2026-10-16): the web export runs as a Claude artifact ("Mine Forge
+  Fight", claude.ai/artifact/9NgwBFCcYYtmY9S8ET6ywy). Branch `ci-smoke` holds the tooling: `smoke.yml`
+  drives the dev server with Playwright (`scripts/smoke.mjs`: prologue, stockpile, the mood buildings and
+  sheet, a raid, a reload, the fade, placing, the mine) and then the production export with a saved game
+  (`scripts/smoke-prod.mjs`), pushing screenshots and logs to branch `ci-smoke-results`; `web-build.yml`
+  (run by hand) pushes `expo export --platform web` there with CanvasKit copied in. The artifact is the
+  export with `_expo/` renamed `expo/` (the service reserves leading underscores), the entry bundle's
+  `url:location.origin+location.pathname` and `locateFile` pointed at `globalThis.__MFF_BASE`, and a page
+  fragment that sets `__MFF_BASE`, wipes the save on `#new`, `history.replaceState('/')` (the router sees
+  the stronghold) and shows errors in a `<pre>` at the foot. Note: a page whose `document.hidden` is true
+  (a background tab, the desktop app's hidden browser pane) ticks but draws nothing — rAF and the
+  screens' updates wait for it to be shown; that isn't a freeze.
 - **Android** (tested 2026-10-12 in an emulator with Expo Go 57.0.9 — no native build needed): JDK 21 and
   the Android SDK live in `~/Android` (`jdk-21.0.12.1+1`, `Sdk` with platform-tools, emulator and the
   `system-images;android-36;google_apis;x86_64` image; AVD `mff_pixel`, a Pixel 7). Run

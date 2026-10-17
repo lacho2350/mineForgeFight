@@ -271,7 +271,7 @@ export const doorSide = (id: BuildingId): DoorSide => {
 };
 
 /** The door's side as the player reads it: "the front-left side", "any side". */
-export const doorText = (id: BuildingId) => (doorSide(id) === 'any' ? 'any side' : `the ${doorSide(id)} side`);
+export const doorText = (id: BuildingId) => (doorSide(id) === 'any' ? 'any one side' : `the ${doorSide(id)} side`);
 
 /** The tiles in front of a building's door, just outside its footprint: a road on one of them reaches it. */
 export function doorTiles(id: BuildingId, spot: Spot): Spot[] {

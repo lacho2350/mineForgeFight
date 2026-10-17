@@ -127,18 +127,23 @@ export function BuildingArt({ id, plot, tier, level }: { id: BuildingId; plot: P
       );
     }
     case 'warehouse': {
-      // A shed (a barn from level 6) at the back; the stockpile in its yard is drawn live (see `Stockpile`).
-      // On the big plot the shed is deeper and taller, with a wider door.
-      const barn = tier >= 2;
-      const big = w >= 5;
-      const depth = big ? 2.1 : 1.2;
-      const shed = barn ? w - 0.3 : big ? 2.6 : 1.4;
-      const h = (barn ? 12 + 3 * tier : 10) + (big ? 5 : 0);
+      // A warehouse filling its plot: a long barn along the back, a lower store in front of it with wide
+      // double doors, and a lean-to at the side; taller and in better stone with the tiers. Tapping it
+      // draws it see-through, and the stockpile inside (see `Stockpile`, drawn live) shows.
+      const h = 14 + 3 * tier;
+      const back = Math.max(1.2, d * 0.44);
+      const front = d - back - 0.3;
+      const lean = Math.max(0.8, w * 0.22);
       return (
         <Group>
-          <Box x={x + 0.15} y={y + 0.15} w={shed} d={depth} h={h} m={m} />
-          <Gable x={x + 0.1} y={y + 0.1} w={shed + 0.1} d={depth + 0.1} z={h} rise={big ? 13 : 9} m={m} />
-          <LeftFace x={x + 0.15} yFront={y + 0.15 + depth} u0={0.35} u1={big ? 1.35 : 1.0} v0={0} v1={big ? 12 : 9} color={DARK} />
+          <Box x={x + 0.15} y={y + 0.15} w={w - 0.3} d={back} h={h} m={m} />
+          <Gable x={x + 0.1} y={y + 0.1} w={w - 0.2} d={back + 0.1} z={h} rise={10 + tier} m={m} />
+          <Box x={x + 0.15} y={y + 0.15 + back} w={w - 0.3 - lean} d={front} h={h - 5} m={m} />
+          <Gable x={x + 0.1} y={y + 0.1 + back} w={w - 0.2 - lean} d={front + 0.1} z={h - 5} rise={7} m={m} along="y" />
+          <Box x={x + w - 0.15 - lean} y={y + 0.15 + back} w={lean} d={front} h={h - 9} m={m} />
+          <LeftFace x={x + 0.15} yFront={y + d - 0.15} u0={(w - 0.3 - lean) / 2 - 0.7} u1={(w - 0.3 - lean) / 2 + 0.7} v0={0} v1={h - 9} color={DARK} />
+          <LeftFace x={x + 0.15} yFront={y + d - 0.15} u0={(w - 0.3 - lean) / 2 - 0.05} u1={(w - 0.3 - lean) / 2 + 0.05} v0={0} v1={h - 9} color="#6e4a2f" />
+          {tier >= 3 && <RightFace xFront={x + w - 0.15} y={y + 0.15} u0={back * 0.3} u1={back * 0.7} v0={h - 9} v1={h - 5} color={DARK} />}
         </Group>
       );
     }

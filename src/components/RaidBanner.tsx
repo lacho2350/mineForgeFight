@@ -6,6 +6,7 @@ import { describeParty, holdPowerOf } from '../game/hold';
 import { useGame } from '../game/gameStore';
 import { partyValue, raidKind, raidRelief, raidSide, raidStrength } from '../game/raids';
 import { GameButton } from './GameUI';
+import { CAMPAIGN_STAGES } from '../game/campaign';
 
 const clock = (seconds: number) => `${String(Math.floor(seconds / 60))}:${String(Math.max(0, seconds % 60)).padStart(2, '0')}`;
 
@@ -24,12 +25,13 @@ export default function RaidBanner({ inPanel = false }: { inPanel?: boolean }) {
 
   if (battle?.status === 'active') {
     const field = battle.kind === 'field';
+    const site = battle.campaign ? CAMPAIGN_STAGES[battle.campaign - 1] : null;
     return (
       <View style={[styles.banner, styles.alarm, inPanel && styles.inPanel]}>
         <View style={styles.copy}>
-          <Text style={styles.alarmTitle}>{field ? 'BATTLE IN THE FIELD' : 'RAIDERS AT THE GATE'}</Text>
+          <Text style={styles.alarmTitle}>{site ? `THE ARMY FIGHTS AT ${site.title.toUpperCase()}` : field ? 'BATTLE IN THE FIELD' : 'RAIDERS AT THE GATE'}</Text>
           <Text style={styles.detail}>
-            {raid ? describeParty(raid.party) : `Raid ${String(battle.raid)}`} ·{' '}
+            {site ? 'the campaign' : raid ? describeParty(raid.party) : `Raid ${String(battle.raid)}`} ·{' '}
             {commanded ? 'your orders' : battle.auto ? `round ${String(battle.round)}, the captains fight it` : `the captains take over in ${String(Math.max(0, Math.ceil(deadline - elapsed)))} s`}
           </Text>
         </View>
@@ -91,7 +93,8 @@ export default function RaidBanner({ inPanel = false }: { inPanel?: boolean }) {
       <View style={styles.copy}>
         {report ? (
           <Text style={[styles.title, report.outcome === 'lost' && styles.lost]}>
-            Raid {String(report.number)}: {report.outcome === 'won' ? `won, +${String(report.bounty)} gold` : report.outcome === 'lost' ? `lost, −${String(report.plundered?.gold ?? 0)} gold` : 'they withdrew'}
+            {report.campaign ? (CAMPAIGN_STAGES[report.campaign - 1]?.title ?? 'The campaign') : `Raid ${String(report.number)}`}:{' '}
+            {report.outcome === 'won' ? `won, +${String(report.bounty)} gold` : report.outcome === 'lost' ? (report.campaign ? 'the army fell back' : `lost, −${String(report.plundered?.gold ?? 0)} gold`) : report.campaign ? 'a stand-off' : 'they withdrew'}
             {fallen > 0 ? ` · ${String(fallen)} fallen` : ''}
           </Text>
         ) : null}

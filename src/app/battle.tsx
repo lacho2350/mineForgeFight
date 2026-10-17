@@ -21,6 +21,7 @@ import {
   type Stack,
 } from '../game/combat';
 import type { RaidReport } from '../game/state';
+import { CAMPAIGN_STAGES } from '../game/campaign';
 import { useGameSlice, useGameStore } from '../game/gameStore';
 import { UNIT_STATS, type ArmyUnit } from '../game/units';
 import BattleBoard from '../components/BattleBoard';
@@ -134,7 +135,7 @@ export default function BattleScreen() {
             <Pressable accessibilityRole="button" onPress={() => (router.canGoBack() ? router.back() : router.replace('/'))} style={styles.back}>
               <Text style={styles.backText}>‹  HOLD</Text>
             </Pressable>
-            <Text style={styles.title}>{battle ? `Raid ${String(battle.raid)} · ${battle.kind === 'field' ? 'In the field' : 'Siege'}` : 'The gate'}</Text>
+            <Text style={styles.title}>{battle ? battleTitle(battle) : 'The gate'}</Text>
             <Text style={styles.round}>{battle && battle.status === 'active' ? `ROUND ${String(battle.round)}` : ''}</Text>
           </View>
 
@@ -173,7 +174,7 @@ export default function BattleScreen() {
                 <View style={styles.controls}>
                   <View style={styles.turn}>
                     <Text style={[styles.turnText, raidersActing ? styles.turnTheirs : styles.turnYours]}>
-                      {playerTurn ? 'YOUR MOVE' : battle.auto ? 'AUTO-BATTLE' : raidersActing ? 'RAIDERS MOVE…' : 'YOUR TROOPS MOVE…'}
+                      {playerTurn ? 'YOUR MOVE' : battle.auto ? 'AUTO-BATTLE' : raidersActing ? (battle.campaign ? 'THE HORDE MOVES…' : 'RAIDERS MOVE…') : 'YOUR TROOPS MOVE…'}
                     </Text>
                     {playerTurn && <Text style={styles.hint}>Tap a blue hex to move, a red-ringed enemy to attack{stack && (UNIT_STATS[stack.unit].heals || UNIT_STATS[stack.unit].resurrects) ? ', a green ally to heal' : ''}.</Text>}
                   </View>
@@ -294,15 +295,25 @@ function StackCard({ battle, stack }: { battle: Battle; stack: Stack }) {
   );
 }
 
+// The battle's heading: which raid, or which campaign site (campaign.ts).
+function battleTitle(battle: Battle) {
+  if (battle.campaign) return `${String(battle.campaign)}. ${CAMPAIGN_STAGES[battle.campaign - 1]?.title ?? 'The campaign'}`;
+  return `Raid ${String(battle.raid)} · ${battle.kind === 'field' ? 'In the field' : 'Siege'}`;
+}
+
 function ReportCard({ report }: { report: RaidReport }) {
   const field = report.kind === 'field';
-  const title = report.outcome === 'won' ? 'Victory!' : report.outcome === 'lost' ? (field ? 'Beaten in the field' : 'The hold has fallen') : 'The raiders withdrew';
+  const site = report.campaign ? CAMPAIGN_STAGES[report.campaign - 1] : null;
+  const title = site
+    ? report.outcome === 'won' ? `${site.title} is won!` : report.outcome === 'lost' ? `Beaten at ${site.title}` : `${site.title}: a stand-off`
+    : report.outcome === 'won' ? 'Victory!' : report.outcome === 'lost' ? (field ? 'Beaten in the field' : 'The hold has fallen') : 'The raiders withdrew';
   const losses = Object.entries(report.losses) as [ArmyUnit, number][];
   return (
     <View style={styles.report}>
       <Text style={[styles.reportTitle, report.outcome === 'lost' && styles.reportLost]}>{title}</Text>
+      {site && report.outcome !== 'won' && <Text style={styles.cardText}>The army falls back to Greyhollow; nothing is plundered. March again when it’s stronger.</Text>}
       <Text style={styles.cardText}>
-        Raiders slain: {String(report.slain)}
+        {site ? 'Horde' : 'Raiders'} slain: {String(report.slain)}
         {report.trapKills ? ` (${String(report.trapKills)} by traps)` : ''}
       </Text>
       {report.bounty > 0 && <Text style={styles.cardText}>Bounty: +{String(report.bounty)} gold</Text>}
