@@ -21,7 +21,7 @@ import {
   WALL_TILES,
   iso,
 } from '../GameSceneLayout';
-import { spritePixels } from '../unitSprites';
+import { SPRITE_SIZE, spriteRuns } from '../unitSprites';
 import { latest, parseSvg, svgPath, useSvgPaths, type Slot } from '../skiaPaths';
 import { ROAD_COLORS, poly, seg, type P } from './shapes';
 import { CROWNS, LAND, STONE_DARK, STONE_LIGHT, TRUNK, WATER, crag } from './backdrop';
@@ -378,13 +378,16 @@ export function Traps({ traps }: { traps: Trap[] }) {
   );
 }
 
+/** A figure's sprite pixel on the castle map (a 16-pixel sprite stands about 14 px tall). */
+export const FIGURE_PIXEL = 0.88;
+
 export function RaiderFigure({ unit, x, y }: { unit: UnitId; x: number; y: number }) {
   const p = iso(x, y);
-  const pixel = 1.1;
+  const pixel = FIGURE_PIXEL;
   return (
     <Group>
-      {spritePixels(unit).map((px, i) => (
-        <Rect key={i} x={p.x - 6 * pixel + px.x * pixel} y={p.y - 12 * pixel + px.y * pixel} width={pixel + 0.2} height={pixel + 0.2} color={px.color} />
+      {spriteRuns(unit).map((run, i) => (
+        <Rect key={i} x={p.x - (SPRITE_SIZE / 2) * pixel + run.x * pixel} y={p.y - SPRITE_SIZE * pixel + run.y * pixel} width={run.w * pixel + 0.2} height={pixel + 0.2} color={run.color} />
       ))}
     </Group>
   );

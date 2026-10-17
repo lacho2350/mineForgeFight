@@ -6,7 +6,8 @@ import type { BuildingId } from '../../game/buildings';
 import { isHouse } from '../../game/houses';
 import { ARMY_UNITS } from '../../game/units';
 import { CAMPFIRE, MINE_PLOT, PARADE, TILE_HW, iso, type Plot } from '../GameSceneLayout';
-import { spritePixels } from '../unitSprites';
+import { SPRITE_SIZE, spriteRuns } from '../unitSprites';
+import { FIGURE_PIXEL } from './ground';
 import { svgPath } from '../skiaPaths';
 import {
   BANNER,
@@ -1013,18 +1014,18 @@ export function Scaffold({ plot }: { plot: Plot }) {
 // The army on parade inside the bailey: one row per kind of unit, more figures for bigger companies.
 export function Parade({ figures: companies }: { figures: number[] }) {
   const rows = ARMY_UNITS.filter((_, index) => companies[index] > 0);
-  const pixel = 1.05;
+  const pixel = FIGURE_PIXEL;
   return (
     <Group>
       {rows.map((unit, row) => {
         const figures = companies[ARMY_UNITS.indexOf(unit)];
-        const pixels = spritePixels(unit);
+        const runs = spriteRuns(unit);
         return Array.from({ length: figures }, (_, index) => {
           const p = iso(PARADE.x + index * 0.55 + (row % 2) * 0.25, PARADE.y + row * 0.42);
           return (
             <Group key={`${unit}-${String(index)}`}>
-              {pixels.map((px, i) => (
-                <Rect key={i} x={p.x - 6 * pixel + px.x * pixel} y={p.y - 12 * pixel + px.y * pixel} width={pixel + 0.2} height={pixel + 0.2} color={px.color} />
+              {runs.map((run, i) => (
+                <Rect key={i} x={p.x - (SPRITE_SIZE / 2) * pixel + run.x * pixel} y={p.y - SPRITE_SIZE * pixel + run.y * pixel} width={run.w * pixel + 0.2} height={pixel + 0.2} color={run.color} />
               ))}
             </Group>
           );

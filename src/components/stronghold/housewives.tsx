@@ -83,11 +83,24 @@ const Housewife = memo(function Housewife({ id, errand, dress, anchor, clock, pl
   const water = errand.kind === 'water';
   return (
     <Group transform={transform} opacity={shown}>
-      {/* A long skirt, a bodice, her face and a white headscarf. */}
-      <Rect x={-2.2} y={-4.6} width={4.4} height={4.6} color={dress} />
+      {/* A long skirt shaded on its far side, a bodice with sleeves, a white apron, her face and headscarf. */}
+      <Rect x={-2.2} y={-4.6} width={4.4} height={4.4} color={dress} />
+      <Rect x={0.9} y={-4.6} width={1.3} height={4.4} color="rgba(0, 0, 0, 0.22)" />
+      <Rect x={-1.9} y={-0.4} width={1.3} height={0.4} color="#3a2a1c" />
+      <Rect x={0.5} y={-0.4} width={1.3} height={0.4} color="#3a2a1c" />
       <Rect x={-1.6} y={-7.2} width={3.2} height={2.8} color={dress} />
+      <Rect x={-2.1} y={-6.9} width={0.6} height={2.4} color={dress} />
+      <Rect x={1.5} y={-6.9} width={0.6} height={2.4} color={dress} />
+      <Rect x={1.5} y={-6.9} width={0.6} height={2.4} color="rgba(0, 0, 0, 0.22)" />
+      <Rect x={-2.1} y={-4.6} width={0.6} height={0.6} color="#e0b48a" />
+      <Rect x={1.5} y={-4.6} width={0.6} height={0.6} color="#e0b48a" />
+      <Rect x={-1.0} y={-5.6} width={2.2} height={4.6} color="#ece6d4" />
+      <Rect x={-1.6} y={-4.9} width={3.2} height={0.4} color="#bdb6a2" />
       <Rect x={-1.1} y={-9.2} width={2.2} height={2.2} color="#e0b48a" />
+      <Rect x={0.55} y={-9.2} width={0.55} height={2.2} color="#b4865e" />
+      <Rect x={0.25} y={-8.4} width={0.4} height={0.45} color="#2a2620" />
       <Rect x={-1.35} y={-9.8} width={2.7} height={1.3} color="#ece6d4" />
+      <Rect x={-1.6} y={-9.0} width={0.8} height={1.6} color="#ece6d4" />
       {/* What she carries home: a bucket of water, or a basket of food. */}
       <Group opacity={carrying}>
         {water ? (

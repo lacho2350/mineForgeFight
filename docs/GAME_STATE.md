@@ -727,7 +727,11 @@ src/
                            `buildingArt` (every building, campfire, headframe, scaffolds, parade),
                            `live` (the granary's piles, smoke, balloons, wheel, carts, barges, progress
                            bars), `stockpile` (the warehouse's yard, below),
-                           `peasants` (the sprite atlas), `housewives` (the cottages' women on their
+                           `peasants` (the sprite atlas: one cell per outfit), `villagerLooks` (what
+                           every villager wears by job — `jobOf(building)`: hauler, woodcutter, builder,
+                           quarryman, fisher, shepherd, smith, scholar, armourer, docker, gatekeeper,
+                           soldier, archer, monk, priest, acolyte, groom, engineer, falconer, miller,
+                           entertainer; idlers in plain tunics — as Skia-free rects), `housewives` (the cottages' women on their
                            errands), `overlays` (plots, selection, placement
                            ghost) and `stillImage` (`useStillImage`, `picturesToImage`).
     GameSceneLayout.ts     drawing the tile map: `iso()` / `groundAt()` projection, `plotOf()` (plots from
@@ -747,7 +751,11 @@ src/
     battleLayout.ts        hex geometry for the board, taps and labels (Skia-free)
     battlePlayback.ts      an action laid out in time: walk tracks, lunges, shots, hits (Skia-free; worklet poses)
     skiaPaths.ts           who owns a Skia path: parse once, held by a component, or freed with a drawing
-    unitSprites.ts         12×12 pixel sprites for all 16 creatures (also the army on parade)
+    unitSprites.ts         16×16 shaded pixel sprites for all 16 creatures, each with its gear (pike and
+                           kettle hat, crossbow and quiver, shield with a cross, glowing staff, lance and
+                           pennant, plume and sun, tusks, the cyclops' boulder…); drawn as row runs
+                           (`spriteRuns`, mirrored for the hold's side) on the battle board, the parade and
+                           the raiders (`FIGURE_PIXEL` sets their size on the castle map)
     RaidBanner.tsx         raid status banner on both main screens, kept to a title and one line (kind ·
                            side · clock; party · strength vs yours); rules, traps and the auto-resolve
                            switch live in the War panel
