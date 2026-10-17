@@ -813,7 +813,10 @@ src/
   `apk-<branch>` (replaced each build, so the link is fixed):
   `https://github.com/lacho2350/mineForgeFight/releases/download/apk-<branch>/mineforgefight-<branch>.apk`,
   and kept 14 days as a workflow artifact. Not for Google Play (that build goes through EAS, NEXT_STEPS.md).
-  Run it by hand from the Actions tab (`workflow_dispatch`) for any other branch.
+  Run it by hand from the Actions tab (`workflow_dispatch`) for any other branch. **Gotcha**: with
+  react-native-google-mobile-ads 17.2 every Android build (CI or `npx expo run:android`) fails in Gradle
+  with "Cannot get property 'googleMobileAdsJson'" unless built with `-PRNGMA_ANDROID_BACKEND=classic` (the
+  CI passes it); 17.3.0 fixes it — `npx expo install react-native-google-mobile-ads` on the computer.
 - **Tests**: `npm test` (jest with the `jest-expo` preset) runs `__tests__/*-test.ts` — never put tests in
   `src/app/` (every file there is a route). `support.ts` has helpers: `newGame(overrides)` resets the store
   (no raid comes unless a test asks), `run(seconds)` ticks it, `build(levels)` places buildings like the

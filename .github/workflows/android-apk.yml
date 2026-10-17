@@ -66,12 +66,16 @@ jobs:
 
       - name: Build the APK
         working-directory: android
-        # Phones only (arm64): about a third of the size of an all-architectures APK. On failure, Gradle's
-        # "What went wrong" is repeated as an annotation (readable from the run page and the API without
-        # downloading the log).
+        # Phones only (arm64): about a third of the size of an all-architectures APK.
+        # RNGMA_ANDROID_BACKEND=classic: react-native-google-mobile-ads 17.2 reads a setting only bare React
+        # Native apps have (`googleMobileAdsJson`) when choosing its backend and fails in an Expo project
+        # ("Cannot get property 'googleMobileAdsJson'"); naming the backend skips that lookup. Fixed in 17.3.0
+        # (`npx expo install react-native-google-mobile-ads`), after which the flag can go.
+        # On failure, Gradle's "What went wrong" is repeated as an annotation (readable from the run page and
+        # the API without downloading the log).
         run: |
           set -o pipefail
-          if ! ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a --no-daemon --stacktrace 2>&1 | tee ../gradle.log; then
+          if ! ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a -PRNGMA_ANDROID_BACKEND=classic --no-daemon --stacktrace 2>&1 | tee ../gradle.log; then
             why=$(awk '/What went wrong/{on=1} on{print} /^\* Try:/{if(on) exit}' ../gradle.log | head -n 40)
             [ -n "$why" ] || why=$(grep -E "error:|FAILURE|e: " ../gradle.log | head -n 40)
             [ -n "$why" ] || why=$(tail -n 40 ../gradle.log)
