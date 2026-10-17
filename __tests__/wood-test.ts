@@ -22,6 +22,18 @@ describe('wood', () => {
     expect(game().warehouse.wood).toBeCloseTo(before + 10 * 0.25 * 4, 5);
   });
 
+  it('starts a game with a cottage and a staffed woodcutter’s hut that can reach the forest', () => {
+    newGame({}, { keepStaffing: true });
+    expect(game().buildings.houses).toBeGreaterThanOrEqual(1);
+    expect(game().buildings.woodcutter).toBeGreaterThanOrEqual(1);
+    expect(spotOf('houses', game().placements)).not.toBeNull();
+    const hut = spotOf('woodcutter', game().placements);
+    if (!hut) throw new Error('the hut was not placed');
+    const walk = walkBetween({ ...hut, ...FOOTPRINTS.woodcutter }, { ...FOREST_EXIT, w: 1, d: 1 }, game().placements, game().roads, game().clearedRocks);
+    expect(walk).not.toBeNull();
+    expect(game().staffing.woodcutter ?? 0).toBeGreaterThan(0);
+  });
+
   it('starts a game with enough for the first tunnels', () => {
     newGame();
     expect(game().warehouse.wood).toBe(STARTING_WOOD);

@@ -66,7 +66,8 @@ export const STARTING_BUILDINGS: BuildingLevels = {
   research: 0,
   armory: 0,
   depot: 0,
-  ...(Object.fromEntries(WOODCUTTER_IDS.map((id) => [id, 0])) as Record<WoodcutterId, number>),
+  // A new game starts with the first woodcutter's hut, so wood comes in from the start.
+  ...(Object.fromEntries(WOODCUTTER_IDS.map((id) => [id, id === 'woodcutter' ? 1 : 0])) as Record<WoodcutterId, number>),
   granary: 0,
   ...(Object.fromEntries([...ORCHARD_IDS, ...FISHERY_IDS, ...PASTURE_IDS].map((id) => [id, 0])) as Record<FarmId, number>),
   ...(Object.fromEntries([...FAIRGROUND_IDS, ...CHURCH_IDS, ...GARDENS_IDS].map((id) => [id, 0])) as Record<MoodBuildingId, number>),

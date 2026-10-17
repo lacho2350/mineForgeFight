@@ -283,7 +283,9 @@ game, and starts the 1-second simulation (`startSimulation()`).
   level built or being built) comes back, resources capped by warehouse room. A forge's goods go back to
   the store; pulling down the depot calls every cart back (`undoWagonTrip`), the docks send every waiting
   barge away. `cancelConstruction(id)` stops a level being built (STOP BUILDING, tapped twice): all it cost
-  comes back, the crew's work is lost, and a building that was never finished leaves its plot. A new game starts with houses, warehouse, foundry and guardhouse on `DEFAULT_SPOTS`.
+  comes back, the crew's work is lost, and a building that was never finished leaves its plot. A new game starts with a cottage (`houses`), the first woodcutter's hut (since 2026-10-17, at 25,35 below
+  the main road, left of the gate road its woodcutters take to the forest — staffed, so wood comes in from the
+  start), warehouse, foundry and guardhouse on `DEFAULT_SPOTS`.
 - **Rocks** (`src/game/rocks.ts`): the town starts mostly under rocks — about 4 in 5 tiles outside the
   ground that starts clear (the plaza round the keep, the mine and its yard, the starting roads and the
   starting buildings' plots); stones / rocks / boulders (`startingRock(x, y)`, a hash of the tile).
