@@ -78,8 +78,9 @@ describe('woodcutters’ huts', () => {
     build({ woodcutter: 2, woodcutter2: 1 });
     expect(isShownBuilding(game(), 'woodcutter3')).toBe(true);
     expect(isShownBuilding(game(), 'woodcutter4')).toBe(false);
-    const one = buildingStats({ ...game().buildings, woodcutter: 2 }).woodPerSecond;
-    const three = buildingStats({ ...game().buildings, woodcutter: 2, woodcutter2: 2, woodcutter3: 2 }).woodPerSecond;
+    const base = { ...game().buildings, woodcutter2: 0, woodcutter3: 0 };
+    const one = buildingStats({ ...base, woodcutter: 2 }).woodPerSecond;
+    const three = buildingStats({ ...base, woodcutter: 2, woodcutter2: 2, woodcutter3: 2 }).woodPerSecond;
     expect(three).toBeCloseTo(3 * one, 5);
     for (const id of WOODCUTTER_IDS) expect(buildingCost(id, 5).resources.wood).toBeUndefined();
   });
