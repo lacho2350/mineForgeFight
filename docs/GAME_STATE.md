@@ -667,7 +667,10 @@ src/
                            balloon works — hangar doors, iron gas-holder, mooring mast, tether to the
                            live balloon; stables — paddock with horses, haystack, trough; granary — barn
                            plus round silo, wheat sheaves, sacks; depot — cart bays and a big spare
-                           wheel; woodcutters — pines, log stack, axe in the block; forges — chimney,
+                           wheel; cottages — hearth chimney at every level, lit shuttered window,
+                           picket fence with flowers; woodcutters — a true log cabin (log courses,
+                           notched corners), felled trunk, sawhorse and two-man saw, log stack, axe in
+                           the block, pines; forges — chimney,
                            glow, anvil and hammer, racked blades; eyrie — nest on a crag and a pennant.
                            Pennants are a legend: red on everything that raises troops (guardhouse,
                            archery, barracks, stables, balloon works, armory, eyrie), blue on research,

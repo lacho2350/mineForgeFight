@@ -45,7 +45,7 @@ export type Plot = { x: number; y: number; w: number; d: number; /** Tallest it 
 
 const TALL: Record<BuildingId, number> = {
   keep: 120,
-  ...(Object.fromEntries(HOUSE_IDS.map((id) => [id, 26])) as Record<HouseId, number>),
+  ...(Object.fromEntries(HOUSE_IDS.map((id) => [id, 28])) as Record<HouseId, number>),
   warehouse: 50,
   foundry: 80,
   research: 72,

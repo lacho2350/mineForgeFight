@@ -37,17 +37,40 @@ export function BuildingArt({ id, plot, tier, level }: { id: BuildingId; plot: P
   const m = matOf(tier);
   const { x, y, w, d } = plot;
   if (isHouse(id)) {
-    // A one-tile cottage: plaster walls and a thatched roof, then stone and tiles as it's raised; a
-    // chimney from the second tier; the ridge turned on every other cottage, so a street of them varies.
+    // A one-tile cottage, unmistakably a home: a hearth chimney smoking-tall at every level, a door and
+    // a lit window with shutters, and a picket fence along the front with a gate by the door and flowers
+    // behind it. Plaster and thatch, then stone and tiles as it's raised; the ridge turned on every other
+    // cottage, so a street of them varies.
     const hh = 7 + 2 * tier;
     const along = (x + y) % 2 ? 'y' : 'x';
+    const fenceY = y + 0.95;
+    const pickets = [0.06, 0.16, 0.44, 0.56, 0.68, 0.8, 0.92];
+    const flowers = [[0.5, BANNER], [0.66, '#e2b84f'], [0.82, '#c86bb0']] as const;
     return (
       <Group>
         <Box x={x + 0.18} y={y + 0.2} w={0.64} d={0.6} h={hh} m={m} />
         <Gable x={x + 0.12} y={y + 0.14} w={0.76} d={0.72} z={hh} rise={6} m={m} along={along} />
-        <LeftFace x={x + 0.18} yFront={y + 0.8} u0={0.22} u1={0.4} v0={0} v1={5} color={DARK} />
-        <LeftFace x={x + 0.18} yFront={y + 0.8} u0={0.46} u1={0.58} v0={4} v1={6.5} color="#e7c46a" />
-        {tier >= 2 && <Box x={x + 0.6} y={y + 0.26} w={0.12} d={0.12} h={5} z={hh + 2} m={STONE} />}
+        <Box x={x + 0.62} y={y + 0.26} w={0.13} d={0.13} h={7 + tier} z={hh + 1} m={STONE} />
+        <LeftFace x={x + 0.18} yFront={y + 0.8} u0={0.2} u1={0.36} v0={0} v1={5.5} color={DARK} />
+        <LeftFace x={x + 0.18} yFront={y + 0.8} u0={0.4} u1={0.44} v0={3} v1={6.8} color="#5b3d25" />
+        <LeftFace x={x + 0.18} yFront={y + 0.8} u0={0.44} u1={0.58} v0={3} v1={6.8} color={GLOW} />
+        <LeftFace x={x + 0.18} yFront={y + 0.8} u0={0.58} u1={0.62} v0={3} v1={6.8} color="#5b3d25" />
+        <LeftFace x={x + 0.18} yFront={y + 0.8} u0={0.5} u1={0.52} v0={3} v1={6.8} color="#5b3d25" />
+        {flowers.map(([u, color]) => {
+          const at = iso(x + u, y + 0.88);
+          return (
+            <Group key={u}>
+              <Rect x={at.x - 0.5} y={at.y - 3} width={1} height={3} color="#4f7a36" />
+              <Circle cx={at.x} cy={at.y - 3.5} r={1.3} color={color} />
+            </Group>
+          );
+        })}
+        <LeftFace x={x} yFront={fenceY} u0={0.04} u1={0.18} v0={1.5} v1={2.1} color="#d7b273" />
+        <LeftFace x={x} yFront={fenceY} u0={0.42} u1={0.95} v0={1.5} v1={2.1} color="#d7b273" />
+        {pickets.map((u) => {
+          const at = iso(x + u, fenceY);
+          return <Rect key={u} x={at.x - 0.6} y={at.y - 3.2} width={1.2} height={3.2} color="#d7b273" />;
+        })}
       </Group>
     );
   }
@@ -705,36 +728,61 @@ export function BuildingArt({ id, plot, tier, level }: { id: BuildingId; plot: P
     case 'woodcutter3':
     case 'woodcutter4':
     case 'woodcutter5': {
-      // A log cabin (later roofed in its tier's tiles or slate), the log stack beside it growing with the
-      // hut, a pair of pines behind, and a chopping block with the axe left in it in front.
+      // A woodcutter's log cabin, nothing like a cottage: walls of whole logs laid in courses with the
+      // notched ends showing at the corner (roofed in its tier's tiles or slate later), a log stack
+      // growing with the hut, a felled trunk and a sawhorse with a two-man saw in the yard, a chopping
+      // block with the axe left in it, and pines standing behind.
       const h = 9 + 2 * tier;
+      const cabin = { x: x + 0.15, y: y + 0.15, w: 1.05, d: 1.2 };
+      const cabinMat: Mat = { left: '#8a5a2e', right: '#6b4422', top: '#b98a5a', roof: '#8a5a2e', roofDark: '#553519' };
+      const courses: number[] = [];
+      for (let v = 2.4; v < h - 1; v += 2.6) courses.push(v);
       const pine = (px: number, py: number, size: number) => {
         const foot = iso(px, py);
         return (
           <Group key={`${String(px)}${String(py)}`}>
-            <Rect x={foot.x - 1} y={foot.y - 5} width={2} height={5} color="#5e4630" />
+            <Rect x={foot.x - 1.2} y={foot.y - 6} width={2.4} height={6} color="#5e4630" />
             {[0, 1, 2].map((layer) => {
               const half = size * (1 - layer * 0.28);
-              const base = foot.y - 4 - layer * size * 0.75;
+              const base = foot.y - 5 - layer * size * 0.75;
               return <Path key={layer} path={svgPath(poly([{ x: foot.x - half, y: base }, { x: foot.x + half, y: base }, { x: foot.x, y: base - size * 1.1 }]))} color={layer % 2 ? '#3f6a2e' : '#2f5a26'} />;
             })}
           </Group>
         );
       };
-      const block = iso(x + 0.66, y + 1.71, 4);
+      const block = iso(x + 0.66, y + 1.78, 4);
+      const horse = iso(x + 1.55, y + 1.72);
+      const trunkEnd = iso(x + 0.2, y + 1.62, 2.5);
       return (
         <Group>
-          {pine(x + 1.55, y + 0.12, 7)}
-          <Box x={x + 0.15} y={y + 0.15} w={1.1} d={1.25} h={h} m={MATS[0]} />
-          <Gable x={x + 0.08} y={y + 0.08} w={1.24} d={1.39} z={h} rise={7} m={tier >= 2 ? m : MATS[0]} along="y" />
-          <LeftFace x={x + 0.15} yFront={y + 1.4} u0={0.4} u1={0.7} v0={0} v1={h - 3} color={DARK} />
-          {Array.from({ length: 1 + tier }, (_, row) => (
-            <Box key={row} x={x + 1.4} y={y + 0.35} w={0.45} d={1.2} h={3} z={row * 3} m={LOGS} />
+          {pine(x + 0.3, y + 0.08, 9)}
+          {pine(x + 1.7, y + 0.1, 7)}
+          <Box x={cabin.x} y={cabin.y} w={cabin.w} d={cabin.d} h={h} m={cabinMat} />
+          {courses.map((v) => (
+            <Group key={v}>
+              <LeftFace x={cabin.x} yFront={cabin.y + cabin.d} u0={0} u1={cabin.w} v0={v} v1={v + 0.7} color="#553519" />
+              <RightFace xFront={cabin.x + cabin.w} y={cabin.y} u0={0} u1={cabin.d} v0={v} v1={v + 0.7} color="#3e2612" />
+              <Circle cx={iso(cabin.x + cabin.w, cabin.y + cabin.d, v - 1).x + 0.4} cy={iso(cabin.x + cabin.w, cabin.y + cabin.d, v - 1).y} r={1.5} color="#c9955c" />
+            </Group>
           ))}
-          <Box x={x + 0.55} y={y + 1.6} w={0.22} d={0.22} h={4} m={LOGS} />
+          <Gable x={cabin.x - 0.07} y={cabin.y - 0.07} w={cabin.w + 0.14} d={cabin.d + 0.14} z={h} rise={7} m={tier >= 2 ? m : MATS[0]} along="y" />
+          <LeftFace x={cabin.x} yFront={cabin.y + cabin.d} u0={0.38} u1={0.68} v0={0} v1={h - 3} color={DARK} />
+          {Array.from({ length: 2 + tier }, (_, row) => (
+            <Box key={row} x={x + 1.38} y={y + 0.4} w={0.5} d={1.15} h={3} z={row * 3} m={LOGS} />
+          ))}
+          {/* The felled trunk lying across the yard, its sawn end towards us. */}
+          <Box x={x + 0.2} y={y + 1.52} w={1.0} d={0.2} h={5} m={{ ...LOGS, top: '#a06a38' }} outline={false} />
+          <Circle cx={trunkEnd.x} cy={trunkEnd.y} r={2.6} color="#c9955c" />
+          <Circle cx={trunkEnd.x} cy={trunkEnd.y} r={1.2} color="#8a5a2e" />
+          {/* The sawhorse and the long two-man saw resting on it. */}
+          <Line p1={vec(horse.x - 4, horse.y)} p2={vec(horse.x, horse.y - 7)} strokeWidth={1.3} color="#8c6a3c" />
+          <Line p1={vec(horse.x + 4, horse.y)} p2={vec(horse.x, horse.y - 7)} strokeWidth={1.3} color="#8c6a3c" />
+          <Line p1={vec(horse.x - 11, horse.y - 2)} p2={vec(horse.x + 10, horse.y - 12)} strokeWidth={2.2} color="#c9ccd2" />
+          <Rect x={horse.x - 13} y={horse.y - 3} width={3} height={2} color="#8c6a3c" />
+          <Rect x={horse.x + 10} y={horse.y - 14} width={3} height={2} color="#8c6a3c" />
+          <Box x={x + 0.55} y={y + 1.68} w={0.22} d={0.22} h={4} m={LOGS} />
           <Line p1={vec(block.x, block.y - 1)} p2={vec(block.x + 6, block.y - 8)} strokeWidth={1.2} color="#8c6a3c" />
           <Rect x={block.x - 2.5} y={block.y - 3.5} width={4} height={2.5} color="#c9ccd2" />
-          {pine(x + 1.7, y + 1.75, 6)}
         </Group>
       );
     }
