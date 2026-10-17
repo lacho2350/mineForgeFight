@@ -28,7 +28,22 @@ jobs:
         continue-on-error: true
       - name: Test
         id: test
-        run: npm test -- --ci
+        # Failures are repeated as annotations (readable from the run page and the API without the log).
+        run: |
+          set -o pipefail
+          npm test -- --ci --json --outputFile=/tmp/jest.json 2>&1 | tail -n 120 || true
+          node -e '
+            const r = require("/tmp/jest.json");
+            for (const file of r.testResults) {
+              for (const t of file.assertionResults) {
+                if (t.status !== "failed") continue;
+                const msg = t.failureMessages.join(" | ").replace(/\u001b\[[0-9;]*m/g, "").replace(/\s+/g, " ").slice(0, 1500);
+                console.log(`::error file=${file.name.replace(process.cwd() + "/", "")},title=${t.fullName.replace(/[,:]/g, " ")}::${msg}`);
+              }
+              if (file.status === "failed" && file.assertionResults.length === 0) console.log(`::error file=${file.name.replace(process.cwd() + "/", "")}::${String(file.message).replace(/\u001b\[[0-9;]*m/g, "").replace(/\s+/g, " ").slice(0, 1500)}`);
+            }
+            process.exit(r.success ? 0 : 1);
+          '
         continue-on-error: true
       - name: Result
         if: steps.tsc.outcome != 'success' || steps.lint.outcome != 'success' || steps.test.outcome != 'success'
