@@ -652,7 +652,27 @@ src/
                            boxes/roofs painted back to front; every building in 4 looks by tier, its
                            material's `kind` dressing walls and roofs (`faceDressing`, `roofRows`):
                            plank huts under thatch, half-timbered plaster under red tiles, stone and
-                           dressed stone under slate; boxes and roofs outlined. Fortifications go
+                           dressed stone under slate; boxes and roofs outlined. Every building has a
+                           **signature** that says what it's for at map scale (since 2026-10-17):
+                           warehouse — hoist beam and loft door, crates/barrels/sacks on a loading
+                           apron; foundry — chimneys, wide glowing furnace mouth, ore heap, ingots;
+                           research — observatory dome and telescope from level 1, tall glass, blue
+                           pennant / gold armillary; armory — shield and crossed swords over the door,
+                           spear-and-shield rack; barracks — hall with banners and a drill yard (dummies,
+                           flagpole); guardhouse — brazier, steel-tipped pikes; archery — straw butts
+                           with targets and arrows, shooting-line posts; monastery — a *cloister*
+                           (hall with bell cote and cross, arcaded walk, garth with well), nothing tall,
+                           so it isn't mistaken for the church (tall spire at the front) or the paladin
+                           chapel (tower with the red-and-gold banner, sun finial, crossed swords);
+                           balloon works — hangar doors, iron gas-holder, mooring mast, tether to the
+                           live balloon; stables — paddock with horses, haystack, trough; granary — barn
+                           plus round silo, wheat sheaves, sacks; depot — cart bays and a big spare
+                           wheel; woodcutters — pines, log stack, axe in the block; forges — chimney,
+                           glow, anvil and hammer, racked blades; eyrie — nest on a crag and a pennant.
+                           Pennants are a legend: red on everything that raises troops (guardhouse,
+                           archery, barracks, stables, balloon works, armory, eyrie), blue on research,
+                           gold on the holy/last-tier ones; economy buildings fly none. `TALL` in
+                           `GameSceneLayout` must stay ≥ the tallest pixel of each look (taps). Fortifications go
                            from timber straight to stone (`fortMat`): a timber keep (tower with an
                            overhanging fighting platform), then a square stone keep with turrets,
                            then a fortress keep with round corner towers (`Cylinder`) and a central
