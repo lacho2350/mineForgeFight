@@ -10,7 +10,7 @@ import { raidSide, type RaidParty } from '../game/raids';
 import type { Roads } from '../game/roads';
 import { rocksLeft } from '../game/rocks';
 import type { Trap } from '../game/traps';
-import { FOOD_RESOURCES, MINE_RESOURCES, RESOURCES, type Resource } from '../game/resources';
+import { FOOD_RESOURCES, MINE_RESOURCES, RESOURCES } from '../game/resources';
 import { fellingStand, forestLook } from '../game/forest';
 import { FISHERY_IDS, PASTURE_IDS } from '../game/farms';
 import { ARMY_UNITS } from '../game/units';
@@ -54,7 +54,7 @@ import {
 import { EmptyPlot, PlacementGhost, Selection, type Ghost } from './stronghold/overlays';
 import { Gatehouse, Tower, WallSegment } from './stronghold/fortifications';
 import { BuildingArt, Campfire, Headframe, Parade, Scaffold } from './stronghold/buildingArt';
-import { Barges, LiveBits, PILE_STEPS, Piles, ProgressBar, Wagons } from './stronghold/live';
+import { Barges, LiveBits, ProgressBar, Wagons } from './stronghold/live';
 import { Flocks } from './stronghold/flocks';
 import { FishingBoats } from './stronghold/boats';
 import { fishingBoat } from '../game/boats';
@@ -145,11 +145,10 @@ function GameSceneCanvas({ width, height, camX, camY, zoom, selected, ghost, act
   const clock = useCityClock(active);
   const transform = useDerivedValue(() => [{ scale: zoom.get() }, { translateX: -camX.get() }, { translateY: -camY.get() }]);
 
-  // What the stores show, in steps: the warehouse's stockpile squares, the granary's piles.
-  const steps = (resources: readonly Resource[], capacity: number) => resources.map((resource) => Math.ceil(Math.min(1, warehouse[resource] / Math.max(1, capacity)) * PILE_STEPS)).join();
+  // What the stores show, in steps: the warehouse's stockpile squares, the granary's.
   const stockpile = stockpileSteps(STORE_RESOURCES, warehouse, warehouseCapacity);
   const granaryCapacity = buildingStats(buildings).granaryCapacity;
-  const foodPiles = steps(FOOD_RESOURCES, granaryCapacity);
+  const foodStock = stockpileSteps(FOOD_RESOURCES, warehouse, granaryCapacity);
   // Stores with no room left: their carts and carriers stay home.
   const full = [...(warehouse.wood >= warehouseCapacity ? ['wood'] : []), ...FOOD_RESOURCES.filter((food) => warehouse[food] >= granaryCapacity)].join(',');
   const parade = ARMY_UNITS.map((unit) => figuresFor(army[unit]));
@@ -167,12 +166,15 @@ function GameSceneCanvas({ width, height, camX, camY, zoom, selected, ghost, act
     const watched: Watched[] = [];
     if (selected && selectedPlot && selected !== 'wall' && selected !== 'moat') watched.push(watch(selectedPlot, selected));
     if (ghostPlot) watched.push(watch(ghostPlot));
-    // The warehouse tapped: it goes see-through itself, and so does anything in front of its stockpile.
-    if (selected === 'warehouse' && warehousePlot && buildings.warehouse > 0) watched.push(watch(stockpilePlot(warehousePlot, STORE_RESOURCES.length * SLOTS_PER_RESOURCE)));
+    // A store tapped (the warehouse, the granary): it goes see-through itself, and so does anything in
+    // front of its stockpile.
+    const store = selected === 'warehouse' ? { plot: warehousePlot, slots: STORE_RESOURCES.length } : selected === 'granary' ? { plot: granaryPlot, slots: FOOD_RESOURCES.length } : null;
+    const open = store?.plot && selected && buildings[selected] > 0 ? store.plot : null;
+    if (open) watched.push(watch(stockpilePlot(open, (store?.slots ?? 0) * SLOTS_PER_RESOURCE)));
     const faded: BuildingId[] = fadedBuildings(buildings, placements, watched);
-    if (selected === 'warehouse' && buildings.warehouse > 0 && !faded.includes('warehouse')) faded.push('warehouse');
+    if (open && selected && !faded.includes(selected)) faded.push(selected);
     return faded.sort();
-  }, [buildings, placements, selected, selectedPlot, ghostPlot, warehousePlot]);
+  }, [buildings, placements, selected, selectedPlot, ghostPlot, warehousePlot, granaryPlot]);
   const key = JSON.stringify([buildings, placements, roads, clearedRocks.length, traps, parade, building, raiders, faded]);
   // In two layers, each drawn in a step of its own: the ground, then everything standing on it.
   const still = useStillImage(key, STILL_SCALE, active, () => [
@@ -212,7 +214,7 @@ function GameSceneCanvas({ width, height, camX, camY, zoom, selected, ghost, act
       <Canvas style={styles.over}>
         <Group transform={transform}>
           {selected === 'warehouse' && warehousePlot && buildings.warehouse > 0 && <Stockpile resources={STORE_RESOURCES} steps={stockpile} plot={warehousePlot} />}
-          {granaryPlot && buildings.granary > 0 && <Piles resources={FOOD_RESOURCES} steps={foodPiles} plot={granaryPlot} />}
+          {selected === 'granary' && granaryPlot && buildings.granary > 0 && <Stockpile resources={FOOD_RESOURCES} steps={foodStock} plot={granaryPlot} />}
           {fadedPicture && fadedClip && (
             <Group clip={fadedClip} layer={<Paint opacity={FADED_OPACITY} />}>
               <Picture picture={fadedPicture} />

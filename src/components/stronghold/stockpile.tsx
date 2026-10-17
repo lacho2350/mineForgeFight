@@ -1,9 +1,10 @@
-// The warehouse's stockpile, Stronghold-style: the floor of the warehouse is a grid of squares, two to a
-// resource, each with its own place. Goods pile up on them as the stock grows — logs stacked, granite in
-// blocks, ores and coal in heaps, the precious things in chests, wool in bales — a square filling before
-// the next is started, so a full warehouse is a floor covered end to end. Seen when the warehouse is tapped
-// (the building is then drawn see-through, GameSceneCanvas). Drawn live (the stock changes often), in steps
-// so ordinary ticks don't redraw it.
+// A store's stockpile, Stronghold-style: the floor of the warehouse (or the granary) is a grid of squares,
+// two to a resource, each with its own place. Goods pile up on them as the stock grows — logs stacked,
+// granite in blocks, ores and coal in heaps, the precious things in chests, wool in bales; in the granary
+// fish in barrels, apples heaped, mutton in crates — a square filling before the next is started, so a
+// full store is a floor covered end to end. Seen when the store is tapped (the building is then drawn
+// see-through, GameSceneCanvas). Drawn live (the stock changes often), in steps so ordinary ticks don't
+// redraw it.
 import { memo } from 'react';
 import { Group, Path } from '@shopify/react-native-skia';
 import { RESOURCE_INFO, type Resource } from '../../game/resources';
@@ -15,28 +16,33 @@ import { poly, seg, type P } from './shapes';
 export const SLOTS_PER_RESOURCE = 2;
 /** A square's look changes in this many steps as it fills. */
 export const STACK_STEPS = 8;
-// The whole floor of the 5 × 5 plot, inside the walls (buildingArt draws the warehouse 0.15 in from its edges).
-const COLUMNS = 6;
-const SLOT_W = 0.78;
-const SLOT_D = 0.94;
-const YARD_Y = 0.15;
-const MARGIN_X = 0.15;
+// The whole floor of the plot, inside the walls (buildingArt draws the stores 0.15 in from their edges).
+const MARGIN = 0.15;
+/** How a store's floor is cut into `slots` squares: six across the warehouse's wide floor, a near-square grid on a small one. */
+function floorOf(plot: Plot, slots: number) {
+  const columns = plot.w >= 5 ? 6 : Math.max(1, Math.ceil(Math.sqrt(slots)));
+  const rows = Math.max(1, Math.ceil(slots / columns));
+  return { columns, rows, w: (plot.w - 2 * MARGIN) / columns, d: (plot.d - 2 * MARGIN) / rows };
+}
+type Floor = ReturnType<typeof floorOf>;
 const GROUND = 'rgba(96, 78, 52, 0.55)';
 const GROUND_LINE = 'rgba(236, 222, 180, 0.35)';
 
-type Look = 'logs' | 'blocks' | 'heap' | 'chest' | 'bale';
-const LOOKS: Partial<Record<Resource, Look>> = { wood: 'logs', granite: 'blocks', wool: 'bale', gold: 'chest', silver: 'chest', diamond: 'chest', emerald: 'chest', mithril: 'chest' };
+type Look = 'logs' | 'blocks' | 'heap' | 'chest' | 'bale' | 'barrel';
+const LOOKS: Partial<Record<Resource, Look>> = { wood: 'logs', granite: 'blocks', wool: 'bale', gold: 'chest', silver: 'chest', diamond: 'chest', emerald: 'chest', mithril: 'chest', fish: 'barrel', mutton: 'chest' };
 const lookOf = (resource: Resource): Look => LOOKS[resource] ?? 'heap';
 const CHEST = { side: '#6e4a2f', dark: '#4a2f1c', band: '#2a2620' };
 
-/** Where square `index` of a stockpile on `plot` stands on the map (its top-left corner, in tiles). */
-export function slotAt(plot: Plot, index: number): P {
-  return { x: plot.x + MARGIN_X + (index % COLUMNS) * SLOT_W, y: plot.y + YARD_Y + Math.floor(index / COLUMNS) * SLOT_D };
+/** Where square `index` of a stockpile of `slots` squares on `plot` stands on the map (its top-left corner, in tiles). */
+export function slotAt(plot: Plot, slots: number, index: number): P {
+  const floor = floorOf(plot, slots);
+  return { x: plot.x + MARGIN + (index % floor.columns) * floor.w, y: plot.y + MARGIN + Math.floor(index / floor.columns) * floor.d };
 }
 
 /** The yard's footprint (its goods reach `tall` pixels up), for telling what stands in front of it. */
 export function stockpilePlot(plot: Plot, slots: number): Plot {
-  return { x: plot.x + MARGIN_X, y: plot.y + YARD_Y, w: COLUMNS * SLOT_W, d: Math.ceil(slots / COLUMNS) * SLOT_D, tall: 16 };
+  const floor = floorOf(plot, slots);
+  return { x: plot.x + MARGIN, y: plot.y + MARGIN, w: floor.columns * floor.w, d: floor.rows * floor.d, tall: 16 };
 }
 
 /**
@@ -58,9 +64,9 @@ export function stockpileSteps(resources: readonly Resource[], stock: Partial<Re
 
 // The shapes of one square's goods at `fill` (0…1): four SVG strings — the lit faces, the shaded faces,
 // the top, and the lines drawn over them (log ends, mortar, the chest's band).
-function goods(look: Look, at: P, fill: number): [string, string, string, string] {
+function goods(look: Look, at: P, fill: number, floor: Floor): [string, string, string, string] {
   const [x0, y0] = [at.x + 0.06, at.y + 0.06];
-  const [w, d] = [SLOT_W - 0.12, SLOT_D - 0.12];
+  const [w, d] = [floor.w - 0.12, floor.d - 0.12];
   const box = (x: number, y: number, bw: number, bd: number, z: number, h: number): [string, string, string] => {
     const [A, B, C, D] = [iso(x, y, z + h), iso(x + bw, y, z + h), iso(x + bw, y + bd, z + h), iso(x, y + bd, z + h)];
     return [
@@ -114,6 +120,21 @@ function goods(look: Look, at: P, fill: number): [string, string, string, string
       }
       return [parts[0].join(' '), parts[1].join(' '), parts[2].join(' '), ''];
     }
+    case 'barrel': {
+      // Barrels, two by two, stacked two high past half full; hoops round each.
+      const count = Math.max(1, Math.ceil(fill * 4));
+      const parts: [string[], string[], string[], string[]] = [[], [], [], []];
+      for (let i = 0; i < Math.min(4, count); i += 1) {
+        const bx = (i % 2) * (w / 2);
+        const by = i < 2 ? d * 0.4 : d * 0.05;
+        const [lit, shade, top] = box(x0 + bx + 0.05, y0 + by, w / 2 - 0.1, d * 0.45, 0, 6);
+        parts[0].push(lit);
+        parts[1].push(shade);
+        parts[2].push(top);
+        for (const z of [1.5, 4.5]) parts[3].push(seg(iso(x0 + bx + 0.05, y0 + by + d * 0.45, z), iso(x0 + bx + w / 2 - 0.05, y0 + by + d * 0.45, z)));
+      }
+      return [parts[0].join(' '), parts[1].join(' '), parts[2].join(' '), parts[3].join(' ')];
+    }
     case 'chest': {
       // Chests, up to four to a square, stacked two high when it's past half full.
       const count = Math.max(1, Math.ceil(fill * 4));
@@ -133,14 +154,15 @@ function goods(look: Look, at: P, fill: number): [string, string, string, string
   }
 }
 
-/** The warehouse's stockpile: `steps` from `stockpileSteps`, on the warehouse's `plot`. */
+/** A store's stockpile: `steps` from `stockpileSteps`, on the store's `plot`. */
 export const Stockpile = memo(function Stockpile({ resources, steps, plot }: { resources: readonly Resource[]; steps: string; plot: Plot }) {
   const fills = steps.split(',').map(Number);
   const slots = resources.length * SLOTS_PER_RESOURCE;
+  const floor = floorOf(plot, slots);
   // The squares themselves: packed earth, outlined.
   const squares = Array.from({ length: slots }, (_, index) => {
-    const at = slotAt(plot, index);
-    return poly([iso(at.x, at.y), iso(at.x + SLOT_W, at.y), iso(at.x + SLOT_W, at.y + SLOT_D), iso(at.x, at.y + SLOT_D)]);
+    const at = slotAt(plot, slots, index);
+    return poly([iso(at.x, at.y), iso(at.x + floor.w, at.y), iso(at.x + floor.w, at.y + floor.d), iso(at.x, at.y + floor.d)]);
   }).join(' ');
   const svgs = [squares];
   const drawn: { resource: Resource; index: number }[] = [];
@@ -149,7 +171,7 @@ export const Stockpile = memo(function Stockpile({ resources, steps, plot }: { r
     if (step <= 0) continue;
     const resource = resources[Math.floor(index / SLOTS_PER_RESOURCE)];
     drawn.push({ resource, index });
-    svgs.push(...goods(lookOf(resource), slotAt(plot, index), step / STACK_STEPS));
+    svgs.push(...goods(lookOf(resource), slotAt(plot, slots, index), step / STACK_STEPS, floor));
   }
   const paths = useSvgPaths(svgs);
   return (
@@ -160,8 +182,8 @@ export const Stockpile = memo(function Stockpile({ resources, steps, plot }: { r
         const look = lookOf(resource);
         const info = RESOURCE_INFO[resource];
         const [lit, shade, top, lines] = [paths[1 + i * 4], paths[2 + i * 4], paths[3 + i * 4], paths[4 + i * 4]];
-        // Chests are wood with the goods' colour on the lid; everything else is the goods themselves.
-        const colors = look === 'chest' ? { lit: CHEST.side, shade: CHEST.dark, top: info.color, lines: CHEST.band } : { lit: info.color, shade: info.dark, top: info.light, lines: info.dark };
+        // Chests and barrels are wood with the goods' colour on the lid; everything else is the goods themselves.
+        const colors = look === 'chest' || look === 'barrel' ? { lit: CHEST.side, shade: CHEST.dark, top: info.color, lines: CHEST.band } : { lit: info.color, shade: info.dark, top: info.light, lines: info.dark };
         return (
           <Group key={index}>
             <Path path={lit} color={colors.lit} />

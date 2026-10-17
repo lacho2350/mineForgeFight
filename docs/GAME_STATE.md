@@ -188,7 +188,7 @@ game, and starts the 1-second simulation (`startSimulation()`).
   of it, three tenths if the raiders win — `ravage` in updates.ts). Barges buy fish and wool (not apples or
   mutton), and **barges only order resources in the warehouse now** (at least 1, and `discovered` — had in a
   stockpile; with nothing they'd buy in store, no barge comes that time). New games and older saves start with `STARTING_APPLES` 150. The top bar shows the food in store
-  (red with HUNGRY); the warehouse's piles on the map leave food out and the granary shows its own; the
+  (red with HUNGRY); the warehouse's stockpile leaves food out and the granary shows its own when tapped; the
   sheep are drawn live and graze their way about the field (`Flocks`, stronghold/flocks.tsx: one atlas,
   each sheep ambling to a spot near its patch every 6–11 s, grazing there, turning to face its way).
   **Fishing huts' boats** (`src/game/boats.ts`): from level 5 a hut fishes from a boat on the river in
@@ -228,7 +228,10 @@ game, and starts the 1-second simulation (`startSimulation()`).
   so the goods show inside; untapped, it's a building like any other). Looks by resource (`lookOf`): wood as stacked
   logs, granite as blocks in courses, ores and coal and salt and sulfur as heaps, gold / silver / diamonds /
   emeralds / mithril as chests (wood with the goods on the lid), wool as bales; in `STACK_STEPS` (8) steps
-  (`stockpileSteps` is the memo key), drawn live with `useSvgPaths`. The granary keeps the old `Piles`.
+  (`stockpileSteps` is the memo key), drawn live with `useSvgPaths`. **The granary works the same way** (since
+  2026-10-17; the old always-visible `Piles` are gone): tapped, it and what's in front of it go see-through and
+  its floor shows six squares (two per food, a near-square grid — `floorOf` cuts any store's floor): fish in
+  barrels, apples heaped, mutton in crates, filling against `granaryCapacity`.
   **Goods carried one by one** (`peasants.tsx`): every peasant's load is a sprite of the goods themselves —
   a sack in the resource's colour (lit, tied at the top), a bundle of logs, a basket of fish or apples —
   one cell per resource (`loadCell`); the haulers between the mine and the warehouse carry what the mine
@@ -708,7 +711,7 @@ src/
                            and `StaticScene` — each recorded in a step of its own and rasterised a strip
                            of rows per task, so a rebuild never freezes the game (keep fast-changing
                            things out of the key all the same); the live layer on top has the
-                           warehouse stockpile and granary piles, the see-through buildings' picture,
+                           warehouse and granary stockpiles (when tapped), the see-through buildings' picture,
                            progress bars, selection, a few animated bits (smoke,
                            balloons, flame, mine wheel, the river barges) and every peasant as one `Atlas` moved by a
                            single `useRSXformBuffer` worklet (haulers, staff errands, crews, idlers, and the
@@ -725,8 +728,8 @@ src/
                            boxes/roofs/towers/flags, shared colours), `backdrop`, `ground` (grass, rocks,
                            roads, traps, trees, raiders), `fortifications` (wall, towers, gatehouse),
                            `buildingArt` (every building, campfire, headframe, scaffolds, parade),
-                           `live` (the granary's piles, smoke, balloons, wheel, carts, barges, progress
-                           bars), `stockpile` (the warehouse's yard, below),
+                           `live` (smoke, balloons, wheel, carts, barges, progress
+                           bars), `stockpile` (the stores' floors, below),
                            `peasants` (the sprite atlas: one cell per outfit), `villagerLooks` (what
                            every villager wears by job — `jobOf(building)`: hauler, woodcutter, builder,
                            quarryman, fisher, shepherd, smith, scholar, armourer, docker, gatekeeper,

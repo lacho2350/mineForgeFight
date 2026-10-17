@@ -1,4 +1,4 @@
-// The live layer: what moves or changes often — stockpiles, smoke and balloons, the mine wheel, carts,
+// The live layer: what moves or changes often — smoke and balloons, the mine wheel, carts,
 // barges and progress bars.
 import { memo, useEffect, useMemo } from 'react';
 import { Circle, Group, Line, Path, Rect, vec } from '@shopify/react-native-skia';
@@ -12,48 +12,9 @@ import { wagonStops, type WagonJob } from '../../game/wagons';
 import { cartWay, type Roads } from '../../game/roads';
 import { RESOURCE_INFO, type Resource } from '../../game/resources';
 import { CAMPFIRE, TILE_HH, TILE_HW, iso, plotOf, type Plot } from '../GameSceneLayout';
-import { parseSvg, useSvgPaths } from '../skiaPaths';
+import { parseSvg } from '../skiaPaths';
 import { BANNER, DARK, ORIGIN, poly, tierOf, type P } from './shapes';
 import { CartArt, WHEEL } from './buildingArt';
-
-/** Stockpiles change look in steps, so ordinary ticks don't redraw the castle. */
-export const PILE_STEPS = 6;
-
-// A store's piles (the warehouse's, the granary's), one per resource, growing with the stock (in steps).
-// They change often, so they're drawn live instead of making the still image redraw.
-export const Piles = memo(function Piles({ resources, steps, plot }: { resources: readonly Resource[]; steps: string; plot: Plot }) {
-  const piles = steps.split(',').map(Number);
-  // In rows in front of the shed: four to a row on a small plot, spread over the yard (and a little
-  // bigger) on the warehouse's wide one.
-  const wide = plot.w >= 5;
-  const columns = wide ? Math.floor((plot.w - 0.3) / 0.75) : 4;
-  const across = wide ? (plot.w - 0.3) / columns : 0.7;
-  const scale = wide ? 1.2 : 1;
-  // Each pile a little pyramid: its two lit faces in the resource's colour, the two shaded ones darker.
-  const svgs = resources.flatMap((resource, index) => {
-    const fill = piles[index] / PILE_STEPS;
-    if (fill <= 0) return ['', ''];
-    const x = plot.x + 0.15 + (index % columns) * across;
-    const y = plot.y + (wide ? 2.5 : 1.45) + Math.floor(index / columns) * (wide ? 0.75 : 0.5);
-    const [w, d] = [0.55 * scale, 0.4 * scale];
-    const [A, B, C, D] = [iso(x, y), iso(x + w, y), iso(x + w, y + d), iso(x, y + d)];
-    const apex = iso(x + w / 2, y + d / 2, (3 + 9 * fill) * scale);
-    return [`${poly([A, D, apex])} ${poly([D, C, apex])}`, `${poly([A, B, apex])} ${poly([B, C, apex])}`];
-  });
-  const paths = useSvgPaths(svgs);
-  return (
-    <Group>
-      {resources.map((resource, index) =>
-        svgs[index * 2] ? (
-          <Group key={resource}>
-            <Path path={paths[index * 2]} color={RESOURCE_INFO[resource].color} />
-            <Path path={paths[index * 2 + 1]} color={RESOURCE_INFO[resource].dark} />
-          </Group>
-        ) : null,
-      )}
-    </Group>
-  );
-});
 
 /** Where the animated bits are: foundry smoke, balloons over the Balloon Works. */
 function liveAnchors(buildings: Record<BuildingId, number>, placements: Placements) {
