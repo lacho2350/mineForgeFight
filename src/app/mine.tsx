@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { router, useIsFocused } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { BackHandler, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { BackHandler, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { GameState } from '../game/state';
 import { haulWalk, minersByLevel, selectMineLayout, workforceOf } from '../game/hold';
@@ -155,16 +155,12 @@ export default function MineScreen() {
         }}
       />
 
-      {/* Top: back up to the city, the mine's numbers, live raids */}
+      {/* Top: the mine's numbers, live raids */}
       <View
         style={[styles.top, { paddingTop: insets.top + 8, paddingLeft: insets.left + 10, paddingRight: insets.right + 10, pointerEvents: 'box-none' }]}
         onLayout={(event) => setTopHeight(event.nativeEvent.layout.height)}
       >
         <View style={[styles.topRow, { pointerEvents: 'box-none' }]}>
-          <Pressable accessibilityRole="button" accessibilityLabel="Go up to the city" onPress={goToSurface} style={({ pressed }) => [styles.cityButton, pressed && styles.pressed]}>
-            <Text style={styles.cityIcon}>🏰</Text>
-            <Text style={styles.cityLabel}>CITY</Text>
-          </Pressable>
           <MineHud game={game} />
         </View>
         {showRaid && (
@@ -215,6 +211,8 @@ export default function MineScreen() {
         )}
         <Toast notice={game.notice} fresh />
         <View style={styles.toolbar}>
+          {/* Back up to the stronghold: first in the toolbar, under the thumb. */}
+          <ToolButton icon="🏰" label="CITY" accessibilityLabel="Go up to the city" onPress={goToSurface} />
           <ToolButton
             icon="⛏️"
             label={digMode ? 'DIGGING' : 'DIG'}
@@ -354,16 +352,6 @@ const styles = StyleSheet.create({
 
   top: { position: 'absolute', left: 0, right: 0, top: 0, gap: 8 },
   topRow: { alignSelf: 'center', width: '100%', maxWidth: 720, flexDirection: 'row', gap: 8 },
-  cityButton: {
-    width: 52,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: '#d2a45f',
-    backgroundColor: 'rgba(37, 35, 26, 0.94)',
-  },
-  cityIcon: { fontSize: 20, lineHeight: 24 },
-  cityLabel: { color: '#e9c475', fontFamily: 'monospace', fontSize: 9, fontWeight: '700' },
   hud: { flex: 1, flexDirection: 'row', justifyContent: 'space-between', gap: 8, padding: 10, borderWidth: 1, borderColor: '#3a4439', backgroundColor: 'rgba(17, 20, 16, 0.88)' },
   stat: { flexShrink: 1, gap: 2 },
   statLabel: { color: '#89907f', fontFamily: 'monospace', fontSize: 8 },
