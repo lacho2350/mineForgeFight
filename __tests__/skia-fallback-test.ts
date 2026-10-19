@@ -19,7 +19,7 @@ const stub = (name: string, value: unknown) => {
 let kit: Kit;
 let pageListeners: Record<string, () => void>;
 let resets: number;
-let spares: { width?: number; height?: number }[];
+let spares: { name: string; width?: number; height?: number }[];
 
 beforeEach(() => {
   pageListeners = {};
@@ -33,7 +33,7 @@ beforeEach(() => {
   stub('document', {
     addEventListener: (type: string, listener: () => void) => void (pageListeners[type] = listener),
     createElement: () => {
-      const spare = { name: 'spare' };
+      const spare: { name: string; width?: number; height?: number } = { name: 'spare' };
       spares.push(spare);
       return spare;
     },

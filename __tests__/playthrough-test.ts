@@ -93,7 +93,8 @@ function botTurn() {
     const spot = nearestFreeSpot(id, near, state.placements, BUILDING_NAMES, rockyTest(state.clearedRocks), onRoad, accessRoads(state.roads));
     if (spot) game().placeBuilding(id, spot);
   }
-  game().recruit('pikeman', 'max');
+  // A few soldiers at a time, never the hold's last hands.
+  if (game().population > 20) game().recruit('pikeman', 2);
   game().autoAssignCity();
 }
 
@@ -109,8 +110,14 @@ describe('playthroughs', () => {
     newGame();
     const startLevels = totalLevels();
     const startPopulation = game().population;
-    play(60, botTurn);
+    const trace: string[] = [];
+    play(60, (minute) => {
+      const state = game();
+      trace.push(`${String(minute)}m pop ${String(state.population)} mood ${String(Math.round(state.happiness))} gold ${String(Math.round(state.gold))} levels ${String(totalLevels(state))} hungry ${String(state.hungry)}`);
+      botTurn();
+    });
     const end = game();
+    if (end.population <= 0) throw new Error(`the hold emptied:\n${trace.join('\n')}`);
     expect(end.elapsedSeconds).toBeGreaterThanOrEqual(3600);
     // It got somewhere: more built, and the hold is still lived in.
     expect(totalLevels(end)).toBeGreaterThan(startLevels);

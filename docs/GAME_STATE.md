@@ -902,7 +902,7 @@ src/
   changes, gear deliveries, auto-resolve / orders / riding out), `mine-test` (galleries reach past the lift,
   digging under a main tunnel and joining the gallery below, the rock rule), `houses-test` (beds add up, the
   200 cap, houses offered in order), `miners-test` (idle peasants go mining and come back when buildings
-  need hands), `fade-test` (see-through buildings), `happiness-test` (the mood's factors, taxes, the buildings' coverage, leaving) and `save-test` (v2→v3 map growth, the old armory refund, the save guard, new houses on load) — the save tests load a fresh copy of the store over an in-memory
+  need hands), `fade-test` (see-through buildings), `happiness-test` (the mood's factors, taxes, the buildings' coverage, leaving), `skia-fallback-test` (the web WebGL→CPU fallback in `skiaWebFallback.ts`, with CanvasKit and the page stood in for), `playthrough-test` (whole stretches of play through the store — a bot building up for an hour, an absent player through 90 minutes of raids, cruel taxes driving peasants away and kindness bringing them back, a save/load mid-game, a campaign fought by the captains — checking every game minute for NaN, negative or over-capacity stock, happiness off 0–100, too many peasants) and `save-test` (v2→v3 map growth, the old armory refund, the save guard, new houses on load) — the save tests load a fresh copy of the store over an in-memory
   `localStorage`, so they never touch a real save.
 - **WebGL on the web** (since 2026-10-19): browsers refuse or take back WebGL contexts (hidden or embedded
   panes, blocklisted GPUs, too many GPU canvases, a GPU reset), and CanvasKit then throws ("failed to create
