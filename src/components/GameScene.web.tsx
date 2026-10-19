@@ -1,11 +1,14 @@
 import { WithSkiaWeb } from '@shopify/react-native-skia/lib/module/web';
 import { StyleSheet, View } from 'react-native';
+import { useSkiaRemountKey } from './skiaWebRemount';
 import type { GameSceneProps } from './GameSceneCanvas';
 
 export default function GameScene(props: GameSceneProps) {
+  const remount = useSkiaRemountKey();
   return (
     <View style={styles.viewport}>
       <WithSkiaWeb
+        key={remount}
         getComponent={() => import('./GameSceneCanvas')}
         componentProps={props}
         opts={{ locateFile: (file) => `https://cdn.jsdelivr.net/npm/canvaskit-wasm@0.41.0/bin/full/${file}` }}

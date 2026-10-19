@@ -1,12 +1,15 @@
 import { WithSkiaWeb } from '@shopify/react-native-skia/lib/module/web';
 import { StyleSheet, View } from 'react-native';
+import { useSkiaRemountKey } from './skiaWebRemount';
 import type { BattleBoardProps } from './BattleBoardCanvas';
 
 // On web, Skia (CanvasKit) loads lazily before the board can draw.
 export default function BattleBoard(props: BattleBoardProps) {
+  const remount = useSkiaRemountKey();
   return (
     <View style={{ width: props.layout.width, height: props.layout.height }}>
       <WithSkiaWeb
+        key={remount}
         getComponent={() => import('./BattleBoardCanvas')}
         componentProps={props}
         opts={{ locateFile: (file) => `https://cdn.jsdelivr.net/npm/canvaskit-wasm@0.41.0/bin/full/${file}` }}
