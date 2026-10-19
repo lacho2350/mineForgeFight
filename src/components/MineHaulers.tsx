@@ -14,8 +14,9 @@ const WORKER_WIDTH = 8 * WORKER_PIXEL;
 const WORKER_HEIGHT = 10 * WORKER_PIXEL;
 
 const colors = {
-  wood: '#7c4d2a',
-  woodDark: '#5a361d',
+  // The town's cut-log timber (stronghold/buildingArt.tsx LOGS), so the bins match its buildings.
+  wood: '#8a5a2e',
+  woodDark: '#553519',
   iron: '#8d939b',
   ironDark: '#5d636b',
   wheel: '#141416',
