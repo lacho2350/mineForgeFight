@@ -22,6 +22,18 @@ describe('wood', () => {
     expect(game().warehouse.wood).toBeCloseTo(before + 10 * 0.25 * 4, 5);
   });
 
+  it('starts a game with a cottage and a staffed woodcutter’s hut that can reach the forest', () => {
+    newGame({}, { keepStaffing: true });
+    expect(game().buildings.houses).toBeGreaterThanOrEqual(1);
+    expect(game().buildings.woodcutter).toBeGreaterThanOrEqual(1);
+    expect(spotOf('houses', game().placements)).not.toBeNull();
+    const hut = spotOf('woodcutter', game().placements);
+    if (!hut) throw new Error('the hut was not placed');
+    const walk = walkBetween({ ...hut, ...FOOTPRINTS.woodcutter }, { ...FOREST_EXIT, w: 1, d: 1 }, game().placements, game().roads, game().clearedRocks);
+    expect(walk).not.toBeNull();
+    expect(game().staffing.woodcutter ?? 0).toBeGreaterThan(0);
+  });
+
   it('starts a game with enough for the first tunnels', () => {
     newGame();
     expect(game().warehouse.wood).toBe(STARTING_WOOD);
@@ -59,12 +71,16 @@ describe('woodcutters’ huts', () => {
   it('go up to five, offered one at a time, and their wood adds up', () => {
     expect(WOODCUTTER_IDS).toHaveLength(5);
     newGame({ population: 40 });
-    expect(isShownBuilding(game(), 'woodcutter2')).toBe(false);
-    build({ woodcutter: 2 });
+    // A new game has the first hut, so the second is offered, and not the third until the second is built.
+    expect(isShownBuilding(game(), 'woodcutter')).toBe(true);
     expect(isShownBuilding(game(), 'woodcutter2')).toBe(true);
     expect(isShownBuilding(game(), 'woodcutter3')).toBe(false);
-    const one = buildingStats({ ...game().buildings, woodcutter: 2 }).woodPerSecond;
-    const three = buildingStats({ ...game().buildings, woodcutter: 2, woodcutter2: 2, woodcutter3: 2 }).woodPerSecond;
+    build({ woodcutter: 2, woodcutter2: 1 });
+    expect(isShownBuilding(game(), 'woodcutter3')).toBe(true);
+    expect(isShownBuilding(game(), 'woodcutter4')).toBe(false);
+    const base = { ...game().buildings, woodcutter2: 0, woodcutter3: 0 };
+    const one = buildingStats({ ...base, woodcutter: 2 }).woodPerSecond;
+    const three = buildingStats({ ...base, woodcutter: 2, woodcutter2: 2, woodcutter3: 2 }).woodPerSecond;
     expect(three).toBeCloseTo(3 * one, 5);
     for (const id of WOODCUTTER_IDS) expect(buildingCost(id, 5).resources.wood).toBeUndefined();
   });

@@ -22,7 +22,7 @@ export type ClearOrder = { tiles: string[]; work: number; done: number };
 
 // Ground that starts clear: the plaza round the keep (with the campfire and parade ground), the mine and
 // the yard between it and the warehouse, the first roads, and the first buildings' plots with a margin.
-const STARTING_BUILDINGS_PLACED: BuildingId[] = ['houses', 'warehouse', 'foundry', 'guardhouse'];
+const STARTING_BUILDINGS_PLACED: BuildingId[] = ['houses', 'woodcutter', 'warehouse', 'foundry', 'guardhouse'];
 const CLEAR_AT_START: Set<string> = (() => {
   const clear = new Set<string>();
   const area = (x0: number, y0: number, x1: number, y1: number) => {

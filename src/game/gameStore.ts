@@ -203,7 +203,7 @@ const gameState = (set: StoreApi<GameState>['setState']): GameState => ({
       const cost = tunnelCost(state, route);
       const wood = route.length * TUNNEL_WOOD;
       if (state.gold < cost) return { notice: `Tunnelling to that deposit costs ${String(cost)} gold (${String(route.length)} tiles).` };
-      if (state.warehouse.wood < wood) return { notice: `Tunnelling to that deposit takes ${String(wood)} wood for pit props: build a Woodcutter’s Hut.` };
+      if (state.warehouse.wood < wood) return { notice: `Tunnelling to that deposit takes ${String(wood)} wood for pit props: raise your Woodcutter’s Hut or build another.` };
       const stand = parseKey(route[route.length - 1]);
       const pending: Site = { row: stand.row, column: stand.column, faceRow: info.row, faceColumn: info.column, kind: 'deposit' };
       const crew = minerCrew(state, pending);
@@ -790,7 +790,7 @@ const gameState = (set: StoreApi<GameState>['setState']): GameState => ({
         break;
       }
       if (wood < TUNNEL_WOOD) {
-        reason = 'Not enough wood for pit props: build a Woodcutter’s Hut.';
+        reason = 'Not enough wood for pit props: raise your Woodcutter’s Hut or build another.';
         break;
       }
       gold -= cost;

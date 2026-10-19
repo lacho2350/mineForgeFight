@@ -203,6 +203,8 @@ export const STARTING_ROAD_RUNS: [number, number, number, number][] = [
 /** Where buildings stand that exist before the player places them (a new game's start, older saves). */
 export const DEFAULT_SPOTS: Partial<Record<BuildingId, Spot>> = {
   houses: { x: 18, y: 35 },
+  // Below the main road, left of the gate road its woodcutters take out to the forest.
+  woodcutter: { x: 25, y: 35 },
   warehouse: { x: 30, y: 34 },
   foundry: { x: 35, y: 35 },
   guardhouse: { x: 24, y: 29 },

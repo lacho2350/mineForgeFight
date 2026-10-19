@@ -17,9 +17,8 @@ import {
   TILE_HW,
   groundAt,
   iso,
+  pickBuilding,
   plotOf,
-  silhouette,
-  tapTargets,
   type Plot,
 } from './GameSceneLayout';
 
@@ -37,20 +36,6 @@ function toGround(sx: number, sy: number) {
   const b = (sy - ORIGIN_Y) / TILE_HH;
   return [(a + b) / 2, (b - a) / 2];
 }
-
-// Is (x, y) inside the polygon? (Even-odd ray casting.)
-function inside(points: { x: number; y: number }[], x: number, y: number) {
-  let hit = false;
-  for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
-    const a = points[i];
-    const b = points[j];
-    if (a.y > y !== b.y > y && x < ((b.x - a.x) * (y - a.y)) / (b.y - a.y) + a.x) hit = !hit;
-  }
-  return hit;
-}
-
-/** Empty plots are tapped on the ground; built ones anywhere on the building. */
-const EMPTY_TALL = 8;
 
 type Props = {
   buildings: Record<BuildingId, number>;
@@ -155,17 +140,14 @@ function CityView({
     setSize({ width, height });
   };
 
-  // A tap: while placing, where to put the building or trap; otherwise the front-most building whose
-  // outline holds the point, or else the ground (traps lie flat on it). The mine is entered by its button
-  // in the toolbar, not from the map.
+  // A tap: while placing, where to put the building or trap; otherwise the front-most building whose drawn
+  // shape holds the point (`pickBuilding`), or else the ground (traps lie flat on it). The mine is entered by
+  // its button in the toolbar, not from the map.
   const tapAt = (x: number, y: number) => {
     const at = groundAt(x, y);
     if (ghost) return onPlaceAt(at.x, at.y);
-    const targets = tapTargets(placements);
-    for (let index = targets.length - 1; index >= 0; index--) {
-      const { id, plot } = targets[index];
-      if (inside(silhouette(plot, buildings[id] > 0 ? plot.tall : EMPTY_TALL), x, y)) return onSelect(id);
-    }
+    const picked = pickBuilding(placements, buildings, x, y);
+    if (picked) return onSelect(picked);
     onTapGround(at.x, at.y);
   };
   // The building being placed, for drags that start on it: [x, y, w, d, height in px], or [].

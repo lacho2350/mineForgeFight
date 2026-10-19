@@ -60,7 +60,7 @@ export function Tower({ x, y, tier }: { x: number; y: number; tier: number }) {
       <Group>
         {[[0, 0.8], [0.8, 0.8], [0.8, 0]].map(([dx, dy]) => <Box key={`${String(dx)}${String(dy)}`} x={x + dx} y={y + dy} w={0.18} d={0.18} h={h - 10} m={m} />)}
         <Box x={x - 0.05} y={y - 0.05} w={1.1} d={1.1} h={8} z={h - 10} m={m} />
-        <Peasant x={top.x} y={top.y} tunic="#3f5f9a" />
+        <Peasant x={top.x} y={top.y} job="archer" />
         <Hip x={x - 0.05} y={y - 0.05} w={1.1} d={1.1} z={h - 2} rise={12} m={m} />
       </Group>
     );
@@ -72,7 +72,7 @@ export function Tower({ x, y, tier }: { x: number; y: number; tier: number }) {
     <Group>
       <Cylinder cx={x + 0.5} cy={y + 0.5} r={r} h={h} m={m} />
       <Rect x={slit.x - 0.8} y={slit.y - 4} width={1.6} height={7} color={DARK} />
-      <Peasant x={top.x} y={top.y} tunic="#3f5f9a" />
+      <Peasant x={top.x} y={top.y} job="archer" />
       {tier === 4 && <Flag x={x + 0.5} y={y + 0.5} z={h + 4} color={GOLD} />}
     </Group>
   );

@@ -188,7 +188,7 @@ game, and starts the 1-second simulation (`startSimulation()`).
   of it, three tenths if the raiders win — `ravage` in updates.ts). Barges buy fish and wool (not apples or
   mutton), and **barges only order resources in the warehouse now** (at least 1, and `discovered` — had in a
   stockpile; with nothing they'd buy in store, no barge comes that time). New games and older saves start with `STARTING_APPLES` 150. The top bar shows the food in store
-  (red with HUNGRY); the warehouse's piles on the map leave food out and the granary shows its own; the
+  (red with HUNGRY); the warehouse's stockpile leaves food out and the granary shows its own when tapped; the
   sheep are drawn live and graze their way about the field (`Flocks`, stronghold/flocks.tsx: one atlas,
   each sheep ambling to a spot near its patch every 6–11 s, grazing there, turning to face its way).
   **Fishing huts' boats** (`src/game/boats.ts`): from level 5 a hut fishes from a boat on the river in
@@ -228,7 +228,10 @@ game, and starts the 1-second simulation (`startSimulation()`).
   so the goods show inside; untapped, it's a building like any other). Looks by resource (`lookOf`): wood as stacked
   logs, granite as blocks in courses, ores and coal and salt and sulfur as heaps, gold / silver / diamonds /
   emeralds / mithril as chests (wood with the goods on the lid), wool as bales; in `STACK_STEPS` (8) steps
-  (`stockpileSteps` is the memo key), drawn live with `useSvgPaths`. The granary keeps the old `Piles`.
+  (`stockpileSteps` is the memo key), drawn live with `useSvgPaths`. **The granary works the same way** (since
+  2026-10-17; the old always-visible `Piles` are gone): tapped, it and what's in front of it go see-through and
+  its floor shows six squares (two per food, a near-square grid — `floorOf` cuts any store's floor): fish in
+  barrels, apples heaped, mutton in crates, filling against `granaryCapacity`.
   **Goods carried one by one** (`peasants.tsx`): every peasant's load is a sprite of the goods themselves —
   a sack in the resource's colour (lit, tied at the top), a bundle of logs, a basket of fish or apples —
   one cell per resource (`loadCell`); the haulers between the mine and the warehouse carry what the mine
@@ -280,7 +283,9 @@ game, and starts the 1-second simulation (`startSimulation()`).
   level built or being built) comes back, resources capped by warehouse room. A forge's goods go back to
   the store; pulling down the depot calls every cart back (`undoWagonTrip`), the docks send every waiting
   barge away. `cancelConstruction(id)` stops a level being built (STOP BUILDING, tapped twice): all it cost
-  comes back, the crew's work is lost, and a building that was never finished leaves its plot. A new game starts with houses, warehouse, foundry and guardhouse on `DEFAULT_SPOTS`.
+  comes back, the crew's work is lost, and a building that was never finished leaves its plot. A new game starts with a cottage (`houses`), the first woodcutter's hut (since 2026-10-17, at 25,35 below
+  the main road, left of the gate road its woodcutters take to the forest — staffed, so wood comes in from the
+  start), warehouse, foundry and guardhouse on `DEFAULT_SPOTS`.
 - **Rocks** (`src/game/rocks.ts`): the town starts mostly under rocks — about 4 in 5 tiles outside the
   ground that starts clear (the plaza round the keep, the mine and its yard, the starting roads and the
   starting buildings' plots); stones / rocks / boulders (`startingRock(x, y)`, a hash of the tile).
@@ -652,7 +657,30 @@ src/
                            boxes/roofs painted back to front; every building in 4 looks by tier, its
                            material's `kind` dressing walls and roofs (`faceDressing`, `roofRows`):
                            plank huts under thatch, half-timbered plaster under red tiles, stone and
-                           dressed stone under slate; boxes and roofs outlined. Fortifications go
+                           dressed stone under slate; boxes and roofs outlined. Every building has a
+                           **signature** that says what it's for at map scale (since 2026-10-17):
+                           warehouse — hoist beam and loft door, crates/barrels/sacks on a loading
+                           apron; foundry — chimneys, wide glowing furnace mouth, ore heap, ingots;
+                           research — observatory dome and telescope from level 1, tall glass, blue
+                           pennant / gold armillary; armory — shield and crossed swords over the door,
+                           spear-and-shield rack; barracks — hall with banners and a drill yard (dummies,
+                           flagpole); guardhouse — brazier, steel-tipped pikes; archery — straw butts
+                           with targets and arrows, shooting-line posts; monastery — a *cloister*
+                           (hall with bell cote and cross, arcaded walk, garth with well), nothing tall,
+                           so it isn't mistaken for the church (tall spire at the front) or the paladin
+                           chapel (tower with the red-and-gold banner, sun finial, crossed swords);
+                           balloon works — hangar doors, iron gas-holder, mooring mast, tether to the
+                           live balloon; stables — paddock with horses, haystack, trough; granary — barn
+                           plus round silo, wheat sheaves, sacks; depot — cart bays and a big spare
+                           wheel; cottages — hearth chimney at every level, lit shuttered window,
+                           picket fence with flowers; woodcutters — a true log cabin (log courses,
+                           notched corners), felled trunk, sawhorse and two-man saw, log stack, axe in
+                           the block, pines; forges — chimney,
+                           glow, anvil and hammer, racked blades; eyrie — nest on a crag and a pennant.
+                           Pennants are a legend: red on everything that raises troops (guardhouse,
+                           archery, barracks, stables, balloon works, armory, eyrie), blue on research,
+                           gold on the holy/last-tier ones; economy buildings fly none. `TALL` in
+                           `GameSceneLayout` must stay ≥ the tallest pixel of each look (taps). Fortifications go
                            from timber straight to stone (`fortMat`): a timber keep (tower with an
                            overhanging fighting platform), then a square stone keep with turrets,
                            then a fortress keep with round corner towers (`Cylinder`) and a central
@@ -685,7 +713,7 @@ src/
                            and `StaticScene` — each recorded in a step of its own and rasterised a strip
                            of rows per task, so a rebuild never freezes the game (keep fast-changing
                            things out of the key all the same); the live layer on top has the
-                           warehouse stockpile and granary piles, the see-through buildings' picture,
+                           warehouse and granary stockpiles (when tapped), the see-through buildings' picture,
                            progress bars, selection, a few animated bits (smoke,
                            balloons, flame, mine wheel, the river barges) and every peasant as one `Atlas` moved by a
                            single `useRSXformBuffer` worklet (haulers, staff errands, crews, idlers, and the
@@ -702,27 +730,42 @@ src/
                            boxes/roofs/towers/flags, shared colours), `backdrop`, `ground` (grass, rocks,
                            roads, traps, trees, raiders), `fortifications` (wall, towers, gatehouse),
                            `buildingArt` (every building, campfire, headframe, scaffolds, parade),
-                           `live` (the granary's piles, smoke, balloons, wheel, carts, barges, progress
-                           bars), `stockpile` (the warehouse's yard, below),
-                           `peasants` (the sprite atlas), `housewives` (the cottages' women on their
+                           `live` (smoke, balloons, wheel, carts, barges, progress
+                           bars), `stockpile` (the stores' floors, below),
+                           `peasants` (the sprite atlas: one cell per outfit), `villagerLooks` (what
+                           every villager wears by job — `jobOf(building)`: hauler, woodcutter, builder,
+                           quarryman, fisher, shepherd, smith, scholar, armourer, docker, gatekeeper,
+                           soldier, archer, monk, priest, acolyte, groom, engineer, falconer, miller,
+                           entertainer; idlers in plain tunics — as Skia-free rects), `housewives` (the cottages' women on their
                            errands), `overlays` (plots, selection, placement
                            ghost) and `stillImage` (`useStillImage`, `picturesToImage`).
     GameSceneLayout.ts     drawing the tile map: `iso()` / `groundAt()` projection, `plotOf()` (plots from
                            placements), doors and peasant routes, silhouettes and the depth-ordered
                            tap list (the wall is tapped at the front end of its left run);
-                           ORIGIN_X / ORIGIN_Y for worklets
+                           **tapping** (`pickBuilding`, since 2026-10-17): the front-most building whose
+                           *drawn* shape holds the tap (`tapShape`: as tall as it is at its tier —
+                           `tapHeight` = 70% of `TALL` at tier 1, all of it at tier 4 —, set in 0.12 tile
+                           from its plot's edges like the art, walls to 62% of that height and a roof
+                           narrowing to its ridge), else the building whose footprint is under the finger,
+                           else the ground. (The old test used the plot's full box at the tallest tier's
+                           height, so a building in front caught taps meant for its neighbours.)
+                           `pick-test`; ORIGIN_X / ORIGIN_Y for worklets
     buildingIcons.ts       an emoji icon per building and per trap (build palette, trap bar)
     TechTree.tsx           the tech tree (all branches) and one branch with its tiers, details, Research
     BattleBoard(.web).tsx, BattleBoardCanvas.tsx   battlefield (Skia): hexes, wall/gate, towers, sprites
     battleLayout.ts        hex geometry for the board, taps and labels (Skia-free)
     battlePlayback.ts      an action laid out in time: walk tracks, lunges, shots, hits (Skia-free; worklet poses)
     skiaPaths.ts           who owns a Skia path: parse once, held by a component, or freed with a drawing
-    unitSprites.ts         12×12 pixel sprites for all 16 creatures (also the army on parade)
+    unitSprites.ts         16×16 shaded pixel sprites for all 16 creatures, each with its gear (pike and
+                           kettle hat, crossbow and quiver, shield with a cross, glowing staff, lance and
+                           pennant, plume and sun, tusks, the cyclops' boulder…); drawn as row runs
+                           (`spriteRuns`, mirrored for the hold's side) on the battle board, the parade and
+                           the raiders (`FIGURE_PIXEL` sets their size on the castle map)
     RaidBanner.tsx         raid status banner on both main screens, kept to a title and one line (kind ·
                            side · clock; party · strength vs yours); rules, traps and the auto-resolve
                            switch live in the War panel
     CityView.tsx           the stronghold's full-screen map: camera (shared values), gestures, wheel,
-                           +/− buttons, tap hit-testing on building silhouettes (else `onTapGround`, for
+                           +/− buttons, taps (`pickBuilding` in GameSceneLayout; else `onTapGround`, for
                            traps), dragging the building being placed (judged by the press point,
                            `onBegin`), paint strokes for roads/traps, right/middle-drag pan, level badges
     Sheet.tsx              pop-up panel (slides up, scrolls, closes on ✕ or backdrop)

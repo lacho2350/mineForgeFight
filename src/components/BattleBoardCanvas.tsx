@@ -6,7 +6,7 @@ import { BATTLE_COLS, BATTLE_ROWS, GATE_ROW, MOAT_COL, WALL_COL, inMoat, isAlive
 import type { UnitId } from '../game/units';
 import { hexCenter, hexPath, type BoardLayout } from './battleLayout';
 import { strikeFlash, strikeFlight, trackOpacity, trackPose, type Playback, type Strike, type Track } from './battlePlayback';
-import { SPRITE_SIZE, spritePixels } from './unitSprites';
+import { SPRITE_SIZE, spriteRuns } from './unitSprites';
 import { useSvgPaths } from './skiaPaths';
 
 export type BattleBoardProps = {
@@ -179,18 +179,11 @@ const UnitSprite = memo(function UnitSprite({ unit, size, mirror }: { unit: Unit
   const pixel = (size * 1.45) / SPRITE_SIZE;
   const left = -(SPRITE_SIZE / 2) * pixel;
   const top = -SPRITE_SIZE * 0.62 * pixel;
-  const pixels = useMemo(() => spritePixels(unit), [unit]);
+  const runs = useMemo(() => spriteRuns(unit, mirror), [unit, mirror]);
   return (
     <Group>
-      {pixels.map((p, index) => (
-        <Rect
-          key={index}
-          x={left + (mirror ? SPRITE_SIZE - 1 - p.x : p.x) * pixel}
-          y={top + p.y * pixel}
-          width={pixel + 0.3}
-          height={pixel + 0.3}
-          color={p.color}
-        />
+      {runs.map((run, index) => (
+        <Rect key={index} x={left + run.x * pixel} y={top + run.y * pixel} width={run.w * pixel + 0.3} height={pixel + 0.3} color={run.color} />
       ))}
     </Group>
   );
