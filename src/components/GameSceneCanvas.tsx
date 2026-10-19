@@ -1,3 +1,4 @@
+import './skiaWebFallback';
 import { memo, useMemo, type ReactNode } from 'react';
 import { BlurMask, Canvas, Group, Image, Paint, Path, Picture, Rect, Skia } from '@shopify/react-native-skia';
 import { PixelRatio, StyleSheet, View } from 'react-native';
