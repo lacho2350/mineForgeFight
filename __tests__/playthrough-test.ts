@@ -5,7 +5,7 @@
 import { BUILDING_IDS } from '../src/game/buildings';
 import { isPlaceable, nearestFreeSpot, tileKey } from '../src/game/cityMap';
 import { upgradeBlocker } from '../src/game/costs';
-import { FOODS } from '../src/game/farms';
+import { FOODS, isFarm } from '../src/game/farms';
 import { useGameStore } from '../src/game/gameStore';
 import { MAX_HAPPINESS, moodWord } from '../src/game/happiness';
 import { BUILDING_NAMES } from '../src/game/hold';
@@ -76,26 +76,39 @@ function play(minutes: number, each?: (minute: number) => void) {
 
 const totalLevels = (state: GameState = game()) => BUILDING_IDS.reduce((sum, id) => sum + state.buildings[id], 0);
 
+const foodInStore = (state: GameState = game()) => FOODS.reduce((sum, food) => sum + state.warehouse[food], 0);
+
+/** Farms first: a sensible player feeds the hold before anything else. */
+const BOT_ORDER = [...BUILDING_IDS.filter(isFarm), ...BUILDING_IDS.filter((id) => !isFarm(id))];
+
 /** A simple player: staffs the city and the mine, then starts whatever it can — upgrades first, new buildings
- * on the nearest free spot to the warehouse — and recruits pikemen with what's spare. */
-function botTurn() {
-  game().autoAssignCity();
-  game().autoAssignMine();
-  for (const id of BUILDING_IDS) {
-    const state = game();
-    if (upgradeBlocker(state, id)) continue;
-    if (state.buildings[id] > 0 || state.placements[id] || !isPlaceable(id)) {
-      game().upgradeBuilding(id);
-      continue;
+ * on the nearest free spot to the warehouse, farms before anything else and only farms while the larder runs
+ * down — and recruits a few pikemen when the hold can spare them. */
+function makeBot() {
+  let lastFood = foodInStore();
+  return () => {
+    game().autoAssignCity();
+    game().autoAssignMine();
+    const food = foodInStore();
+    const short = game().hungry || food < lastFood || food < game().population * 3;
+    lastFood = food;
+    for (const id of BOT_ORDER) {
+      if (short && !isFarm(id)) break;
+      const state = game();
+      if (upgradeBlocker(state, id)) continue;
+      if (state.buildings[id] > 0 || state.placements[id] || !isPlaceable(id)) {
+        game().upgradeBuilding(id);
+        continue;
+      }
+      const near = state.placements.warehouse ?? { x: 31, y: 30 };
+      const onRoad = (x: number, y: number) => !!state.roads[tileKey(x, y)];
+      const spot = nearestFreeSpot(id, near, state.placements, BUILDING_NAMES, rockyTest(state.clearedRocks), onRoad, accessRoads(state.roads));
+      if (spot) game().placeBuilding(id, spot);
     }
-    const near = state.placements.warehouse ?? { x: 31, y: 30 };
-    const onRoad = (x: number, y: number) => !!state.roads[tileKey(x, y)];
-    const spot = nearestFreeSpot(id, near, state.placements, BUILDING_NAMES, rockyTest(state.clearedRocks), onRoad, accessRoads(state.roads));
-    if (spot) game().placeBuilding(id, spot);
-  }
-  // A few soldiers at a time, never the hold's last hands.
-  if (game().population > 20) game().recruit('pikeman', 2);
-  game().autoAssignCity();
+    // A few soldiers at a time, never the hold's last hands.
+    if (!short && game().population > 20) game().recruit('pikeman', 2);
+    game().autoAssignCity();
+  };
 }
 
 describe('playthroughs', () => {
@@ -110,11 +123,12 @@ describe('playthroughs', () => {
     newGame();
     const startLevels = totalLevels();
     const startPopulation = game().population;
+    const bot = makeBot();
     const trace: string[] = [];
     play(60, (minute) => {
       const state = game();
       trace.push(`${String(minute)}m pop ${String(state.population)} mood ${String(Math.round(state.happiness))} gold ${String(Math.round(state.gold))} levels ${String(totalLevels(state))} hungry ${String(state.hungry)}`);
-      botTurn();
+      bot();
     });
     const end = game();
     if (end.population <= 0) throw new Error(`the hold emptied:\n${trace.join('\n')}`);
@@ -173,7 +187,8 @@ describe('playthroughs', () => {
 
   it('a game saved and loaded mid-play carries on as if nothing happened', () => {
     newGame();
-    play(20, botTurn);
+    const bot = makeBot();
+    play(20, bot);
     const before = game();
     // The save is plain JSON: write it out and read it back into a fresh store state.
     const saved = JSON.parse(JSON.stringify(before)) as Parameters<typeof mergeSave>[0];
@@ -189,7 +204,7 @@ describe('playthroughs', () => {
     expect(after.taxRate).toBe(before.taxRate);
     expect(after.placements).toEqual(before.placements);
     // … and the game goes on from there.
-    play(20, botTurn);
+    play(20, bot);
     expect(game().elapsedSeconds).toBeGreaterThanOrEqual(before.elapsedSeconds + 1200);
   });
 
