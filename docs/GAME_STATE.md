@@ -635,6 +635,11 @@ src/
     MineViewport.tsx       camera (pan/pinch/wheel/keys; scrolls clear of the bars over the map), view
                            culling, dig drag, taps, labels, haul clock, pickaxe layer, zoom buttons
     MineSceneCanvas.tsx    the Skia canvas: terrain chunks, carts, miners, bins, dig overlay
+    mineSurface.ts         the mine's surface strip (rows 0–1) in the stronghold's look: grey snowy mountains and green
+                           hills, a grass verge and dirt road, and the headhouse (plaster + red tiles on stone, timber
+                           headframe and wheel), plank-and-thatch storehouse (banner, logs) and cottage (chimney, picket
+                           fence) drawn with the town's materials (stronghold/shapes.tsx MATS), outlined; drawn once
+                           into a picture by mineTerrain.ts
     mineTerrain.ts         terrain renderer: tiles, fog, and cached block images (16 × 4 tiles) with
                            dirty tracking so a change only redraws nearby blocks
     MineHaulers.tsx        carts + haulers, miner bins, mine-exit bins (Skia pictures)
