@@ -1,3 +1,4 @@
+import './skiaWebFallback';
 import { memo, useMemo } from 'react';
 import { Canvas, Circle, Group, Path, Rect } from '@shopify/react-native-skia';
 import { StyleSheet, View } from 'react-native';

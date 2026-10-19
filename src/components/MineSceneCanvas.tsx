@@ -1,3 +1,4 @@
+import './skiaWebFallback';
 import { memo, useEffect, useMemo, useState } from 'react';
 import {
   Canvas,

@@ -184,7 +184,8 @@ const styles = StyleSheet.create({
   nodeWon: { borderColor: '#d2a45f', backgroundColor: '#3a3220' },
   nodeNext: { borderColor: '#e8604a', backgroundColor: '#3a2016' },
   nodeLocked: { borderColor: '#4a4536', backgroundColor: '#201d16' },
-  nodePicked: { borderColor: '#f3d27a', shadowColor: '#f3d27a', shadowOpacity: 0.6, shadowRadius: 6, elevation: 4 },
+  // A glow round the picked site (`boxShadow`: the shadow* props are deprecated on the web, and this draws the same everywhere).
+  nodePicked: { borderColor: '#f3d27a', boxShadow: '0 0 6px rgba(243, 210, 122, 0.6)' },
   nodeIcon: { fontSize: 16, lineHeight: 20 },
   nodeNumber: { position: 'absolute', bottom: -7, right: -4, minWidth: 16, textAlign: 'center', paddingHorizontal: 3, backgroundColor: '#1b1810', color: '#c9c4b2', fontFamily: 'monospace', fontSize: 9, fontWeight: '700', borderRadius: 3 },
   nodeNumberWon: { backgroundColor: '#d2a45f', color: '#20231b' },
