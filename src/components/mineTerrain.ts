@@ -17,6 +17,7 @@ import {
 } from '../game/mineLayout';
 import { RESOURCE_INFO } from '../game/resources';
 import { freeAfterDrawn } from './skiaPaths';
+import { drawMineSurface } from './mineSurface';
 
 // Deep Corp–style terrain: bright orange earth seen from the side, narrow dark tunnels,
 // and blocky darkness over everything that is not near a dug tile.
@@ -24,11 +25,6 @@ import { freeAfterDrawn } from './skiaPaths';
 const T = MINE_TILE_SIZE;
 
 const palette = {
-  skyTop: '#f1ddb3',
-  skyBottom: '#e8c88f',
-  mesa: '#d49a5e',
-  mesaShade: '#bf8350',
-  topsoil: '#d8955a',
   dirtShallow: [0xc8, 0x7d, 0x3e],
   dirtDeep: [0x8e, 0x4b, 0x27],
   tunnel: '#2b221c',
@@ -397,49 +393,6 @@ function drawPlayerTile(p: Painter, layout: MineLayout, row: number, column: num
   if (isSite || (!up && h % 5 === 0)) drawLantern(p, x + 24, 12);
 }
 
-function drawSurface(p: Painter) {
-  const height = T * MINE_SURFACE_ROWS;
-  const groundY = height - 14;
-  p.rect(0, 0, MINE_MAP_WIDTH, height, palette.skyTop);
-  p.rect(0, 30, MINE_MAP_WIDTH, height - 30, palette.skyBottom);
-  // Distant mesas.
-  for (let column = 0; column < MINE_COLUMNS; column += 1) {
-    const h = hash(0, column, 40);
-    const top = 38 + (h % 22);
-    p.rect(column * T, top, T, groundY - top, palette.mesa);
-    p.rect(column * T, top, T, 4, palette.mesaShade);
-  }
-  p.rect(0, groundY, MINE_MAP_WIDTH, height - groundY, palette.topsoil);
-  p.rect(0, groundY, MINE_MAP_WIDTH, 3, '#e8b077');
-
-  // Headhouse over the lift.
-  const houseX = MINE_SHAFT_COLUMN * T - 22;
-  const houseW = T + 44;
-  p.rect(houseX, 34, houseW, groundY - 34, palette.wood);
-  for (let y = 40; y < groundY; y += 8) p.rect(houseX, y, houseW, 1, palette.woodDark);
-  for (let step = 0; step < 4; step += 1) {
-    p.rect(houseX - 4 + step * 8, 30 - step * 6, houseW + 8 - step * 16, 6, palette.woodDark);
-  }
-  p.rect(MINE_SHAFT_COLUMN * T + 10, 52, T - 20, groundY - 52, palette.shaft);
-  p.rect(houseX + 18, 38, houseW - 36, 9, '#e3c38a');
-  p.rect(houseX + 22, 41, houseW - 44, 3, palette.woodDark);
-
-  // Storage shed and a small cabin, placed relative to the lift.
-  const shedX = (MINE_SHAFT_COLUMN - 5) * T;
-  p.rect(shedX, 50, T * 2, groundY - 50, palette.woodLight);
-  p.rect(shedX - 4, 44, T * 2 + 8, 7, palette.woodDark);
-  p.rect(shedX + 34, 62, 28, groundY - 62, palette.woodDark);
-  const cabinX = (MINE_SHAFT_COLUMN + 15) * T + 10; // leaves room for the twelve exit stockpiles beside the headhouse
-  p.rect(cabinX, 58, T + 10, groundY - 58, palette.wood);
-  p.rect(cabinX - 4, 52, T + 18, 7, palette.woodDark);
-  p.rect(cabinX + 10, 66, 12, 10, '#3b2a1c');
-  // Fence posts.
-  for (let column = MINE_SHAFT_COLUMN + 17; column < MINE_SHAFT_COLUMN + 22; column += 1) {
-    p.rect(column * T + 8, groundY - 12, 4, 12, palette.woodDark);
-    p.rect(column * T, groundY - 9, T, 3, palette.wood);
-  }
-}
-
 // Draw columns [from, to) of one 48px map row, in map x and row-local y (0 to T).
 function drawRow(canvas: SkCanvas, row: number, from: number, to: number, layout: MineLayout) {
   const p = painter(canvas);
@@ -518,7 +471,7 @@ export function keepBlocksInView(count: number) {
 let surfacePicture: SkPicture | null = null;
 
 function getSurfacePicture(): SkPicture {
-  surfacePicture ??= createPicture((canvas) => drawSurface(painter(canvas)), Skia.XYWHRect(0, 0, MINE_MAP_WIDTH, T * MINE_SURFACE_ROWS));
+  surfacePicture ??= createPicture((canvas) => drawMineSurface(canvas), Skia.XYWHRect(0, 0, MINE_MAP_WIDTH, T * MINE_SURFACE_ROWS));
   return surfacePicture;
 }
 
