@@ -8,6 +8,8 @@ import { useGameStore } from '../src/game/gameStore';
 import { houseBeds } from '../src/game/houses';
 import { build, game, newGame, run, warehouseWith } from './support';
 import { fillStaffing } from '../src/game/hold';
+import { foodStore } from '../src/game/homes';
+import { hasRoadAccess } from '../src/game/roads';
 
 // Place and build these, and staff them as far as the peasants go (the player would press 👷).
 const place = (spots: Record<string, { x: number; y: number }>, levels: Record<string, number>, extra = {}) => {
@@ -109,5 +111,20 @@ describe('raids on the land outside the walls', () => {
     expect(game().raidReport?.outcome).toBe('lost');
     expect(game().flocks.pasture1).toBeLessThan(20 - 5);
     expect(game().buildings.fishery1).toBe(2);
+  });
+});
+
+describe('a new game', () => {
+  it('starts with a staffed granary holding two kinds of food, reachable by road', () => {
+    newGame();
+    const { buildings, placements, warehouse } = game();
+    expect(buildings.granary).toBe(1);
+    expect(placements.granary).toBeTruthy();
+    expect(warehouse.apples).toBeGreaterThan(0);
+    expect(warehouse.fish).toBeGreaterThan(0);
+    expect(fillStaffing(game()).granary).toBeGreaterThan(0);
+    expect(hasRoadAccess('granary', placements.granary as { x: number; y: number }, game().roads)).toBe(true);
+    // The peasants' food store is the granary from the start.
+    expect(foodStore(buildings, placements)).toEqual({ ...placements.granary, ...FOOTPRINTS.granary });
   });
 });

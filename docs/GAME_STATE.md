@@ -187,7 +187,7 @@ game, and starts the 1-second simulation (`startSimulation()`).
   level and gives 0.01 mutton and 0.006 wool a sheep a second; every raid from its side drives off a tenth
   of it, three tenths if the raiders win — `ravage` in updates.ts). Barges buy fish and wool (not apples or
   mutton), and **barges only order resources in the warehouse now** (at least 1, and `discovered` — had in a
-  stockpile; with nothing they'd buy in store, no barge comes that time). New games and older saves start with `STARTING_APPLES` 150. The top bar shows the food in store
+  stockpile; with nothing they'd buy in store, no barge comes that time). New games and older saves start with `STARTING_APPLES` 150; **a new game also starts with a level-1 granary** (at 20,30, just above the main road, staffed) holding those apples and `STARTING_FISH` 60, so the larder has two kinds of food from the start. The top bar shows the food in store
   (red with HUNGRY); the warehouse's stockpile leaves food out and the granary shows its own when tapped; the
   sheep are drawn live and graze their way about the field (`Flocks`, stronghold/flocks.tsx: one atlas,
   each sheep ambling to a spot near its patch every 6–11 s, grazing there, turning to face its way).
