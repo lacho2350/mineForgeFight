@@ -206,6 +206,8 @@ export const DEFAULT_SPOTS: Partial<Record<BuildingId, Spot>> = {
   // Below the main road, left of the gate road its woodcutters take out to the forest.
   woodcutter: { x: 25, y: 35 },
   warehouse: { x: 30, y: 34 },
+  // Just above the main road, west of the guardhouse: near the cottage it feeds.
+  granary: { x: 20, y: 30 },
   foundry: { x: 35, y: 35 },
   guardhouse: { x: 24, y: 29 },
   research: { x: 17, y: 22 },

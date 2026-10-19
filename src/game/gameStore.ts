@@ -5,7 +5,7 @@ import { MINE_GALLERY_COUNT, MINE_STATIONS } from '../components/MineMapLayout';
 import { cartsOnLevel } from './haulage';
 import { RESOURCES, RESOURCE_INFO, STARTING_WOOD, emptyStock } from './resources';
 import { startingForest } from './forest';
-import { STARTING_APPLES } from './farms';
+import { STARTING_APPLES, STARTING_FISH } from './farms';
 import { fullHome } from './homes';
 import { STARTING_HAPPINESS } from './happiness';
 import { DEFAULT_TAX_RATE, TAX_INFO, isTaxRate } from './taxes';
@@ -128,7 +128,7 @@ const gameState = (set: StoreApi<GameState>['setState']): GameState => ({
   vein: emptyStock(),
   mineExit: emptyStock(),
   mineStock: emptyStock(),
-  warehouse: { ...emptyStock(), coal: 16, wood: STARTING_WOOD, apples: STARTING_APPLES },
+  warehouse: { ...emptyStock(), coal: 16, wood: STARTING_WOOD, apples: STARTING_APPLES, fish: STARTING_FISH },
   veinCapacity: 50,
   mineExitCapacity: startingStats.mineCapacity,
   mineCapacity: startingStats.mineCapacity,

@@ -41,6 +41,8 @@ export type Food = (typeof FOODS)[number];
 export const FOOD_PER_PEASANT = 1 / 120;
 /** Apples in store at the start of a game (older saves get them too). */
 export const STARTING_APPLES = 150;
+/** Fish in the starting granary: a second kind of food, so the larder pleases the peasants from the start. */
+export const STARTING_FISH = 60;
 
 /** Fish a fishing hut lands each second, per worked level. */
 export const FISH_PER_LEVEL = 0.12;
