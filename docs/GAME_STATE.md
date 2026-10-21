@@ -644,7 +644,8 @@ src/
                            into a picture by mineTerrain.ts
     mineTerrain.ts         terrain renderer: tiles, fog, and cached block images (16 × 4 tiles) with
                            dirty tracking so a change only redraws nearby blocks
-    MineHaulers.tsx        carts + haulers, miner bins, mine-exit bins (Skia pictures)
+    MineHaulers.tsx        carts + haulers, miner bins, mine-exit stockpiles drawn as mini warehouses in the town's
+                           style (open-fronted plank sheds, red-tiled gable with the resource's board) (Skia pictures)
     MineHaulerSteps.ts     bin sizes/places, heap steps (≈1 px each: a part-full heap is the full heap
                            clipped, so it rises smoothly) and `binAt` tap hit-testing (Skia-free so
                            the viewport can import it on web)
