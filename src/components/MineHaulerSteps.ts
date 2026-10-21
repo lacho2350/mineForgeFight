@@ -13,8 +13,8 @@ export const MINER_BIN_HEIGHT = 12;
 export const EXIT_BIN_HEIGHT = 22;
 /** How far a full heap rises above the rim. */
 export const HEAP_RISE = 8;
-/** The exit bins' signs stand this far above the ground. */
-const EXIT_SIGN_TOP = 46;
+/** The exit stockpiles' mini warehouses reach this far above the ground (their roof ridge). */
+const EXIT_SIGN_TOP = 57;
 /** Taps this close to a bin count as on it (the miners' bins are small). */
 const TAP_SLOP = 6;
 

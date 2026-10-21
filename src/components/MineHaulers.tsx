@@ -1,10 +1,11 @@
-import { Group, Picture, Skia, createPicture, type SkCanvas, type SkPicture } from '@shopify/react-native-skia';
+import { Group, PaintStyle, Picture, Skia, createPicture, type SkCanvas, type SkPicture } from '@shopify/react-native-skia';
 import { useDerivedValue, type SharedValue } from 'react-native-reanimated';
 import { CART_HEIGHT, CART_WIDTH, cartPose, type CartRoute } from '../game/haulage';
 import type { CartLoad } from '../game/state';
 import { depositAt, type Site } from '../game/mineLayout';
 import { MINE_RESOURCES, RESOURCES, RESOURCE_INFO, type Resource } from '../game/resources';
 import { MINE_EXIT_BIN_WIDTH, MINE_GROUND_Y, MINE_TILE_SIZE, getExitBinX } from './MineMapLayout';
+import { MATS, STONE } from './stronghold/shapes';
 import { EXIT_BIN_HEIGHT, EXIT_PILE_STEPS, HEAP_RISE, MINER_BIN_HEIGHT, MINER_BIN_WIDTH, MINER_PILE_STEPS, minerBinX } from './MineHaulerSteps';
 
 const T = MINE_TILE_SIZE;
@@ -99,18 +100,86 @@ function drawBinFront(canvas: SkCanvas, resource: Resource, width: number, heigh
   rect(canvas, 3, -Math.min(8, height) + 1, width - 6, 2, RESOURCE_INFO[resource].tint);
 }
 
-function binPictures(resource: Resource, width: number, height: number, seed: number, sign: boolean): BinPictures {
+function binPictures(resource: Resource, width: number, height: number, seed: number): BinPictures {
   return {
-    back: createPicture((canvas) => {
-      drawBinBack(canvas, width, height);
-      if (!sign) return;
-      // A small sign showing which resource the bin holds.
-      rect(canvas, width / 2 - 1, -40, 3, 18, colors.woodDark);
-      rect(canvas, width / 2 - 9, -46, 19, 10, '#e3c38a');
-      lump(canvas, resource, width / 2 - 4, -45, 8);
-    }),
+    back: createPicture((canvas) => drawBinBack(canvas, width, height)),
     heap: createPicture((canvas) => drawHeap(canvas, resource, width, height, seed)),
     front: createPicture((canvas) => drawBinFront(canvas, resource, width, height)),
+  };
+}
+
+// ——— The exit stockpiles: mini warehouses ———
+// Each exit bin is a little open-fronted warehouse in the town's style (stronghold/buildingArt.tsx's
+// warehouse, shapes.tsx materials): plank walls with the side going back, a red-tiled gable roof with
+// the resource's board in its gable, corner posts and an eave beam framing the heap inside, a stone
+// footing. Same three layers as a bin, so the heap inside still rises and sinks with the stock.
+const SHED = MATS[0];
+const SHED_ROOF = MATS[1];
+const SHED_TIMBER = '#5b3d25';
+const SHED_OUTLINE = 'rgba(28, 20, 12, 0.5)';
+/** Wall height, and the roof's ridge above the ground (the shed's top: EXIT_SIGN_TOP in MineHaulerSteps). */
+const SHED_WALL = 38;
+const SHED_RIDGE = 55;
+const SHED_SIDE = 4;
+const SHED_RISE = 2;
+
+type Pt = [number, number];
+function shape(canvas: SkCanvas, points: Pt[], color: string, stroke = false) {
+  const path = Skia.Path.Make();
+  path.moveTo(points[0][0], points[0][1]);
+  for (const [x, y] of points.slice(1)) path.lineTo(x, y);
+  path.close();
+  const paint = Skia.Paint();
+  paint.setAntiAlias(true);
+  paint.setColor(Skia.Color(color));
+  if (stroke) {
+    paint.setStyle(PaintStyle.Stroke);
+    paint.setStrokeWidth(1);
+  }
+  canvas.drawPath(path, paint);
+}
+
+function drawShedBack(canvas: SkCanvas, resource: Resource, width: number) {
+  const mid = width / 2;
+  const eave = -SHED_WALL;
+  const ridge = -SHED_RIDGE;
+  // The side wall going back, then the back wall seen through the open front, in shadow under the roof.
+  shape(canvas, [[width, 0], [width + SHED_SIDE, -SHED_RISE], [width + SHED_SIDE, eave - SHED_RISE], [width, eave]], SHED.right);
+  rect(canvas, 0, eave, width, SHED_WALL, '#6b4422');
+  for (let x = 6; x < width - 2; x += 6) rect(canvas, x, eave, 1, SHED_WALL, 'rgba(40, 24, 10, 0.4)');
+  rect(canvas, 0, eave, width, 9, 'rgba(30, 20, 10, 0.35)');
+  // The roof: far slope, then the gable end with its courses of tiles.
+  shape(canvas, [[mid, ridge], [width + 3, eave], [width + 3 + SHED_SIDE, eave - SHED_RISE], [mid + SHED_SIDE, ridge - SHED_RISE]], SHED_ROOF.roofDark);
+  shape(canvas, [[-3, eave], [mid, ridge], [width + 3, eave]], SHED_ROOF.roof);
+  for (let y = eave - 3; y > ridge + 2; y -= 3) {
+    const half = ((width + 6) / 2) * ((y - ridge) / (eave - ridge));
+    rect(canvas, mid - half + 1, y, half * 2 - 2, 0.8, SHED_ROOF.roofDark);
+  }
+  shape(canvas, [[-3, eave], [mid, ridge], [mid + SHED_SIDE, ridge - SHED_RISE], [width + 3 + SHED_SIDE, eave - SHED_RISE], [width + 3, eave]], SHED_OUTLINE, true);
+  // The board in the gable showing what's kept here.
+  rect(canvas, mid - 8, eave - 10, 16, 9, SHED_TIMBER);
+  rect(canvas, mid - 7, eave - 9, 14, 7, '#e3c38a');
+  lump(canvas, resource, mid - 3.5, eave - 8.5, 7);
+}
+
+function drawShedFront(canvas: SkCanvas, resource: Resource, width: number, height: number) {
+  const eave = -SHED_WALL;
+  // Corner posts and the eave beam frame the open front; a stone footing under the sill.
+  rect(canvas, 0, eave, 3, SHED_WALL, SHED_TIMBER);
+  rect(canvas, width - 3, eave, 3, SHED_WALL, SHED_TIMBER);
+  rect(canvas, 0, eave, width, 3, SHED.left);
+  rect(canvas, 0, eave + 3, width, 1, SHED_TIMBER);
+  drawBinFront(canvas, resource, width, height);
+  rect(canvas, -1, -2, width + 2, 2, STONE.left);
+  rect(canvas, -1, -2, width + 2, 0.8, STONE.top);
+  shape(canvas, [[0, 0], [width, 0], [width + SHED_SIDE, -SHED_RISE], [width + SHED_SIDE, eave - SHED_RISE], [width, eave], [0, eave]], SHED_OUTLINE, true);
+}
+
+function shedPictures(resource: Resource, width: number, height: number, seed: number): BinPictures {
+  return {
+    back: createPicture((canvas) => drawShedBack(canvas, resource, width)),
+    heap: createPicture((canvas) => drawHeap(canvas, resource, width, height, seed)),
+    front: createPicture((canvas) => drawShedFront(canvas, resource, width, height)),
   };
 }
 
@@ -161,8 +230,8 @@ function getPictures(): HaulerPictures {
         });
       });
     }),
-    minerBins: byResource((resource) => binPictures(resource, MINER_BIN_WIDTH, MINER_BIN_HEIGHT, 1, false)),
-    exitBins: byResource((resource) => binPictures(resource, MINE_EXIT_BIN_WIDTH, EXIT_BIN_HEIGHT, 2, true)),
+    minerBins: byResource((resource) => binPictures(resource, MINER_BIN_WIDTH, MINER_BIN_HEIGHT, 1)),
+    exitBins: byResource((resource) => shedPictures(resource, MINE_EXIT_BIN_WIDTH, EXIT_BIN_HEIGHT, 2)),
   };
   return pictures;
 }
@@ -214,7 +283,7 @@ export function MinerStockpiles({ sites, steps }: { sites: Site[]; steps: Record
   });
 }
 
-// The mine exit stockpiles on the surface: one bin per mined resource, where carts tip their loads.
+// The mine exit stockpiles on the surface: one mini warehouse per mined resource, where carts tip their loads.
 export function ExitStockpiles({ steps }: { steps: Record<Resource, number> }) {
   const { exitBins } = getPictures();
   return MINE_RESOURCES.map((resource, index) => (
