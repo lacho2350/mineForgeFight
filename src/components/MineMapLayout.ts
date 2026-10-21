@@ -58,10 +58,17 @@ export const MINE_STATIONS = [-2, 2, -5, 5, -8, 8, -11, 11, -14, 14, -17, 17].ma
   oreColumn: MINE_SHAFT_COLUMN + offset + Math.sign(offset),
 }));
 
-// Surface ground line (see mineTerrain's drawSurface) and the mine exit stockpile beside the headhouse.
+// Surface ground line (see mineSurface.ts) and the mine exit stockpiles either side of the headhouse.
 export const MINE_GROUND_Y = MINE_TILE_SIZE * MINE_SURFACE_ROWS - 14;
+/** Where the first bin right of the headhouse starts; the left row mirrors the right about the lift. */
 export const MINE_EXIT_PILE_X = MINE_SHAFT_X + MINE_TILE_SIZE + 32;
-// One bin per resource stands in a row beside the headhouse.
+// One bin per resource, in two rows of six either side of the headhouse: the resources take turns,
+// right then left (coal right by the door, granite left by it, …), so the commonest sit nearest the lift.
 export const MINE_EXIT_BIN_WIDTH = 40;
 export const MINE_EXIT_BIN_GAP = 8;
-export const getExitBinX = (index: number) => MINE_EXIT_PILE_X + index * (MINE_EXIT_BIN_WIDTH + MINE_EXIT_BIN_GAP);
+/** Is this resource's exit bin (by its index in MINE_RESOURCES) on the left of the headhouse? */
+export const exitBinOnLeft = (index: number) => index % 2 === 1;
+export const getExitBinX = (index: number) => {
+  const right = MINE_EXIT_PILE_X + Math.floor(index / 2) * (MINE_EXIT_BIN_WIDTH + MINE_EXIT_BIN_GAP);
+  return exitBinOnLeft(index) ? 2 * MINE_SHAFT_X + MINE_TILE_SIZE - right - MINE_EXIT_BIN_WIDTH : right;
+};

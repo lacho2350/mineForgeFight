@@ -122,8 +122,8 @@ function drawGround(p: Pen) {
     p.rect(x, G - 2, 1.5, 3, h % 2 ? TUFT : TUFT_LIGHT);
   }
   // The road: from the storehouse past the headhouse and the exit stockpiles to the cottage.
-  const from = (MINE_SHAFT_COLUMN - 6) * T;
-  const to = (MINE_SHAFT_COLUMN + 17) * T;
+  const from = (MINE_SHAFT_COLUMN - 12) * T;
+  const to = (MINE_SHAFT_COLUMN + 10) * T;
   const road = ROAD_COLORS.dirt;
   p.rect(from, G, to - from, 6, road.fill);
   p.rect(from, G + 6, to - from, 1, road.mark);
@@ -236,7 +236,7 @@ function drawHeadhouse(p: Pen) {
  * and the hold's banner on the ridge. */
 function drawStorehouse(p: Pen) {
   const timber = MATS[0];
-  const x = (MINE_SHAFT_COLUMN - 5) * T;
+  const x = (MINE_SHAFT_COLUMN - 11) * T; // beyond the left row of exit stockpiles
   const w = T * 2;
   walls(p, timber, x, 58, w);
   gable(p, timber, x - 6, x + w + 6, 59, 36);
@@ -259,7 +259,7 @@ function drawStorehouse(p: Pen) {
  * chimney, a lit window with shutters, and a picket fence with flowers before it. */
 function drawCottage(p: Pen) {
   const timber = MATS[0];
-  const x = (MINE_SHAFT_COLUMN + 15) * T + 10;
+  const x = (MINE_SHAFT_COLUMN + 8) * T + 10; // beyond the right row of exit stockpiles
   const w = T + 10;
   p.rect(x + w - 16, 40, 9, 22, STONE.left);
   p.rect(x + w - 16, 40, 9, 2, STONE.top);
@@ -270,7 +270,7 @@ function drawCottage(p: Pen) {
   windowAt(p, x + 34, 68);
   // The fence along the front, a gate by the door, flowers behind it.
   const fenceFrom = x - 14;
-  const fenceTo = (MINE_SHAFT_COLUMN + 22) * T;
+  const fenceTo = (MINE_SHAFT_COLUMN + 13) * T;
   for (const [fx, color] of [[x + 30, BANNER], [x + 38, '#e2b84f'], [x + 46, '#c86bb0'], [x + 60, BANNER], [x + 70, '#e2b84f']] as [number, string][]) {
     p.rect(fx - 0.5, G - 6, 1, 6, '#4f7a36');
     p.circle(fx, G - 7, 1.8, color);

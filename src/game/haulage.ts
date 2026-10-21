@@ -1,4 +1,4 @@
-import { MINE_GROUND_Y, MINE_SHAFT_COLUMN, MINE_TILE_SIZE, getExitBinX } from '../components/MineMapLayout';
+import { MINE_EXIT_BIN_WIDTH, MINE_GROUND_Y, MINE_SHAFT_COLUMN, MINE_TILE_SIZE, exitBinOnLeft, getExitBinX } from '../components/MineMapLayout';
 import { depositAt, parseKey, siteLevel, tileKey, type MineLayout, type Site } from './mineLayout';
 import { MINE_RESOURCES, type Resource } from './resources';
 
@@ -123,8 +123,9 @@ function buildRoute(stops: { site: Site; path: [number, number][] }[], liftX: nu
   let start = 0;
   const resources = stops.map(({ site }) => depositAt(site.faceRow, site.faceColumn) ?? 'coal');
   const trips = stops.map(({ path }, index) => {
-    // Tip beside this resource's own bin at the mine exit.
-    const exitX = getExitBinX(MINE_RESOURCES.indexOf(resources[index])) - CART_WIDTH + 12;
+    // Tip beside this resource's own bin at the mine exit, on the side facing the lift.
+    const bin = MINE_RESOURCES.indexOf(resources[index]);
+    const exitX = exitBinOnLeft(bin) ? getExitBinX(bin) + MINE_EXIT_BIN_WIDTH - 12 : getExitBinX(bin) - CART_WIDTH + 12;
     const nextPath = stops[(index + 1) % stops.length].path;
     const xs: number[] = [];
     const ys: number[] = [];

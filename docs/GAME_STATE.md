@@ -631,6 +631,8 @@ src/
                            missing ones free (`joinBuildings`)
   components/
     MineMapLayout.ts       grid constants (tile size, columns, levels, 12 stations a gallery, exit bins)
+                           — the 12 exit bins stand six a side of the headhouse, resources taking turns right then
+                           left (`exitBinOnLeft`, `getExitBinX`); carts tip from the side facing the lift (haulage.ts)
     MineScene(.web).tsx    platform wrapper; web loads Skia (CanvasKit) lazily via WithSkiaWeb
     MineViewport.tsx       camera (pan/pinch/wheel/keys; scrolls clear of the bars over the map), view
                            culling, dig drag, taps, labels, haul clock, pickaxe layer, zoom buttons
