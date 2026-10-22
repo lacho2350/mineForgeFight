@@ -18,7 +18,7 @@ import MinePickaxe from './MinePickaxe';
 import MinePileTip from './MinePileTip';
 import type { DigOverlayState, MineSceneCanvasProps } from './MineSceneCanvas';
 import { EXIT_PILE_STEPS, MINER_PILE_STEPS, binAt } from './MineHaulerSteps';
-import { MINE_COLUMNS, MINE_MAP_WIDTH, MINE_OVERSCAN, MINE_SURFACE_ROWS, MINE_TILE_SIZE, MINE_VIEW_STEP, mineStartCamX, mineViewAt, type MineView } from './MineMapLayout';
+import { MINE_COLUMNS, MINE_MAP_WIDTH, MINE_OVERSCAN, MINE_SURFACE_ROWS, MINE_TILE_SIZE, MINE_VIEW_STEP, mineStartCamX, mineViewAt, surfaceBuildingAt, type MineSurfaceBuilding, type MineView } from './MineMapLayout';
 
 const T = MINE_TILE_SIZE;
 const MIN_ZOOM = 0.3;
@@ -57,6 +57,8 @@ export type MineSceneProps = {
   onSelectTile: (key: string) => void;
   /** Tap on a stockpile bin (at the mine exit, or beside a miner): show that resource's stock. */
   onSelectBin: (resource: Resource) => void;
+  /** Tap on one of the surface buildings (the headhouse, the storehouse, the cottage): show what it does. */
+  onSelectBuilding?: (building: MineSurfaceBuilding) => void;
   /** Double tap on a deposit: put an idle miner to work on it. */
   onAssignTile: (key: string) => void;
   /** The page's gesture-handler scroll view; gestures on the map take priority over it. */
@@ -106,6 +108,7 @@ export default function MineViewport({
   selectedKey,
   onSelectTile,
   onSelectBin,
+  onSelectBuilding,
   onAssignTile,
   pageScrollRef,
   insetTop = 0,
@@ -260,7 +263,12 @@ export default function MineViewport({
       return;
     }
     const bin = binAt(layout.sites, mapX, mapY);
-    if (bin) onSelectBin(bin);
+    if (bin) {
+      onSelectBin(bin);
+      return;
+    }
+    const building = surfaceBuildingAt(mapX, mapY);
+    if (building && onSelectBuilding) onSelectBuilding(building);
     else onSelectTile(tileAt(mapX, mapY));
   };
   const assignAt = (mapX: number, mapY: number) => onAssignTile(tileAt(mapX, mapY));
