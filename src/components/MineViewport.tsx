@@ -18,7 +18,8 @@ import MinePickaxe from './MinePickaxe';
 import MinePileTip from './MinePileTip';
 import type { DigOverlayState, MineSceneCanvasProps } from './MineSceneCanvas';
 import { EXIT_PILE_STEPS, MINER_PILE_STEPS, binAt } from './MineHaulerSteps';
-import { MINE_COLUMNS, MINE_MAP_WIDTH, MINE_OVERSCAN, MINE_SURFACE_ROWS, MINE_TILE_SIZE, MINE_VIEW_STEP, mineStartCamX, mineViewAt, surfaceBuildingAt, type MineSurfaceBuilding, type MineView } from './MineMapLayout';
+import type { BinPlace } from './BinPanel';
+import { MINE_COLUMNS, MINE_GROUND_Y, MINE_MAP_WIDTH, MINE_OVERSCAN, MINE_SURFACE_ROWS, MINE_TILE_SIZE, MINE_VIEW_STEP, mineStartCamX, mineViewAt, surfaceBuildingAt, type MineSurfaceBuilding, type MineView } from './MineMapLayout';
 
 const T = MINE_TILE_SIZE;
 const MIN_ZOOM = 0.3;
@@ -56,7 +57,7 @@ export type MineSceneProps = {
   selectedKey: string | null;
   onSelectTile: (key: string) => void;
   /** Tap on a stockpile bin (at the mine exit, or beside a miner): show that resource's stock. */
-  onSelectBin: (resource: Resource) => void;
+  onSelectBin: (resource: Resource, place: BinPlace) => void;
   /** Tap on one of the surface buildings (the headhouse, the storehouse, the cottage): show what it does. */
   onSelectBuilding?: (building: MineSurfaceBuilding) => void;
   /** Double tap on a deposit: put an idle miner to work on it. */
@@ -264,7 +265,8 @@ export default function MineViewport({
     }
     const bin = binAt(layout.sites, mapX, mapY);
     if (bin) {
-      onSelectBin(bin);
+      // The surface holds only the exit warehouses; below it, the miners' bins.
+      onSelectBin(bin, mapY <= MINE_GROUND_Y + 8 ? 'exit' : 'miner');
       return;
     }
     const building = surfaceBuildingAt(mapX, mapY);

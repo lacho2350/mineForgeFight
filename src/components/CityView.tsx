@@ -54,6 +54,8 @@ type Props = {
   /** The painting finger lifted (`commit`) or the stroke was cancelled. */
   onPaintEnd: (commit: boolean) => void;
   onSelect: (id: BuildingId) => void;
+  /** A tap on the mine's headframe: show what the mine is doing. */
+  onTapMine?: () => void;
   /** A tap that hit no building: the map point (tile units) under it, e.g. a trap. */
   onTapGround: (x: number, y: number) => void;
   /** The screen is in view. */
@@ -78,6 +80,7 @@ function CityView({
   onPaint,
   onPaintEnd,
   onSelect,
+  onTapMine,
   onTapGround,
   active,
   insetTop,
@@ -141,13 +144,15 @@ function CityView({
   };
 
   // A tap: while placing, where to put the building or trap; otherwise the front-most building whose drawn
-  // shape holds the point (`pickBuilding`), or else the ground (traps lie flat on it). The mine is entered by
-  // its button in the toolbar, not from the map.
+  // shape holds the point (`pickBuilding`), or the mine's headframe (its info: the mine is entered by its
+  // button in the toolbar), or else the ground (traps lie flat on it).
   const tapAt = (x: number, y: number) => {
     const at = groundAt(x, y);
     if (ghost) return onPlaceAt(at.x, at.y);
     const picked = pickBuilding(placements, buildings, x, y);
     if (picked) return onSelect(picked);
+    const inShaft = x >= SHAFT_RECT.x && x <= SHAFT_RECT.x + SHAFT_RECT.width && y >= SHAFT_RECT.y && y <= SHAFT_RECT.y + SHAFT_RECT.height;
+    if (inShaft && onTapMine) return onTapMine();
     onTapGround(at.x, at.y);
   };
   // The building being placed, for drags that start on it: [x, y, w, d, height in px], or [].
