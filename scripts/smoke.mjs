@@ -91,6 +91,16 @@ try {
   await page.locator('[aria-label="MINE"]').first().click();
   await wait(8000);
   await page.screenshot({ path: `${out}/${prefix}mine-0.png` });
+  // Tap the headhouse and a mine-exit warehouse: each opens its card.
+  await page.mouse.click(548, 125);
+  await wait(800);
+  await page.screenshot({ path: `${out}/${prefix}mine-0b-headhouse.png` });
+  await page.mouse.click(625, 125);
+  await wait(800);
+  await page.screenshot({ path: `${out}/${prefix}mine-0c-exit-warehouse.png` });
+  const closeCard = page.locator('[aria-label^="Close the"]');
+  if (await closeCard.count()) await closeCard.first().click();
+  await wait(500);
   await page.locator('[aria-label="Dig tunnels"]').first().click();
   await wait(800);
   await page.mouse.move(600, 330);
