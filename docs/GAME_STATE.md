@@ -214,7 +214,7 @@ game, and starts the 1-second simulation (`startSimulation()`).
   lost −15. **Effects**: the hold works at `workPaceAt` = 50% at 0 … 100% at 100 (`work` in the tick: mining,
   digging, building, forges, woodcutting — the old hungry slowdown is gone); at **0** a peasant **leaves**
   every `LEAVE_SECONDS` (30) — a free hand first, else the miner on the last face — with a notice, and nobody
-  new arrives while it's 0. `happiness-test`.
+  new arrives while it's 0 — except that the keep's household (`LEAVE_FLOOR`, 4) never leaves, and a hold with fewer gets drifters (one each arrival tick, hungry or not) until it has them again, so an emptied, starving hold can always build a farm and recover (since 2026-10-22; a save had starved to 1 peasant with no farms after lost raids plundered its food). `happiness-test`.
 - **Stockpiles, per resource**: `vein` (miners' bins) → `mineExit` (surface bins) → `mineStock` →
   `warehouse`. Capacities apply per resource. Surface carts move exit→mine→warehouse each tick
   (per-tick totals shared across resources).

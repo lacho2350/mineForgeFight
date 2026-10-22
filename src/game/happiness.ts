@@ -31,6 +31,10 @@ export const workPaceAt = (happiness: number) => Math.round((0.5 + (0.5 * Math.m
 
 /** At 0 a peasant leaves every this many seconds, and nobody new comes. */
 export const LEAVE_SECONDS = 30;
+/** The keep's own household: this many never leave, however wretched the hold, and a hold that has fewer
+ * (an older save, say) is joined by drifters from the valley, hungry or not, until it has them again — so
+ * there are always hands to build a farm and start over (an empty hold could never recover). */
+export const LEAVE_FLOOR = 4;
 
 /** Points a minute: what the store's food does, by how many kinds are in. */
 export const FOOD_MOOD = [-6, 0, 2, 4] as const;

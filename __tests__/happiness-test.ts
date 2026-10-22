@@ -1,6 +1,6 @@
 import { buildingStats, requiredKeep, staffNeeded, taxPerMinute } from '../src/game/buildings';
 import { FOOTPRINTS } from '../src/game/cityMap';
-import { BATTLE_MOOD, BUILDING_MOOD, FOOD_MOOD, LEAVE_SECONDS, STARTING_HAPPINESS, afterBattle, driftHappiness, moodCoverage, moodDrift, moodFactors, workPaceAt } from '../src/game/happiness';
+import { BATTLE_MOOD, BUILDING_MOOD, FOOD_MOOD, LEAVE_FLOOR, LEAVE_SECONDS, STARTING_HAPPINESS, afterBattle, driftHappiness, moodCoverage, moodDrift, moodFactors, workPaceAt } from '../src/game/happiness';
 import { isShownBuilding, workforceOf } from '../src/game/hold';
 import { CHURCH_IDS, FAIRGROUND_IDS, GARDENS_IDS, PEASANTS_PER_LEVEL, moodKeep } from '../src/game/moodBuildings';
 import { TAX_INFO, TAX_RATES } from '../src/game/taxes';
@@ -104,5 +104,19 @@ describe('happiness', () => {
     expect(game().happiness).toBe(0);
     expect(game().population).toBe(before - 2);
     expect(game().notice).toMatch(/left Greyhollow/);
+  });
+
+  it('never empties the hold: the keep’s household stays, and drifters come back to it, hungry or not', () => {
+    newGame({ population: 6, happiness: 0, warehouse: warehouseWith({}), hungry: true });
+    game().setTaxRate('cruel');
+    run(LEAVE_SECONDS * 6);
+    expect(game().happiness).toBe(0);
+    expect(game().population).toBe(LEAVE_FLOOR);
+    // A hold that had emptied (an older save) gets its household back, though it's starving and wretched.
+    newGame({ population: 0, happiness: 0, warehouse: warehouseWith({}), hungry: true, sites: [], pendingSites: [] });
+    game().setTaxRate('cruel');
+    run(60);
+    expect(game().population).toBe(LEAVE_FLOOR);
+    expect(game().notice).toMatch(/drifter|left/);
   });
 });
