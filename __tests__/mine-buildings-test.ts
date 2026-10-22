@@ -24,7 +24,7 @@ describe('the mine’s surface buildings', () => {
   it('say the lift is quiet with nobody mining, and held up when an exit warehouse is full', () => {
     newGame({ sites: [], pendingSites: [] });
     expect(buildingNow('headhouse', game()).status.tone).toBe('quiet');
-    const site = { row: 6, column: 152, faceRow: 6, faceColumn: 153 };
+    const site = { row: 6, column: 152, faceRow: 6, faceColumn: 153, kind: 'deposit' as const };
     newGame({ sites: [site], pendingSites: [] });
     const { status } = buildingNow('headhouse', game());
     expect(status.tone).toBe('busy');
