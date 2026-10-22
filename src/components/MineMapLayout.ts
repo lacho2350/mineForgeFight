@@ -72,3 +72,25 @@ export const getExitBinX = (index: number) => {
   const right = MINE_EXIT_PILE_X + Math.floor(index / 2) * (MINE_EXIT_BIN_WIDTH + MINE_EXIT_BIN_GAP);
   return exitBinOnLeft(index) ? 2 * MINE_SHAFT_X + MINE_TILE_SIZE - right - MINE_EXIT_BIN_WIDTH : right;
 };
+
+// The mine's surface buildings (drawn by mineSurface.ts), and where a tap on one lands: their left edge
+// and width on the map, and how high they stand (to the top of the headframe's wheel, the storehouse's
+// banner, the cottage's chimney). Skia-free, so taps can be hit-tested before CanvasKit loads.
+export type MineSurfaceBuilding = 'headhouse' | 'storehouse' | 'cottage';
+export const MINE_HEADHOUSE_X = MINE_SHAFT_X - 22;
+export const MINE_HEADHOUSE_WIDTH = MINE_TILE_SIZE + 44;
+export const MINE_STOREHOUSE_X = MINE_SHAFT_X - 11 * MINE_TILE_SIZE;
+export const MINE_STOREHOUSE_WIDTH = MINE_TILE_SIZE * 2;
+export const MINE_COTTAGE_X = MINE_SHAFT_X + 8 * MINE_TILE_SIZE + 10;
+export const MINE_COTTAGE_WIDTH = MINE_TILE_SIZE + 10;
+const SURFACE_BOXES: { id: MineSurfaceBuilding; left: number; right: number; top: number }[] = [
+  { id: 'headhouse', left: MINE_HEADHOUSE_X - 8, right: MINE_HEADHOUSE_X + MINE_HEADHOUSE_WIDTH + 12, top: 4 },
+  { id: 'storehouse', left: MINE_STOREHOUSE_X - 24, right: MINE_STOREHOUSE_X + MINE_STOREHOUSE_WIDTH + 12, top: 22 },
+  { id: 'cottage', left: MINE_COTTAGE_X - 6, right: MINE_COTTAGE_X + MINE_COTTAGE_WIDTH + 12, top: 38 },
+];
+
+/** The surface building at a map point, if any. */
+export function surfaceBuildingAt(x: number, y: number): MineSurfaceBuilding | null {
+  if (y > MINE_GROUND_Y + 4) return null;
+  return SURFACE_BOXES.find((box) => x >= box.left && x <= box.right && y >= box.top)?.id ?? null;
+}

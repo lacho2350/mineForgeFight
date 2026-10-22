@@ -16,8 +16,9 @@ import { findDigRoute, getDepositInfo, standingTargets, tileKey } from '../game/
 import DepositPanel from '../components/DepositPanel';
 import HaulagePanel from '../components/HaulagePanel';
 import BinPanel from '../components/BinPanel';
-import { stockTotal, type Resource } from '../game/resources';
-import { MINE_SURFACE_ROWS } from '../components/MineMapLayout';
+import MineBuildingPanel from '../components/MineBuildingPanel';
+import { RESOURCE_INFO, stockTotal, type Resource } from '../game/resources';
+import { MINE_SURFACE_ROWS, type MineSurfaceBuilding } from '../components/MineMapLayout';
 import MineScene from '../components/MineScene';
 import { GameButton, LiveSignal, SectionLabel } from '../components/GameUI';
 import RaidBanner from '../components/RaidBanner';
@@ -50,6 +51,8 @@ export default function MineScreen() {
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   // The resource whose bin was tapped (one card at a time: a bin or a tile).
   const [selectedBin, setSelectedBin] = useState<Resource | null>(null);
+  // The surface building whose card is open (the headhouse, the storehouse, the cottage).
+  const [selectedBuilding, setSelectedBuilding] = useState<MineSurfaceBuilding | null>(null);
   // Deposit amounts change every tick; the cached layout only refreshes on redraw, so use live ones.
   const selected = selectedKey ? getDepositInfo({ ...layout, depositMined: game.depositMined }, selectedKey) : null;
   const selectedPending = !!selectedKey && game.pendingSites.some((site) => tileKey(site.faceRow, site.faceColumn) === selectedKey);
@@ -84,9 +87,10 @@ export default function MineScreen() {
         setSurveyMode(false);
         return true;
       }
-      if (selectedKey || selectedBin) {
+      if (selectedKey || selectedBin || selectedBuilding) {
         setSelectedKey(null);
         setSelectedBin(null);
+        setSelectedBuilding(null);
         return true;
       }
       return false;
@@ -136,6 +140,7 @@ export default function MineScreen() {
         selectedKey={selectedKey}
         onSelectTile={(key) => {
           setSelectedBin(null);
+          setSelectedBuilding(null);
           if (surveyMode) {
             const before = useGameStore.getState().surveys.length;
             game.survey(key);
@@ -146,10 +151,17 @@ export default function MineScreen() {
         }}
         onSelectBin={(resource) => {
           setSelectedKey(null);
+          setSelectedBuilding(null);
           setSelectedBin((current) => (current === resource ? null : resource));
+        }}
+        onSelectBuilding={(building) => {
+          setSelectedKey(null);
+          setSelectedBin(null);
+          setSelectedBuilding((current) => (current === building ? null : building));
         }}
         onAssignTile={(key) => {
           setSelectedBin(null);
+          setSelectedBuilding(null);
           setSelectedKey(key);
           game.assignMiner(key);
         }}
@@ -200,8 +212,16 @@ export default function MineScreen() {
                 { label: 'MINE STOCKPILE', amount: game.mineStock[selectedBin], capacity: game.mineCapacity },
                 { label: 'WAREHOUSE', amount: game.warehouse[selectedBin], capacity: game.warehouseCapacity },
               ]}
+              note={`${RESOURCE_INFO[selectedBin].name} goes from the miners’ bins by cart up the lift to its exit warehouse, then by hauler to the mine storehouse and on to the city.${
+                game.mineExit[selectedBin] >= game.mineExitCapacity ? ' Its exit warehouse is full: carts bringing more wait until there’s room.' : ''
+              }`}
               onClose={() => setSelectedBin(null)}
             />
+          </View>
+        )}
+        {selectedBuilding && (
+          <View style={styles.wide}>
+            <MineBuildingPanel building={selectedBuilding} game={game} onAssign={game.autoAssignMine} onClose={() => setSelectedBuilding(null)} />
           </View>
         )}
         {hint && (

@@ -5,7 +5,19 @@
 // Colours come from the stronghold's kit (stronghold/shapes.tsx, grass.ts). Drawn once into a picture
 // (mineTerrain.ts `getSurfacePicture`).
 import { PaintStyle, Skia, type SkCanvas, type SkPaint } from '@shopify/react-native-skia';
-import { MINE_COLUMNS, MINE_MAP_WIDTH, MINE_SHAFT_COLUMN, MINE_SURFACE_ROWS, MINE_TILE_SIZE } from './MineMapLayout';
+import {
+  MINE_COLUMNS,
+  MINE_COTTAGE_WIDTH,
+  MINE_COTTAGE_X,
+  MINE_HEADHOUSE_WIDTH,
+  MINE_HEADHOUSE_X,
+  MINE_MAP_WIDTH,
+  MINE_SHAFT_COLUMN,
+  MINE_STOREHOUSE_WIDTH,
+  MINE_STOREHOUSE_X,
+  MINE_SURFACE_ROWS,
+  MINE_TILE_SIZE,
+} from './MineMapLayout';
 import { hash } from '../game/mineLayout';
 import { BANNER, DARK, GLOW, MATS, ROAD_COLORS, STONE, type Mat } from './stronghold/shapes';
 import { GRASS_DARK, GRASS_LIGHT, TUFT, TUFT_LIGHT } from './stronghold/grass';
@@ -201,8 +213,8 @@ function banner(p: Pen, x: number, top: number) {
  * mouth in its front, and a timber headframe with its wheel standing over the roof. */
 function drawHeadhouse(p: Pen) {
   const plaster = MATS[1];
-  const x = MINE_SHAFT_COLUMN * T - 22;
-  const w = T + 44;
+  const x = MINE_HEADHOUSE_X;
+  const w = MINE_HEADHOUSE_WIDTH;
   const cx = MINE_SHAFT_COLUMN * T + T / 2;
   // The headframe stands behind the roof: two legs to the wheel, braced, and its back leg.
   const wheelY = 13;
@@ -236,8 +248,8 @@ function drawHeadhouse(p: Pen) {
  * and the hold's banner on the ridge. */
 function drawStorehouse(p: Pen) {
   const timber = MATS[0];
-  const x = (MINE_SHAFT_COLUMN - 11) * T; // beyond the left row of exit stockpiles
-  const w = T * 2;
+  const x = MINE_STOREHOUSE_X; // beyond the left row of exit stockpiles
+  const w = MINE_STOREHOUSE_WIDTH;
   walls(p, timber, x, 58, w);
   gable(p, timber, x - 6, x + w + 6, 59, 36);
   banner(p, x + w / 2, 22);
@@ -259,8 +271,8 @@ function drawStorehouse(p: Pen) {
  * chimney, a lit window with shutters, and a picket fence with flowers before it. */
 function drawCottage(p: Pen) {
   const timber = MATS[0];
-  const x = (MINE_SHAFT_COLUMN + 8) * T + 10; // beyond the right row of exit stockpiles
-  const w = T + 10;
+  const x = MINE_COTTAGE_X; // beyond the right row of exit stockpiles
+  const w = MINE_COTTAGE_WIDTH;
   p.rect(x + w - 16, 40, 9, 22, STONE.left);
   p.rect(x + w - 16, 40, 9, 2, STONE.top);
   p.outline([[x + w - 16, 40], [x + w - 7, 40], [x + w - 7, 62], [x + w - 16, 62]]);
