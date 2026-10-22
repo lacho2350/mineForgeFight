@@ -10,6 +10,7 @@
 // and jumps once at the end of a battle: won, or lost.
 // The hold works at a pace of 50% at 0 up to 100% at 100 (`workPaceAt`), and at 0 the peasants start
 // leaving, one every LEAVE_SECONDS, with nobody new coming until it rises again. Pure TS.
+import { rulesOf, type Difficulty } from './difficulty';
 import { workedLevel, type BuildingId, type BuildingLevels } from './buildings';
 import { FOODS } from './farms';
 import { drySleepers, type Homes } from './homes';
@@ -70,6 +71,8 @@ export type MoodState = {
   raid: Raid | null;
   battle: Battle | null;
   elapsedSeconds: number;
+  /** The game's difficulty: every bad thing weighs its `moodPenalty` times Normal's. */
+  difficulty?: Difficulty;
 };
 
 /** Levels of a kind's buildings that are at work, all together. */
@@ -126,7 +129,9 @@ export function moodFactors(state: MoodState): MoodFactor[] {
     });
   }
   if (underSiege(state)) factors.push({ id: 'siege', label: 'Siege', detail: 'Raiders at the walls.', perMinute: SIEGE_MOOD });
-  return factors;
+  const penalty = rulesOf(state.difficulty).moodPenalty;
+  if (penalty === 1) return factors;
+  return factors.map((factor) => (factor.perMinute < 0 ? { ...factor, perMinute: hundredths(factor.perMinute * penalty) } : factor));
 }
 
 /** How happiness moves now, in points a minute. */
@@ -135,8 +140,10 @@ export const moodDrift = (factors: readonly MoodFactor[]) => hundredths(factors.
 /** Happiness a second on from `happiness`, moving by `perMinute`. */
 export const driftHappiness = (happiness: number, perMinute: number) => Math.round(Math.max(0, Math.min(MAX_HAPPINESS, happiness + perMinute / 60)) * 1000) / 1000;
 
-/** Happiness after a battle: a win cheers the hold, a loss grieves it; raiders withdrawing changes nothing. */
-export const afterBattle = (happiness: number, outcome: 'won' | 'lost' | 'withdrawn') => (outcome === 'withdrawn' ? happiness : driftHappiness(happiness, BATTLE_MOOD[outcome] * 60));
+/** Happiness after a battle: a win cheers the hold, a loss grieves it (times the difficulty's `penalty`);
+ * raiders withdrawing changes nothing. */
+export const afterBattle = (happiness: number, outcome: 'won' | 'lost' | 'withdrawn', penalty = 1) =>
+  outcome === 'withdrawn' ? happiness : driftHappiness(happiness, BATTLE_MOOD[outcome] * (outcome === 'lost' ? penalty : 1) * 60);
 
 /** What the peasants say of their hold. */
 export function moodWord(happiness: number) {

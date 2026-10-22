@@ -16,6 +16,9 @@ import { findDigRoute, getDepositInfo, standingTargets, tileKey } from '../game/
 import DepositPanel from '../components/DepositPanel';
 import HaulagePanel from '../components/HaulagePanel';
 import BinPanel, { type BinPlace } from '../components/BinPanel';
+import GameOver from '../components/GameOver';
+import { DIFFICULTY } from '../game/difficulty';
+import LeavingAlert from '../components/LeavingAlert';
 import MineBuildingPanel from '../components/MineBuildingPanel';
 import { stockTotal, type Resource } from '../game/resources';
 import { MINE_SURFACE_ROWS, type MineSurfaceBuilding } from '../components/MineMapLayout';
@@ -62,8 +65,8 @@ export default function MineScreen() {
   const selectedRoute = useMemo(() => {
     if (!selectedKey || selectedStatus !== 'unreachable') return null;
     const route = findDigRoute(layout, new Set(game.digPlan), standingTargets(layout, selectedKey));
-    return route ? { tiles: route.length, cost: tunnelCost({ buildings, techs }, route) } : null;
-  }, [layout, selectedKey, selectedStatus, game.digPlan, buildings, techs]);
+    return route ? { tiles: route.length, cost: tunnelCost({ buildings, techs, difficulty: game.difficulty }, route) } : null;
+  }, [layout, selectedKey, selectedStatus, game.digPlan, game.difficulty, buildings, techs]);
   // The map fills the screen; the bars over it are measured so it can scroll clear of them.
   const { height: windowHeight } = useWindowDimensions();
   const [screenHeight, setScreenHeight] = useState(windowHeight);
@@ -108,7 +111,7 @@ export default function MineScreen() {
   // Whoever waits at the campfire (nobody goes mining by themselves: ASSIGN sends them to the free faces).
   const waiting = workforceOf(game).idle;
   const hint = surveyMode
-    ? `Tap a tunnel (green: they can set out from there, red: they can't): the surveyors map the rock ${String(surveyRadius(game.techs))} tiles all round it, from ${String(surveyCost(MINE_SURFACE_ROWS, game.techs))} gold (dearer deeper). They're then ready again after ${String(surveyCooldown(game.techs))} s.`
+    ? `Tap a tunnel (green: they can set out from there, red: they can't): the surveyors map the rock ${String(surveyRadius(game.techs, game.difficulty))} tiles all round it, from ${String(surveyCost(MINE_SURFACE_ROWS, game.techs))} gold (dearer deeper). They're then ready again after ${String(surveyCooldown(game.techs))} s.`
     : digMode
       ? `Drag from a tunnel across rock · from ${String(tileDigCost(game, 0))} gold and ${String(TUNNEL_WOOD)} wood per tile · two fingers, right-drag or arrow keys to move`
       : game.digPlan.length > 0
@@ -123,7 +126,7 @@ export default function MineScreen() {
         viewportHeight={screenHeight}
         insetTop={topHeight}
         insetBottom={bottomHeight}
-        survey={surveyMode ? { radius: surveyRadius(game.techs), canSurveyFrom: (key) => !surveyProblem(game, layout, key) } : null}
+        survey={surveyMode ? { radius: surveyRadius(game.techs, game.difficulty), canSurveyFrom: (key) => !surveyProblem(game, layout, key) } : null}
         vein={game.vein}
         veinCapacity={game.veinCapacity}
         mineExit={game.mineExit}
@@ -260,6 +263,8 @@ export default function MineScreen() {
         </View>
       </View>
 
+      {!popup && !game.fallen && <LeavingAlert game={game} />}
+      {game.fallen && <GameOver game={game} />}
       {popup === 'upgrades' && (
         <Sheet title="Mine upgrades" subtitle="THE NEXT GALLERY · TECHS BOUGHT WITH GOLD, FOR GOOD" onClose={() => setPopup(null)}>
           <NextGallery game={game} />
@@ -294,7 +299,7 @@ function MineHud({ game }: { game: GameState }) {
   const raidIn = game.raid ? null : game.nextRaidAt - game.elapsedSeconds;
   return (
     <View style={styles.hud}>
-      <Stat label="GOLD" value={Math.floor(game.gold).toLocaleString()} tone="#e5a565" />
+      <Stat label={game.difficulty === 'normal' ? 'GOLD' : `GOLD · ${DIFFICULTY[game.difficulty].name.toUpperCase()}`} value={Math.floor(game.gold).toLocaleString()} tone="#e5a565" />
       <Stat label="WOOD" value={Math.floor(game.warehouse.wood).toLocaleString()} tone="#d6bb79" />
       <Stat label={`MINERS · ${String(workforceOf(game).idle)} WAITING`} value={String(game.sites.length + game.pendingSites.length)} tone="#c0cd83" />
       {raidIn !== null && <Stat label={`RAID ${String(game.raidsFought + 1)}`} value={clock(Math.ceil(raidIn))} tone="#e08a72" />}
@@ -313,7 +318,7 @@ function Stat({ label, value, tone }: { label: string; value: string; tone: stri
 
 // Dig Deeper: the next gallery, at the top of the upgrades sheet.
 function NextGallery({ game }: { game: GameState }) {
-  const depthCost = getDepthCost(game.depth, game.techs);
+  const depthCost = getDepthCost(game.depth, game.techs, game.difficulty);
   const atBedrock = game.depth >= MAX_DEPTH;
   return (
     <View style={styles.deeper}>

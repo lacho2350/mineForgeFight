@@ -10,10 +10,11 @@ import { ROCK_INFO, startingRock } from './rocks';
 import { ITEM_INFO, UNIT_GEAR, type ItemId } from './items';
 import { FORGE_IDS, FORGE_OUTPUT_CAP, addLoad, isForge, loadUnits, shelfMissing, type ForgeId, type ForgeTask, type Load } from './forges';
 import { isHouse } from './houses';
+import { rulesOf } from './difficulty';
 import { fellWood } from './forest';
 import { FOODS, LAMBS_PER_LEVEL, MUTTON_PER_SHEEP, PASTURE_IDS, SHEEP_PER_LEVEL, WOOL_PER_SHEEP } from './farms';
 import { roomForNewcomer, tickHomes } from './homes';
-import { LEAVE_FLOOR, LEAVE_SECONDS, driftHappiness, moodDrift, moodFactors, workPaceAt } from './happiness';
+import { driftHappiness, moodDrift, moodFactors, workPaceAt } from './happiness';
 import { gearComing, gearWanted, incomingTo, supplyLoad, wagonBackAt, wagonDropAt, type WagonJob } from './wagons';
 import { SIDE_NAMES } from './cityMap';
 import { haulFactor } from './roads';
@@ -169,7 +170,8 @@ export function tickGame(state: GameState): Partial<GameState> {
   // The cottages' women fetch water from the river and food from the store, the peasants sleeping in the
   // cottages drink and eat what's in, and those in the keep's hall eat from the store; with no food left
   // in store, the hold is hungry.
-  const kept = tickHomes(state, stock, state.elapsedSeconds + 1);
+  const rules = rulesOf(state.difficulty);
+  const kept = tickHomes(state, stock, state.elapsedSeconds + 1, rules.food);
   for (const food of FOODS) stock[food] = kept.stock[food];
   const { homes, hungry } = kept;
   // Every resource the hold has had in any stockpile so far: what barges may come for.
@@ -397,10 +399,10 @@ export function tickGame(state: GameState): Partial<GameState> {
   const factors = moodFactors({ ...state, buildings, staff: moodStaff, warehouse: stock, hungry, homes });
   const happiness = driftHappiness(state.happiness, moodDrift(factors));
   let population = state.population;
-  if (happiness <= 0 && population > LEAVE_FLOOR) {
+  if (happiness <= 0 && population > rules.leaveFloor) {
     // Nobody stays in a hold this wretched: every so often one of the peasants leaves — whoever is free
     // (an idle hand, or a building's), else a miner off the last face — down to the keep's household.
-    if (elapsedSeconds % LEAVE_SECONDS === 0) {
+    if (elapsedSeconds % rules.leaveSeconds === 0) {
       const free = workforceOf({ ...before, population }).free;
       if (free > 0) population -= 1;
       else if (sites.length > 0) {
@@ -420,11 +422,17 @@ export function tickGame(state: GameState): Partial<GameState> {
   // hold isn't so wretched that its own people are leaving.
   const beds = buildingStats(buildings, moodStaff, techs).beds;
   if (elapsedSeconds % structure.arrivalSeconds === 0 && population < beds) {
-    if (population < LEAVE_FLOOR) {
+    if (population < rules.leaveFloor) {
       // Below the keep's household, drifters come whatever the mood or the larder.
       population += 1;
       notice = `A drifter has come to the keep: ${String(population)} peasants now.${hungry ? ' The store is empty: build an orchard or a fishing hut first.' : ''}`;
     } else if (happiness > 0 && roomForNewcomer({ population, buildings, techs, homes, hungry, placements: state.placements, roads: state.roads })) population += 1;
+  }
+  // One life (Hardcore): the last peasant has gone, and the hold with them.
+  let fallen: Partial<GameState> = {};
+  if (rules.oneLife && population <= 0 && state.population > 0) {
+    notice = 'The last peasant has left Greyhollow: the hold stands empty, and it has fallen.';
+    fallen = { fallen: { reason: notice, at: elapsedSeconds, raidsFought: state.raidsFought, campaignWon: state.campaign.won } };
   }
 
   // Staff the buildings from whoever isn't under orders; what each building does follows its staff.
@@ -450,7 +458,8 @@ export function tickGame(state: GameState): Partial<GameState> {
     const number = state.raidsFought + 1;
     const kind = raidKind(number);
     const power = holdPowerOf({ ...state, buildings, construction, population, sites, pendingSites });
-    const party = raidParty(number, raidStrength(number, kind === 'field' ? power.army : power.total, state.raidsLostInARow), kind);
+    const strength = raidStrength(number, kind === 'field' ? power.army : power.total, rules.streakRelief ? state.raidsLostInARow : 0) * rules.raidStrength;
+    const party = raidParty(number, Math.round(strength), kind);
     raidFields = { raid: { number, arrivesAt: state.nextRaidAt, party, kind } };
     const side = raidSide(number);
     const soon = String(state.nextRaidAt - elapsedSeconds);
@@ -565,6 +574,7 @@ export function tickGame(state: GameState): Partial<GameState> {
     cartLoads,
     recruits,
     ...raidFields,
+    ...fallen,
     notice,
   };
   return next;

@@ -1,4 +1,5 @@
 // The game's state: everything the game remembers (and saves), and the actions the store offers on it.
+import type { Difficulty, Fallen } from './difficulty';
 import type { Forest } from './forest';
 import type { PastureId } from './farms';
 import type { LevelCarts } from './haulage';
@@ -142,6 +143,10 @@ export type GameState = {
   happiness: number;
   /** How hard the keep taxes them (taxes.ts). */
   taxRate: TaxRate;
+  /** How hard the game is (difficulty.ts): chosen at the start, fixed for the game. */
+  difficulty: Difficulty;
+  /** A one-life (Hardcore) hold that fell: the game is over, and nothing more happens. */
+  fallen: Fallen | null;
   /** Units taken from each deposit so far, keyed by tile; a deposit is mined out at its total. */
   depositMined: Record<string, number>;
   /** Gallery stations that have been cut ("level:station"); their chamber and shaft stay dug. */
@@ -277,7 +282,8 @@ export type GameState = {
   closeBattle: () => void;
   dismissRaidReport: () => void;
   /** Wipe the save and start again from the beginning. */
-  resetGame: () => void;
+  /** Start a new game at `difficulty` (Normal when none is given). */
+  resetGame: (difficulty?: Difficulty) => void;
 };
 
 /** The saved part of the state: everything but the actions. */

@@ -4,7 +4,7 @@ import {
   BUILDING_IDS,
   BUILDING_INFO,
   MAX_BUILDING_LEVEL,
-  buildingCost,
+  buildingCostAt,
   buildingEffects,
   buildingStats,
   buildingTime,
@@ -150,7 +150,7 @@ export function BuildingDetail({ game, workforce, id, bare = false, onChooseSpot
   const branch = isForge(id) ? 'forges' : isHouse(id) ? 'houses' : isWoodcutter(id) ? 'woodcutter' : id;
   const now = buildingEffects(id, level, game.techs);
   const after = maxed ? null : buildingEffects(id, next, game.techs);
-  const cost = maxed ? null : buildingCost(id, next);
+  const cost = maxed ? null : buildingCostAt(id, next, game.difficulty);
   const blocker = upgradeBlocker(game, id, workforce);
   const need = staffNeeded(id, level);
   const paused = game.paused.includes(id);
@@ -231,7 +231,7 @@ export function BuildingDetail({ game, workforce, id, bare = false, onChooseSpot
             <View style={[styles.fill, styles.fillBuilding, { width: `${Math.round((job.progress / job.duration) * 100)}%` }]} />
           </View>
           <ConfirmButton
-            label={`STOP BUILDING · ALL ${String(buildingCost(id, job.level).gold)} GOLD AND MATERIALS BACK`}
+            label={`STOP BUILDING · ALL ${String(buildingCostAt(id, job.level, game.difficulty).gold)} GOLD AND MATERIALS BACK`}
             armedLabel="TAP AGAIN TO STOP BUILDING · THE CREW’S WORK IS LOST"
             accessibilityLabel={`Stop building the ${BUILDING_INFO[id].name}`}
             onConfirm={() => game.cancelConstruction(id)}

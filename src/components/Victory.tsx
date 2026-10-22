@@ -39,11 +39,15 @@ const PAGES: { icon: string; title: string; text: string }[] = [
   },
 ];
 
-export default function Victory({ onDone }: { onDone: () => void }) {
+/** The last line a Hardcore victory adds: the war won with one life. */
+const HARDCORE_LINE = 'And it was won on Hardcore, with one life and no second chances: the valley will sing of Greyhollow’s keep for as long as there is a valley. 👑';
+
+export default function Victory({ onDone, hardcore = false }: { onDone: () => void; hardcore?: boolean }) {
   const insets = useSafeAreaInsets();
   const [page, setPage] = useState(0);
   const last = page === PAGES.length - 1;
-  const { icon, title, text } = PAGES[page];
+  const { icon, title, text: pageText } = PAGES[page];
+  const text = last && hardcore ? `${pageText}\n\n${HARDCORE_LINE}` : pageText;
   // Android's Back turns back a page (on the first, it closes the epilogue).
   const back = useRef<() => boolean>(() => false);
   useEffect(() => {

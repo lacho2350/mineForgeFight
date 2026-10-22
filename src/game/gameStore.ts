@@ -7,9 +7,11 @@ import { RESOURCES, RESOURCE_INFO, STARTING_WOOD, emptyStock } from './resources
 import { startingForest } from './forest';
 import { STARTING_APPLES, STARTING_FISH } from './farms';
 import { fullHome } from './homes';
+import { DEFAULT_DIFFICULTY, rulesOf } from './difficulty';
+import { campaignWonOn } from './unlocks';
 import { STARTING_HAPPINESS } from './happiness';
 import { DEFAULT_TAX_RATE, TAX_INFO, isTaxRate } from './taxes';
-import { BUILDING_INFO, DWELLING_UNIT, STARTING_BUILDINGS, buildingCost, buildingStats, staffNeeded } from './buildings';
+import { BUILDING_INFO, DWELLING_UNIT, STARTING_BUILDINGS, buildingCostAt, buildingStats, staffNeeded } from './buildings';
 import { ARMY_RECRUITING, UNIT_STATS, emptyArmy } from './units';
 import { act, createBattle, resolveBattle, stepAI } from './combat';
 import { FIRST_RAID_AT } from './raids';
@@ -151,6 +153,8 @@ const gameState = (set: StoreApi<GameState>['setState']): GameState => ({
   homes: { houses: fullHome() },
   happiness: STARTING_HAPPINESS,
   taxRate: DEFAULT_TAX_RATE,
+  difficulty: DEFAULT_DIFFICULTY,
+  fallen: null,
   discovered: ['coal', 'wood', 'apples'],
   depositMined: {},
   openedStations: [stationKey(-1, 0), stationKey(-1, 1)],
@@ -181,7 +185,7 @@ const gameState = (set: StoreApi<GameState>['setState']): GameState => ({
   bargeSerial: 0,
   notice: 'Two miners are already working the first seam.',
 
-  tick: () => set(tickGame),
+  tick: () => set((state) => (state.fallen ? {} : tickGame(state))),
 
   assignMiner: (key) => set((state) => {
     // Miners come from the campfire only (building staff stay where the player put them).
@@ -391,7 +395,7 @@ const gameState = (set: StoreApi<GameState>['setState']): GameState => ({
       raid: 1000 + stage,
       campaign: stage,
       army: state.army,
-      enemies: campaignParty(stage, state.campaign.scale),
+      enemies: campaignParty(stage, state.campaign.scale * rulesOf(state.difficulty).campaign),
       wallHp: 0,
       gateHp: 0,
       towers: 0,
@@ -433,12 +437,23 @@ const gameState = (set: StoreApi<GameState>['setState']): GameState => ({
     };
   }),
 
-  resetGame: () => set((state) => ({
-    ...useGameStore.getInitialState(),
-    // Keep counting up, so caches keyed by the layout version never mistake the new mine for the old one.
-    layoutVersion: state.layoutVersion + 1,
-    notice: 'A new game begins. Two miners are already working the first seam.',
-  })),
+  resetGame: (difficulty = DEFAULT_DIFFICULTY) => set((state) => {
+    const fresh = useGameStore.getInitialState();
+    const rules = rulesOf(difficulty);
+    // What the hold starts with follows the difficulty: the gold, and the food, wood and coal in store.
+    const warehouse = { ...fresh.warehouse };
+    for (const resource of ['coal', 'wood', 'apples', 'fish'] as const) warehouse[resource] = Math.round(fresh.warehouse[resource] * rules.startStock);
+    return {
+      ...fresh,
+      difficulty,
+      gold: rules.startGold,
+      warehouse,
+      nextRaidAt: rules.firstRaidAt,
+      // Keep counting up, so caches keyed by the layout version never mistake the new mine for the old one.
+      layoutVersion: state.layoutVersion + 1,
+      notice: `A new game begins on ${rules.name}. Two miners are already working the first seam.`,
+    };
+  }),
 
   toggleBuildingPause: (id) => set((state) => {
     const { name } = BUILDING_INFO[id];
@@ -550,7 +565,7 @@ const gameState = (set: StoreApi<GameState>['setState']): GameState => ({
     const job = state.construction.find((other) => other.building === id);
     if (!job) return {};
     const { name } = BUILDING_INFO[id];
-    const cost = buildingCost(id, job.level);
+    const cost = buildingCostAt(id, job.level, state.difficulty);
     const warehouse = { ...state.warehouse };
     const lost: string[] = [];
     for (const resource of RESOURCES) {
@@ -718,7 +733,7 @@ const gameState = (set: StoreApi<GameState>['setState']): GameState => ({
     if (blocker) return { notice: `${tech.name}: ${blocker}` };
     const techs = [...state.techs, id];
     return {
-      gold: state.gold - techCost(state.techs, id),
+      gold: state.gold - techCost(state.techs, id, state.difficulty),
       techs,
       // Bigger bins are added to the miners' bins straight away (they also grow with depth).
       veinCapacity: state.veinCapacity + (tech.bonus?.veinCapacity ?? 0),
@@ -729,7 +744,7 @@ const gameState = (set: StoreApi<GameState>['setState']): GameState => ({
 
   digDeeper: () => set((state) => {
     if (state.depth >= MAX_DEPTH) return { notice: 'The mine has reached bedrock.' };
-    const goldCost = getDepthCost(state.depth, state.techs);
+    const goldCost = getDepthCost(state.depth, state.techs, state.difficulty);
     if (state.gold < goldCost) {
       return { notice: `The next shaft costs ${String(goldCost)} gold.` };
     }
@@ -747,7 +762,7 @@ const gameState = (set: StoreApi<GameState>['setState']): GameState => ({
     const layout = selectMineLayout(state);
     const problem = surveyProblem(state, layout, key);
     if (problem) return { notice: problem };
-    const area = surveyAt(key, state.techs);
+    const area = surveyAt(key, state.techs, state.difficulty);
     const cost = surveyCost(area.row, state.techs);
     // What the surveyors found in the dark: the deposits there, by kind.
     const found = new Map<string, number>();
@@ -842,6 +857,11 @@ const FIXED_RECORDS = ['buildings', 'warehouse', 'vein', 'mineExit', 'mineStock'
 
 const kept = keepAcrossRefresh ? running.mineforgeStore : undefined;
 export const useGameStore = kept ?? createGameStore();
+
+// Winning the campaign on Nightmare opens Hardcore, and on Hardcore earns the crown (kept across games).
+useGameStore.subscribe((state, previous) => {
+  if (state.campaign.victory && !previous.campaign.victory) campaignWonOn(state.difficulty);
+});
 if (kept) {
   // A refresh hands the kept store the edited actions, bound to it, so changed game logic runs at once. One
   // that added state (a new feature) also hands it the new fields' starting values — and new entries in the

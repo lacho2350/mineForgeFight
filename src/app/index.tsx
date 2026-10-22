@@ -8,7 +8,7 @@ import { flushSave } from '../game/save';
 import { BUILDING_NAMES, haulWalk, isShownBuilding, orderedRocks, workforceOf } from '../game/hold';
 import { canAffordBuild, roadCostText, trapBlocker, trapCostText, upgradeBlocker } from '../game/costs';
 import { useGame, useGameStore } from '../game/gameStore';
-import { BUILDING_IDS, BUILDING_INFO, MAX_BUILDING_LEVEL, buildingCost, buildingStats, taxPerMinute, type BuildingId } from '../game/buildings';
+import { BUILDING_IDS, BUILDING_INFO, MAX_BUILDING_LEVEL, buildingCostAt, buildingStats, taxPerMinute, type BuildingId } from '../game/buildings';
 import { HOUSE_IDS, isHouse, type HouseId } from '../game/houses';
 import { PANTRY, errandText, hasHomeRoad, isKept, sleepers } from '../game/homes';
 import { fellingStand, forestWood } from '../game/forest';
@@ -33,6 +33,10 @@ import { DepotPanel, ForgePanel, GearStore } from '../components/ForgePanel';
 import { isForge } from '../game/forges';
 import CombatPanel, { hireableNow } from '../components/CombatPanel';
 import RaidBanner from '../components/RaidBanner';
+import LeavingAlert from '../components/LeavingAlert';
+import { DIFFICULTY, type Difficulty } from '../game/difficulty';
+import GameOver from '../components/GameOver';
+import NewGamePanel from '../components/NewGamePanel';
 import MineInfo from '../components/MineInfo';
 import Sheet from '../components/Sheet';
 import Prologue from '../components/Prologue';
@@ -466,6 +470,8 @@ export default function StrongholdScreen() {
           />
         </Sheet>
       )}
+      {!popup && !placing && !painting && !game.fallen && <LeavingAlert game={game} onSeeMood={openMood} />}
+      {game.fallen && <GameOver game={game} />}
       {popup?.kind === 'mood' && (
         <Sheet title="Happiness" subtitle={`${moodWord(game.happiness).toUpperCase()} · THE HOLD WORKS AT ${String(Math.round(workPaceAt(game.happiness) * 100))}%`} onClose={close}>
           <MoodPanel game={game} workforce={workforce} />
@@ -496,6 +502,7 @@ export default function StrongholdScreen() {
       {/* The war is won: the epilogue, once (and again from the Menu). */}
       {game.prologueSeen && !replaying && ((game.campaign.victory && !game.campaign.victorySeen) || replayingVictory) && (
         <Victory
+          hardcore={game.difficulty === 'hardcore'}
           onDone={() => {
             setReplayingVictory(false);
             if (!game.campaign.victorySeen) game.seeVictory();
@@ -518,7 +525,7 @@ function Hud({ game, workforce, onMood }: { game: GameState; workforce: Workforc
   return (
     <View style={styles.hud}>
       <View style={styles.hudRow}>
-        <Stat label="GOLD" value={Math.floor(game.gold).toLocaleString()} tone="#e5a565" />
+        <Stat label={game.difficulty === 'normal' ? 'GOLD' : `GOLD · ${DIFFICULTY[game.difficulty].name.toUpperCase()}`} value={Math.floor(game.gold).toLocaleString()} tone="#e5a565" />
         <Stat
           label={cutOff > 0 ? `PEASANTS · ${String(cutOff)} HOME${cutOff === 1 ? '' : 'S'} NO ROAD` : `PEASANTS · ${String(workforce.idle)} IDLE`}
           value={`${String(game.population)}/${String(beds)}`}
@@ -639,7 +646,7 @@ function PlacementBar({ game, id, problem, onConfirm, onCancel }: {
   onCancel: () => void;
 }) {
   const { w, d } = FOOTPRINTS[id];
-  const cost = buildingCost(id, 1);
+  const cost = buildingCostAt(id, 1, game.difficulty);
   return (
     <View style={styles.placement}>
       <View style={styles.placementHead}>
@@ -669,9 +676,9 @@ function PlacementBar({ game, id, problem, onConfirm, onCancel }: {
 // Everything that can still be built: icon, size, first-level cost, and why not if it can't yet; then
 // the traps for the belt.
 // A building in the palette: redrawn only when what stops it being built changes.
-const PaletteBuilding = memo(function PaletteBuilding({ id, blocker, onPick }: { id: BuildingId; blocker: string | null; onPick: (id: BuildingId) => void }) {
+const PaletteBuilding = memo(function PaletteBuilding({ id, difficulty, blocker, onPick }: { id: BuildingId; difficulty: Difficulty; blocker: string | null; onPick: (id: BuildingId) => void }) {
   const { w, d } = FOOTPRINTS[id];
-  const cost = buildingCost(id, 1);
+  const cost = buildingCostAt(id, 1, difficulty);
   return (
     <Pressable
       accessibilityRole="button"
@@ -704,7 +711,7 @@ function BuildPalette({ game, onPick, onPaint }: { game: GameState; onPick: (id:
       {options.length === 0 && <Text style={styles.body}>Every building is on the map. Tap one to upgrade it.</Text>}
       <View style={styles.palette}>
         {options.map((id) => (
-          <PaletteBuilding key={id} id={id} blocker={upgradeBlocker(game, id, workforce)} onPick={onPick} />
+          <PaletteBuilding key={id} id={id} difficulty={game.difficulty} blocker={upgradeBlocker(game, id, workforce)} onPick={onPick} />
         ))}
       </View>
       <SectionLabel>LAND · THE TOWN STARTS UNDER ROCKS</SectionLabel>
@@ -1115,35 +1122,9 @@ function Menu({ game, workforce, onPrologue, onVictory }: { game: GameState; wor
       <ShopPanel adsRemoved={game.adsRemoved} />
       <GameButton label="THE STORY SO FAR" detail="the prologue: how Greyhollow came to be" onPress={onPrologue} secondary />
       {game.campaign.victory && <GameButton label="THE VICTORY" detail="the epilogue: how the war was won" onPress={onVictory} secondary />}
-      <NewGameButton onConfirm={game.resetGame} />
+      <NewGamePanel current={game.difficulty} onStart={game.resetGame} />
       <Text style={styles.footer}>DIG BELOW. BUILD ABOVE. · PROGRESS SAVES AUTOMATICALLY</Text>
     </>
-  );
-}
-
-// Starting over wipes the save, so it takes a second tap to confirm.
-function NewGameButton({ onConfirm }: { onConfirm: () => void }) {
-  const [armed, setArmed] = useState(false);
-  useEffect(() => {
-    if (!armed) return;
-    const timer = setTimeout(() => setArmed(false), 4000);
-    return () => clearTimeout(timer);
-  }, [armed]);
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={armed ? 'Confirm: delete this game and start a new one' : 'Start a new game'}
-      onPress={() => {
-        if (!armed) return setArmed(true);
-        setArmed(false);
-        onConfirm();
-      }}
-      style={({ pressed }) => [styles.newGame, armed && styles.newGameArmed, pressed && styles.pressed]}
-    >
-      <Text style={[styles.newGameText, armed && styles.newGameTextArmed]}>
-        {armed ? 'TAP AGAIN TO ERASE THIS GAME AND START OVER' : 'START A NEW GAME'}
-      </Text>
-    </Pressable>
   );
 }
 
@@ -1209,8 +1190,4 @@ const styles = StyleSheet.create({
   paletteDetail: { color: '#a9ad99', fontFamily: 'monospace', fontSize: 9 },
   paletteStatus: { fontFamily: 'monospace', fontSize: 8 },
   paletteReady: { color: '#c0cd83' },
-  newGame: { alignSelf: 'center', paddingVertical: 8, paddingHorizontal: 12, borderWidth: 1, borderColor: '#353b32' },
-  newGameArmed: { borderColor: '#e8604a', backgroundColor: '#2a1a16' },
-  newGameText: { color: '#7f8776', fontFamily: 'monospace', fontSize: 8 },
-  newGameTextArmed: { color: '#ff8a6c' },
 });

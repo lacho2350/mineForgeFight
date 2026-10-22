@@ -11,7 +11,7 @@ import { GameButton } from './GameUI';
 // Tap a tech to see what it does and what it needs, then research it with gold.
 
 type TechState = 'owned' | 'ready' | 'gold' | 'locked';
-type TreeGame = Pick<GameState, 'techs' | 'buildings' | 'depth' | 'gold' | 'buyTech'>;
+type TreeGame = Pick<GameState, 'techs' | 'buildings' | 'depth' | 'gold' | 'buyTech'> & Partial<Pick<GameState, 'difficulty'>>;
 
 function techState(game: TreeGame, id: TechId): TechState {
   const blocker = techBlocker(game, id);
@@ -51,7 +51,7 @@ type BranchProps = {
 };
 
 // How many of a branch's techs the gold would pay for: what the gold changes about how the branch looks.
-const affordable = (game: TreeGame, branch: TechBranch) => techsOf(branch).reduce((count, id) => count + (techCost(game.techs, id) <= game.gold ? 1 : 0), 0);
+const affordable = (game: TreeGame, branch: TechBranch) => techsOf(branch).reduce((count, id) => count + (techCost(game.techs, id, game.difficulty) <= game.gold ? 1 : 0), 0);
 
 /**
  * One branch: its tiers left to right, and the open tech's details below. Without `selected` /
@@ -96,7 +96,7 @@ function TechBranchBody({ game, branch, selected, onSelect, showName = true }: B
             {index > 0 && <View style={styles.link} />}
             <View style={styles.tier}>
               {column.map((id) => (
-                <TechNode key={id} id={id} state={techState(game, id)} cost={techCost(game.techs, id)} open={open === id} onSelect={select} />
+                <TechNode key={id} id={id} state={techState(game, id)} cost={techCost(game.techs, id, game.difficulty)} open={open === id} onSelect={select} />
               ))}
             </View>
           </View>
@@ -141,7 +141,7 @@ function TechDetail({ game, id }: { game: TreeGame; id: TechId }) {
   const tech = TECHS[id];
   const owned = game.techs.includes(id);
   const blocker = techBlocker(game, id);
-  const cost = techCost(game.techs, id);
+  const cost = techCost(game.techs, id, game.difficulty);
   const needs = techNeeds(game, id);
   return (
     <View style={styles.detail}>

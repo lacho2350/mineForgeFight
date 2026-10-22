@@ -7,8 +7,9 @@ import { isPlaceable, nearestFreeSpot, tileKey } from '../src/game/cityMap';
 import { upgradeBlocker } from '../src/game/costs';
 import { FOODS, isFarm } from '../src/game/farms';
 import { useGameStore } from '../src/game/gameStore';
+import { DIFFICULTIES, rulesOf, type Difficulty } from '../src/game/difficulty';
 import { MAX_HAPPINESS, moodWord } from '../src/game/happiness';
-import { BUILDING_NAMES } from '../src/game/hold';
+import { BUILDING_NAMES, fillStaffing } from '../src/game/hold';
 import { MAX_PEASANTS } from '../src/game/houses';
 import { RESOURCES, type Stock } from '../src/game/resources';
 import { accessRoads } from '../src/game/roads';
@@ -153,6 +154,36 @@ describe('playthroughs', () => {
     }
     expect(game().raidsFought).toBeGreaterThanOrEqual(1);
     expect(game().raidReport).not.toBeNull();
+  });
+
+  // The same absent player at every difficulty: nothing breaks, harder settings bring more raids, and a
+  // fallen Hardcore hold stops dead.
+  const raidsBy: Partial<Record<Difficulty, number>> = {};
+  it.each(DIFFICULTIES)('on %s, an absent player’s hour and a half of raids leaves the game sound', (difficulty) => {
+    useGameStore.getState().resetGame(difficulty);
+    useGameStore.setState({ autoResolveRaids: true, army: { ...emptyArmy(), pikeman: 20, bowman: 10 }, staffing: fillStaffing(game()) });
+    expect(game().difficulty).toBe(difficulty);
+    expect(game().gold).toBe(rulesOf(difficulty).startGold);
+    for (let minute = 0; minute < 90; minute++) {
+      if (game().fallen) break;
+      run(60);
+      checkInvariants();
+    }
+    if (game().fallen) {
+      expect(difficulty).toBe('hardcore');
+      const at = game().elapsedSeconds;
+      run(30);
+      expect(game().elapsedSeconds).toBe(at);
+    } else {
+      expect(game().raidsFought).toBeGreaterThanOrEqual(1);
+    }
+    raidsBy[difficulty] = game().raidsFought;
+  });
+
+  it('brings more raids the harder the game', () => {
+    expect(raidsBy.easy).toBeDefined();
+    expect(raidsBy.nightmare!).toBeGreaterThan(raidsBy.normal!);
+    expect(raidsBy.normal!).toBeGreaterThan(raidsBy.easy!);
   });
 
   it('cruel taxes and an empty store drive the peasants away, and kindness brings the hold back', () => {
