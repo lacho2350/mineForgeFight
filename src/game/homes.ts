@@ -133,7 +133,9 @@ type HomesState = Sleeping & {
  * she sets off). `stock` is the warehouse (its food is the store's); returns the homes, the stock and whether
  * the store ran out of food (the hold is hungry).
  */
-export function tickHomes(state: HomesState, stock: Stock, elapsedSeconds: number) {
+export function tickHomes(state: HomesState, stock: Stock, elapsedSeconds: number, appetite = 1) {
+  // What a peasant eats a second, at the game's difficulty (`appetite`, times Normal's).
+  const eats = FOOD_PER_PEASANT * appetite;
   const store: Stock = { ...stock };
   const storeFood = () => FOODS.reduce((sum, food) => sum + store[food], 0);
   const takeFood = (amount: number) => {
@@ -154,7 +156,7 @@ export function tickHomes(state: HomesState, stock: Stock, elapsedSeconds: numbe
       errand = null;
     }
     water = hundredths(Math.max(0, water - residents[id] * WATER_PER_PEASANT));
-    food = hundredths(Math.max(0, food - residents[id] * FOOD_PER_PEASANT));
+    food = hundredths(Math.max(0, food - residents[id] * eats));
     const spot = spotOf(id, state.placements);
     if (!errand && spot) {
       const needs: Errand['kind'][] = [];
@@ -174,7 +176,7 @@ export function tickHomes(state: HomesState, stock: Stock, elapsedSeconds: numbe
     homes[id] = errand === before.errand && water === before.water && food === before.food ? before : { water, food, errand };
   }
   // The keep's hall eats from the store.
-  const hallHunger = FOOD_PER_PEASANT * hall;
+  const hallHunger = eats * hall;
   const hungry = storeFood() < hallHunger - 1e-9 || storeFood() <= 0;
   takeFood(hallHunger);
   return { homes, stock: store, hungry };

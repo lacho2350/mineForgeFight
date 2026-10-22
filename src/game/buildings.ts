@@ -1,6 +1,7 @@
 // The stronghold's buildings: what each one does at every level (and with the techs bought for it),
 // what the next level costs and how long it takes to build. Pure data + maths (no React / Skia) so the
 // store and the screens share it.
+import { rulesOf, type Difficulty } from './difficulty';
 import { FORGE_IDS, FORGE_KEEP, FORGE_NAMES, forgeSpeedAt, isForge, type ForgeId } from './forges';
 import { HOUSE_IDS, HOUSE_KEEP, HOUSE_NAMES, MAX_PEASANTS, houseBeds, isHouse, type HouseId } from './houses';
 import { APPLES_PER_LEVEL, FISHERY_IDS, FISH_PER_LEVEL, LAMBS_PER_LEVEL, ORCHARD_IDS, PASTURE_IDS, SHEEP_PER_LEVEL, farmKeep, farmName, isFarm, isFishery, isOrchard, isPasture, type FarmId } from './farms';
@@ -506,6 +507,16 @@ export function buildingCost(id: BuildingId, level: number): BuildCost {
     resources[resource] = Math.max(1, Math.round(use * base * GROWTH ** (level - start)));
   }
   return { gold: Math.round(mix.treasury * GROWTH ** (level - 1)), resources };
+}
+
+/** What the next level costs at a game's difficulty (its `cost` times Normal's price). */
+export function buildingCostAt(id: BuildingId, level: number, difficulty?: Difficulty): BuildCost {
+  const scale = rulesOf(difficulty).cost;
+  const cost = buildingCost(id, level);
+  if (scale === 1) return cost;
+  const resources: Partial<Record<Resource, number>> = {};
+  for (const [resource, amount] of Object.entries(cost.resources) as [Resource, number][]) resources[resource] = Math.max(1, Math.round(amount * scale));
+  return { gold: Math.round(cost.gold * scale), resources };
 }
 
 /** Seconds of building work to raise a building to `level`. */

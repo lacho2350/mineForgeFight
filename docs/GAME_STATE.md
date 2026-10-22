@@ -902,6 +902,21 @@ src/
   react-native-google-mobile-ads 17.2 every Android build (CI or `npx expo run:android`) fails in Gradle
   with "Cannot get property 'googleMobileAdsJson'" unless built with `-PRNGMA_ANDROID_BACKEND=classic` (the
   CI passes it); 17.3.0 fixes it — `npx expo install react-native-google-mobile-ads` on the computer.
+- **Difficulty** (since 2026-10-22, `src/game/difficulty.ts`): chosen on the Menu's new-game panel
+  (`NewGamePanel`) and fixed for the game (`difficulty` in the state; older saves are Normal). Easy, Normal
+  (the game as before), Hard and Nightmare from the start; **Hardcore** once the campaign has been won on
+  Nightmare (`unlocks.ts`, its own `localStorage` key `mineforge-unlocks`, kept across games; a Hardcore
+  win adds the crown and a last line to the epilogue). Each setting scales: first raid and the time between
+  raids, raid strength (`tick.ts`), the share a lost raid takes (`settleBattle`), starting gold and stores
+  (`resetGame(difficulty)`), building / tunnel / tech / depth prices (`buildingCostAt`, `techCost`,
+  `tileDigCost`, `getDepthCost` take the difficulty), food eaten (`tickHomes` appetite), every bad mood
+  factor and a lost battle's grief (`moodFactors`, `afterBattle`), how fast peasants leave at 0, the
+  campaign's armies, and on Nightmare/Hardcore no losing-streak relief and a survey reach one tile shorter.
+  Hardcore is one life: no keep's household (`leaveFloor` 0); a siege lost with no army or the
+  `SIEGES_TO_FALL`th in a row, or the last peasant leaving, sets `fallen` — the tick stops and `GameOver`
+  shows on both screens with a new-game panel; a lost campaign battle closes the road (`campaign.closed`).
+  The HUD's gold label names any setting but Normal. `difficulty-test`, and `playthrough-test` runs the
+  absent player on every setting.
 - **Tests**: `npm test` (jest with the `jest-expo` preset) runs `__tests__/*-test.ts` — never put tests in
   `src/app/` (every file there is a route). `support.ts` has helpers: `newGame(overrides)` resets the store
   (no raid comes unless a test asks), `run(seconds)` ticks it, `build(levels)` places buildings like the

@@ -51,6 +51,8 @@ export type Campaign = {
   victory: boolean;
   /** The victory epilogue has been read. */
   victorySeen: boolean;
+  /** One life (Hardcore): a battle was lost, and the road is closed for this game. */
+  closed?: true;
 };
 
 export const emptyCampaign = (): Campaign => ({ unlocked: false, scale: 0, won: 0, fought: 0, victory: false, victorySeen: false });
@@ -68,6 +70,7 @@ export function cleanCampaign(saved: Partial<Campaign> | undefined): Campaign {
     fought: Math.max(won, number(saved.fought, 0)),
     victory: saved.victory === true || won >= CAMPAIGN_BATTLES,
     victorySeen: saved.victorySeen === true,
+    ...(saved.closed === true ? { closed: true as const } : {}),
   };
 }
 
@@ -128,6 +131,7 @@ export function afterCampaignBattle(campaign: Campaign, stage: number, won: bool
 export function campaignBlocker(state: { campaign: Campaign; army: Army; battle: { status: string } | null; raid: unknown }): string | null {
   if (!state.campaign.unlocked) return 'The campaign opens when the hold raises its first angel.';
   if (nextStage(state.campaign) === null) return 'The war is won: the Red Hand is broken.';
+  if (state.campaign.closed) return 'The road to Aldmere is closed: on Hardcore a lost battle can’t be fought again.';
   if (state.battle?.status === 'active') return 'A battle is being fought already.';
   if (state.raid && typeof state.raid === 'object' && 'arrivesAt' in state.raid) return 'Raiders are sighted: the army stays to meet them first.';
   if (armyValue(state.army) <= 0) return 'There is no army to march.';

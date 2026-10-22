@@ -2,6 +2,7 @@
 // bought once and lasts for good. Each branch climbs in tiers (I → II → III): a tech needs the one
 // before it, its building at a level (the mine: galleries opened), and sometimes a tech from another
 // branch. `techBonuses` adds up what the owned techs do; buildings.ts and the store apply it. Pure TS.
+import { rulesOf, type Difficulty } from './difficulty';
 import type { BuildingId } from './buildings';
 import type { ArmyUnit } from './units';
 
@@ -283,7 +284,7 @@ export function techBonuses(owned: readonly TechId[] = []): TechBonuses {
   return total;
 }
 
-/** Gold a tech costs, after the library's discount. */
-export function techCost(owned: readonly TechId[], id: TechId) {
-  return Math.round(TECHS[id].gold * (1 - techBonuses(owned).techCost));
+/** Gold a tech costs, after the library's discount (and at the game's difficulty). */
+export function techCost(owned: readonly TechId[], id: TechId, difficulty?: Difficulty) {
+  return Math.round(TECHS[id].gold * (1 - techBonuses(owned).techCost) * rulesOf(difficulty).cost);
 }

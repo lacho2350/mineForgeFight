@@ -1,9 +1,10 @@
 // What things cost, and what stops the player doing them (with the reason shown).
+import { rulesOf, type Difficulty } from './difficulty';
 import { RESOURCES, RESOURCE_INFO } from './resources';
 import {
   BUILDING_INFO,
   MAX_BUILDING_LEVEL,
-  buildingCost,
+  buildingCostAt,
   buildingStats,
   crewSize,
   requiredKeep,
@@ -25,8 +26,8 @@ import type { Cost, GameState, WorkforceState } from './state';
 import { docksOf, workforceOf } from './hold';
 
 // Grows steadily rather than exponentially, so the 450-gallery mine stays reachable. Shaft surveys cut it.
-export function getDepthCost(depth: number, techs: readonly TechId[] = []) {
-  return Math.round((100 + 60 * (depth - 1) ** 1.35) * (1 - techBonuses(techs).depthCost));
+export function getDepthCost(depth: number, techs: readonly TechId[] = [], difficulty?: Difficulty) {
+  return Math.round((100 + 60 * (depth - 1) ** 1.35) * (1 - techBonuses(techs).depthCost) * rulesOf(difficulty).cost);
 }
 
 export function canAfford(state: Pick<GameState, 'warehouse' | 'gold'>, cost: Cost) {
@@ -40,7 +41,7 @@ export function canAffordBuild(state: Pick<GameState, 'warehouse' | 'gold'>, cos
 
 /** Why the next level of a building can't be started right now, or null if it can. */
 export function upgradeBlocker(
-  state: WorkforceState & Pick<GameState, 'warehouse' | 'gold' | 'warehouseCapacity' | 'techs'>,
+  state: WorkforceState & Pick<GameState, 'warehouse' | 'gold' | 'warehouseCapacity' | 'techs'> & Partial<Pick<GameState, 'difficulty'>>,
   id: BuildingId,
   workforce: Workforce = workforceOf(state),
 ): string | null {
@@ -56,7 +57,7 @@ export function upgradeBlocker(
   const crew = crewSize(level + 1);
   const free = workforce.free;
   if (free < crew) return `Needs a crew of ${String(crew)} peasants (${String(free)} free). Wait for more, or pause a building.`;
-  const cost = buildingCost(id, level + 1);
+  const cost = buildingCostAt(id, level + 1, state.difficulty);
   const tooBig = RESOURCES.find((resource) => (cost.resources[resource] ?? 0) > state.warehouseCapacity);
   if (tooBig) {
     return `Needs ${(cost.resources[tooBig] ?? 0).toLocaleString()} ${RESOURCE_INFO[tooBig].name.toLowerCase()}, but the warehouses hold only ${state.warehouseCapacity.toLocaleString()} each.`;
@@ -96,12 +97,12 @@ export function roadCostText(kind: RoadKind) {
 }
 
 /** Everything spent on a building so far (every level built, and the one being built). */
-export function buildingSpent(state: Pick<GameState, 'buildings' | 'construction'>, id: BuildingId) {
+export function buildingSpent(state: Pick<GameState, 'buildings' | 'construction'> & Partial<Pick<GameState, 'difficulty'>>, id: BuildingId) {
   const job = state.construction.find((item) => item.building === id);
   const top = job ? job.level : state.buildings[id];
   const spent: BuildCost = { gold: 0, resources: {} };
   for (let level = 1; level <= top; level++) {
-    const cost = buildingCost(id, level);
+    const cost = buildingCostAt(id, level, state.difficulty);
     spent.gold += cost.gold;
     for (const resource of RESOURCES) {
       const amount = cost.resources[resource];
@@ -115,7 +116,7 @@ export function buildingSpent(state: Pick<GameState, 'buildings' | 'construction
 export const DESTROY_REFUND = 0.5;
 
 /** What destroying a building gives back. */
-export function destroyRefund(state: Pick<GameState, 'buildings' | 'construction'>, id: BuildingId): BuildCost {
+export function destroyRefund(state: Pick<GameState, 'buildings' | 'construction'> & Partial<Pick<GameState, 'difficulty'>>, id: BuildingId): BuildCost {
   const spent = buildingSpent(state, id);
   const refund: BuildCost = { gold: Math.floor(spent.gold * DESTROY_REFUND), resources: {} };
   for (const resource of RESOURCES) {
@@ -134,7 +135,7 @@ function branchLevel(buildings: BuildingLevels, branch: Exclude<TechBranch, 'min
 const branchBuilding = (branch: Exclude<TechBranch, 'mine'>) => (branch === 'forges' ? 'a forge' : branch === 'houses' ? 'a house' : branch === 'woodcutter' ? 'a woodcutter’s hut' : `the ${BUILDING_INFO[branch].name}`);
 
 /** Why a tech can't be bought right now, or null if it can. */
-export function techBlocker(state: Pick<GameState, 'techs' | 'buildings' | 'depth' | 'gold'>, id: TechId): string | null {
+export function techBlocker(state: Pick<GameState, 'techs' | 'buildings' | 'depth' | 'gold'> & Partial<Pick<GameState, 'difficulty'>>, id: TechId): string | null {
   const tech = TECHS[id];
   if (state.techs.includes(id)) return 'Researched.';
   const missing = tech.requires.find((other) => !state.techs.includes(other));
@@ -145,7 +146,7 @@ export function techBlocker(state: Pick<GameState, 'techs' | 'buildings' | 'dept
     const name = branchBuilding(tech.branch);
     return tech.tier === 1 ? `Build ${name} first.` : `Needs ${name} at level ${String(TIER_LEVEL[tech.tier])}.`;
   }
-  if (state.gold < techCost(state.techs, id)) return 'Not enough gold.';
+  if (state.gold < techCost(state.techs, id, state.difficulty)) return 'Not enough gold.';
   return null;
 }
 
@@ -166,15 +167,15 @@ export function techNeeds(state: Pick<GameState, 'techs' | 'buildings' | 'depth'
 }
 
 /** Gold to dig a tile on `row`, after the research facility's and the techs' discounts. */
-export function tileDigCost(state: Pick<GameState, 'buildings' | 'techs'>, row: number) {
-  return Math.max(1, Math.round(digCost(row) * buildingStats(state.buildings, undefined, state.techs).digCostFactor));
+export function tileDigCost(state: Pick<GameState, 'buildings' | 'techs'> & Partial<Pick<GameState, 'difficulty'>>, row: number) {
+  return Math.max(1, Math.round(digCost(row) * buildingStats(state.buildings, undefined, state.techs).digCostFactor * rulesOf(state.difficulty).cost));
 }
 
 /** Wood for the pit props of every tunnel tile. */
 export const TUNNEL_WOOD = 1;
 
 /** Gold to dig a whole route, after the discounts (it also takes `TUNNEL_WOOD` a tile). */
-export function tunnelCost(state: Pick<GameState, 'buildings' | 'techs'>, route: string[]) {
+export function tunnelCost(state: Pick<GameState, 'buildings' | 'techs'> & Partial<Pick<GameState, 'difficulty'>>, route: string[]) {
   return route.reduce((sum, key) => sum + tileDigCost(state, parseKey(key).row), 0);
 }
 

@@ -1,5 +1,6 @@
 // Loading a save: older saves are migrated (the map grew, old armory orders are paid back) and laid over a
 // fresh game, so new state always has a default.
+import { isDifficulty, type Fallen } from './difficulty';
 import { RESOURCES, STARTING_WOOD, emptyStock, type Resource } from './resources';
 import { cleanForest } from './forest';
 import { STARTING_APPLES } from './farms';
@@ -45,6 +46,14 @@ type Incoming = Partial<SavedState> & { joinRoads?: boolean };
 
 // Lay a save over a fresh game. Records are merged key by key, so a save from an older version still gets
 // any buildings, units or resources added since; stats that follow from building levels are recomputed.
+/** A fallen hold's record, if the save has a sound one. */
+function cleanFallen(saved: unknown): Fallen | null {
+  if (!saved || typeof saved !== 'object') return null;
+  const fallen = saved as Partial<Fallen>;
+  const count = (value: unknown) => (typeof value === 'number' && Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0);
+  return { reason: typeof fallen.reason === 'string' ? fallen.reason : 'The hold has fallen.', at: count(fallen.at), raidsFought: count(fallen.raidsFought), campaignWon: count(fallen.campaignWon) };
+}
+
 export function mergeSave(saved: Incoming | undefined, fresh: GameState): GameState {
   if (!saved) return fresh;
   const stock = (key: 'vein' | 'mineExit' | 'mineStock' | 'warehouse') => ({ ...emptyStock(), ...saved[key] });
@@ -162,6 +171,9 @@ export function mergeSave(saved: Incoming | undefined, fresh: GameState): GameSt
     // Saves from before happiness start where a new game does; a damaged value is clamped.
     happiness: typeof saved.happiness === 'number' && Number.isFinite(saved.happiness) ? Math.max(0, Math.min(MAX_HAPPINESS, saved.happiness)) : fresh.happiness,
     taxRate: isTaxRate(saved.taxRate) ? saved.taxRate : fresh.taxRate,
+    // Saves from before difficulties are Normal games; a fallen (Hardcore) hold stays fallen.
+    difficulty: isDifficulty(saved.difficulty) ? saved.difficulty : fresh.difficulty,
+    fallen: cleanFallen(saved.fallen),
     paused: saved.paused ?? [],
     construction: (saved.construction ?? []).map((job) => ({ ...job, crew: job.crew ?? crewSize(job.level) })),
     // Saves from before buildings were placed: every existing building gets a spot.

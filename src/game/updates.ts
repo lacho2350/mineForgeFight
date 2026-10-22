@@ -4,10 +4,11 @@ import { RESOURCES, type Resource, type Stock } from './resources';
 import { BATTLE_MOOD, afterBattle } from './happiness';
 import { FOOTPRINTS, sideOf, type MapSide } from './cityMap';
 import { LOST_RAID_SHEEP_TAKEN, PASTURE_IDS, RAID_SHEEP_TAKEN } from './farms';
-import { BUILDING_INFO, buildingCost, buildingStats, buildingTime, crewSize, type BuildingId, type BuildingLevels } from './buildings';
-import { ARMY_UNITS, type Army } from './units';
+import { BUILDING_INFO, buildingCostAt, buildingStats, buildingTime, crewSize, type BuildingId, type BuildingLevels } from './buildings';
+import { ARMY_UNITS, armyValue, type Army } from './units';
 import { battleOutcome, raiderStrength, type Battle } from './combat';
-import { FIELD_BOUNTY, FIELD_PLUNDER_SHARE, PLUNDER_SHARE, RAID_INTERVAL, raidBounty, raidSide } from './raids';
+import { FIELD_BOUNTY, raidBounty, raidSide } from './raids';
+import { SIEGES_TO_FALL, rulesOf, type Fallen } from './difficulty';
 import { CAMPAIGN_BATTLES, CAMPAIGN_STAGES, afterCampaignBattle, campaignBounty } from './campaign';
 import { BARGE_SAIL, type Barge } from './ship';
 import { ITEM_INFO, type ItemId, type ItemStock } from './items';
@@ -71,7 +72,8 @@ export function undoWagonTrip(
   return 'in the store';
 }
 
-type SettleState = Pick<GameState, 'gold' | 'warehouse' | 'army' | 'battleArmy' | 'elapsedSeconds' | 'raid' | 'raidsFought' | 'raidsLostInARow' | 'buildings' | 'placements' | 'flocks' | 'happiness' | 'campaign'>;
+type SettleState = Pick<GameState, 'gold' | 'warehouse' | 'army' | 'battleArmy' | 'elapsedSeconds' | 'raid' | 'raidsFought' | 'raidsLostInARow' | 'buildings' | 'placements' | 'flocks' | 'happiness' | 'campaign'> &
+  Partial<Pick<GameState, 'difficulty'>>;
 
 // A battle just ended: survivors rejoin the army, and the bounty is paid or the plunder taken.
 export function settleBattle(state: SettleState, battle: Battle) {
@@ -81,6 +83,8 @@ export function settleBattle(state: SettleState, battle: Battle) {
   if (battle.campaign) return settleCampaignBattle(state, battle, battle.campaign, { army, losses, slain });
   const number = state.raid?.number ?? battle.raid;
   const field = battle.kind === 'field';
+  const rules = rulesOf(state.difficulty);
+  const plunder = field ? rules.plunder / 2 : rules.plunder;
   const report: RaidReport = {
     number,
     kind: field ? 'field' : 'siege',
@@ -101,11 +105,11 @@ export function settleBattle(state: SettleState, battle: Battle) {
     const taken: Partial<Stock> = {};
     warehouse = { ...warehouse };
     for (const resource of RESOURCES) {
-      const amount = Math.floor(warehouse[resource] * (field ? FIELD_PLUNDER_SHARE : PLUNDER_SHARE));
+      const amount = Math.floor(warehouse[resource] * plunder);
       if (amount > 0) taken[resource] = amount;
       warehouse[resource] = roundCoal(warehouse[resource] - amount);
     }
-    const goldTaken = Math.floor(gold * (field ? FIELD_PLUNDER_SHARE : PLUNDER_SHARE));
+    const goldTaken = Math.floor(gold * plunder);
     gold -= goldTaken;
     report.plundered = { gold: goldTaken, resources: taken };
     notice = field
@@ -118,10 +122,26 @@ export function settleBattle(state: SettleState, battle: Battle) {
   const ravaged = ravage(state, raidSide(number), report.outcome === 'lost');
   if (ravaged.note) notice += ` ${ravaged.note}`;
   // A victory cheers the whole hold; a defeat grieves it (happiness.ts).
-  const happiness = afterBattle(state.happiness, report.outcome);
+  const happiness = afterBattle(state.happiness, report.outcome, rules.moodPenalty);
   if (report.outcome === 'won') notice += ` The hold celebrates (+${String(BATTLE_MOOD.won)} happiness).`;
-  else if (report.outcome === 'lost') notice += ` The hold mourns (${String(BATTLE_MOOD.lost)} happiness).`;
+  else if (report.outcome === 'lost') notice += ` The hold mourns (${String(Math.round(BATTLE_MOOD.lost * rules.moodPenalty))} happiness).`;
+  const lostInARow = report.outcome === 'lost' ? state.raidsLostInARow + 1 : 0;
+  // One life (Hardcore): a siege lost with no army to defend the hold, or one too many in a row, and it falls.
+  let fallen: Fallen | null = null;
+  if (rules.oneLife && report.outcome === 'lost' && !field) {
+    const noArmy = armyValue(state.battleArmy) <= 0;
+    if (noArmy || lostInARow >= SIEGES_TO_FALL) {
+      fallen = {
+        reason: noArmy ? `Raid ${String(number)} stormed the walls with no army to meet it: Greyhollow has fallen.` : `Raid ${String(number)} was the ${String(SIEGES_TO_FALL)}rd siege lost in a row: Greyhollow has fallen.`,
+        at: state.elapsedSeconds,
+        raidsFought: Math.max(state.raidsFought, number),
+        campaignWon: state.campaign.won,
+      };
+      notice = fallen.reason;
+    }
+  }
   return {
+    ...(fallen ? { fallen } : {}),
     army,
     gold,
     warehouse,
@@ -130,8 +150,8 @@ export function settleBattle(state: SettleState, battle: Battle) {
     raidReport: report,
     raid: null,
     raidsFought: Math.max(state.raidsFought, number),
-    raidsLostInARow: report.outcome === 'lost' ? state.raidsLostInARow + 1 : 0,
-    nextRaidAt: state.elapsedSeconds + RAID_INTERVAL,
+    raidsLostInARow: lostInARow,
+    nextRaidAt: state.elapsedSeconds + rules.raidInterval,
     notice,
   };
 }
@@ -153,15 +173,18 @@ function settleCampaignBattle(state: SettleState, battle: Battle, stage: number,
     plundered: null,
     campaign: stage,
   };
-  const campaign = afterCampaignBattle(state.campaign, stage, won);
-  const happiness = afterBattle(state.happiness, report.outcome);
+  const rules = rulesOf(state.difficulty);
+  const after = afterCampaignBattle(state.campaign, stage, won);
+  // One life (Hardcore): a lost campaign battle closes the road for this game.
+  const campaign = rules.oneLife && report.outcome === 'lost' ? { ...after, closed: true as const } : after;
+  const happiness = afterBattle(state.happiness, report.outcome, rules.moodPenalty);
   let notice: string;
   if (won && stage >= CAMPAIGN_BATTLES) {
     notice = `${site.title} has fallen: the Red Hand is broken and Aldmere is free! +${String(report.bounty)} gold. The hold celebrates (+${String(BATTLE_MOOD.won)} happiness).`;
   } else if (won) {
     notice = `${site.title} is won: +${String(report.bounty)} gold. The road to ${CAMPAIGN_STAGES[stage].title} is open. The hold celebrates (+${String(BATTLE_MOOD.won)} happiness).`;
   } else if (report.outcome === 'lost') {
-    notice = `Beaten at ${site.title}: the survivors fall back to Greyhollow. The hold mourns (${String(BATTLE_MOOD.lost)} happiness).`;
+    notice = `Beaten at ${site.title}: the survivors fall back to Greyhollow. The hold mourns (${String(Math.round(BATTLE_MOOD.lost * rules.moodPenalty))} happiness).${campaign.closed ? ' On Hardcore the road to Aldmere is closed for good.' : ''}`;
   } else {
     notice = `${site.title}: night fell with the Horde still standing. The army falls back to camp.`;
   }
@@ -239,7 +262,7 @@ export function transfer(from: Stock, to: Stock, capacity: number, destinationCa
 // Pay for the next level of a building and put a crew on it.
 export function startBuilding(state: GameState, id: BuildingId): Partial<GameState> {
   const level = state.buildings[id] + 1;
-  const cost = buildingCost(id, level);
+  const cost = buildingCostAt(id, level, state.difficulty);
   const warehouse = { ...state.warehouse };
   for (const resource of RESOURCES) warehouse[resource] = roundCoal(warehouse[resource] - (cost.resources[resource] ?? 0));
   const duration = buildingTime(level);

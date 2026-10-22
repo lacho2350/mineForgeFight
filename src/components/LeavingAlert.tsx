@@ -3,7 +3,8 @@ import { StyleSheet, Text, View } from 'react-native';
 import type { GameState } from '../game/state';
 import { workforceOf } from '../game/hold';
 import { useGameStore } from '../game/gameStore';
-import { LEAVE_FLOOR, LEAVE_SECONDS, moodFactors } from '../game/happiness';
+import { moodFactors } from '../game/happiness';
+import { rulesOf } from '../game/difficulty';
 import { TAX_INFO } from '../game/taxes';
 import { GameButton, SectionLabel } from './GameUI';
 import Sheet from './Sheet';
@@ -29,7 +30,7 @@ useGameStore.subscribe((state) => {
 });
 
 /** Are peasants leaving now (happiness 0, and more than the keep's household left)? */
-const peasantsLeaving = (game: Pick<GameState, 'happiness' | 'population'>) => game.happiness <= 0 && game.population > LEAVE_FLOOR;
+const peasantsLeaving = (game: Pick<GameState, 'happiness' | 'population' | 'difficulty'>) => game.happiness <= 0 && game.population > rulesOf(game.difficulty).leaveFloor;
 
 export default function LeavingAlert({ game, onSeeMood }: { game: GameState; onSeeMood?: () => void }) {
   const dismissed = useSyncExternalStore(subscribe, () => warned);
@@ -39,10 +40,12 @@ export default function LeavingAlert({ game, onSeeMood }: { game: GameState; onS
     .filter((factor) => factor.perMinute < 0)
     .sort((a, b) => a.perMinute - b.perMinute);
   const taxes = TAX_INFO[game.taxRate];
+  const rules = rulesOf(game.difficulty);
   return (
     <Sheet title="Peasants are leaving!" subtitle={`HAPPINESS 0 · ${String(game.population)} PEASANTS LEFT`} onClose={dismiss}>
       <Text style={styles.body}>
-        Nobody stays in a hold this wretched: a peasant leaves every {String(LEAVE_SECONDS)} seconds — miners and workers too — until only the keep’s household of {String(LEAVE_FLOOR)} remains, and nobody new comes while it lasts.
+        Nobody stays in a hold this wretched: a peasant leaves every {String(rules.leaveSeconds)} seconds — miners and workers too —{' '}
+        {rules.leaveFloor > 0 ? `until only the keep’s household of ${String(rules.leaveFloor)} remains` : 'until nobody is left, and on Hardcore an empty hold has fallen'}, and nobody new comes while it lasts.
       </Text>
       {hurting.length > 0 && (
         <View style={styles.list}>

@@ -2,6 +2,7 @@
 // deposits in it show (and can be dug to) further out than the miners can see. They take a long while to
 // be ready again at first; the mine's survey techs (Survey lanterns, Dowsing rods, Seismic charges) make
 // them quicker, cheaper and wider. Pure TS.
+import { rulesOf, type Difficulty } from './difficulty';
 import { MINE_COLUMNS, MINE_SURFACE_ROWS } from '../components/MineMapLayout';
 import { isDug, isRevealed, parseKey, type MineLayout, type Survey } from './mineLayout';
 import { techBonuses, type TechId } from './techs';
@@ -15,15 +16,16 @@ export const SURVEY_RADIUS = 6;
 /** Seconds until the surveyors are ready again after a survey. */
 export const surveyCooldown = (techs: readonly TechId[]) => Math.round(SURVEY_SECONDS * Math.max(0.2, 1 - techBonuses(techs).surveyTime));
 /** Tiles a survey maps all round its centre. */
-export const surveyRadius = (techs: readonly TechId[]) => SURVEY_RADIUS + techBonuses(techs).surveyRadius;
+/** How far the surveyors see: their techs widen it, Nightmare and Hardcore narrow it (difficulty.ts). */
+export const surveyRadius = (techs: readonly TechId[], difficulty?: Difficulty) => Math.max(1, SURVEY_RADIUS + techBonuses(techs).surveyRadius + rulesOf(difficulty).surveyReach);
 /** Gold a survey costs: dearer the deeper it goes. */
 export const surveyCost = (row: number, techs: readonly TechId[]) =>
   Math.round((25 + Math.floor(Math.max(0, row - MINE_SURFACE_ROWS) / 2)) * (1 - techBonuses(techs).surveyCost));
 
-type SurveyState = { elapsedSeconds: number; surveyReadyAt: number; gold: number; techs: readonly TechId[] };
+type SurveyState = { elapsedSeconds: number; surveyReadyAt: number; gold: number; techs: readonly TechId[]; difficulty?: Difficulty };
 
 /** The survey made from the tunnel tile `key` (centre and reach). */
-export const surveyAt = (key: string, techs: readonly TechId[]): Survey => ({ ...parseKey(key), radius: surveyRadius(techs) });
+export const surveyAt = (key: string, techs: readonly TechId[], difficulty?: Difficulty): Survey => ({ ...parseKey(key), radius: surveyRadius(techs, difficulty) });
 
 /** The tiles of `area` nobody can see yet (what a survey there would map); stops at `limit` of them. */
 export function darkTiles(layout: MineLayout, area: Survey, limit = Infinity) {
@@ -48,6 +50,6 @@ export function surveyProblem(state: SurveyState, layout: MineLayout, key: strin
   if (wait > 0) return `The surveyors are still out: ready in ${String(Math.ceil(wait))} s.`;
   const cost = surveyCost(row, state.techs);
   if (state.gold < cost) return `A survey there costs ${String(cost)} gold.`;
-  if (darkTiles(layout, surveyAt(key, state.techs), 1).length === 0) return 'The rock round there is mapped already: pick a tunnel nearer the dark rock.';
+  if (darkTiles(layout, surveyAt(key, state.techs, state.difficulty), 1).length === 0) return 'The rock round there is mapped already: pick a tunnel nearer the dark rock.';
   return null;
 }
