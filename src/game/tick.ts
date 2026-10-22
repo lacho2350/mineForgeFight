@@ -13,7 +13,7 @@ import { isHouse } from './houses';
 import { fellWood } from './forest';
 import { FOODS, LAMBS_PER_LEVEL, MUTTON_PER_SHEEP, PASTURE_IDS, SHEEP_PER_LEVEL, WOOL_PER_SHEEP } from './farms';
 import { roomForNewcomer, tickHomes } from './homes';
-import { LEAVE_SECONDS, driftHappiness, moodDrift, moodFactors, workPaceAt } from './happiness';
+import { LEAVE_FLOOR, LEAVE_SECONDS, driftHappiness, moodDrift, moodFactors, workPaceAt } from './happiness';
 import { gearComing, gearWanted, incomingTo, supplyLoad, wagonBackAt, wagonDropAt, type WagonJob } from './wagons';
 import { SIDE_NAMES } from './cityMap';
 import { haulFactor } from './roads';
@@ -397,9 +397,9 @@ export function tickGame(state: GameState): Partial<GameState> {
   const factors = moodFactors({ ...state, buildings, staff: moodStaff, warehouse: stock, hungry, homes });
   const happiness = driftHappiness(state.happiness, moodDrift(factors));
   let population = state.population;
-  if (happiness <= 0 && population > 0) {
+  if (happiness <= 0 && population > LEAVE_FLOOR) {
     // Nobody stays in a hold this wretched: every so often one of the peasants leaves — whoever is free
-    // (an idle hand, or a building's), else a miner off the last face.
+    // (an idle hand, or a building's), else a miner off the last face — down to the keep's household.
     if (elapsedSeconds % LEAVE_SECONDS === 0) {
       const free = workforceOf({ ...before, population }).free;
       if (free > 0) population -= 1;
@@ -409,7 +409,9 @@ export function tickGame(state: GameState): Partial<GameState> {
         layoutVersion += 1;
       }
       if (population < state.population) {
-        notice = `A peasant has left Greyhollow: nobody stays in a hold this unhappy. Lower the taxes, bring in food, or build a fair — ${String(population)} remain.`;
+        notice = hungry
+          ? `A peasant has left Greyhollow: the store is empty and nobody stays to starve. Build an orchard or a fishing hut and staff it, or buy food — ${String(population)} remain.`
+          : `A peasant has left Greyhollow: nobody stays in a hold this unhappy. Lower the taxes, bring in food, or build a fair — ${String(population)} remain.`;
       }
     }
   }
@@ -417,7 +419,13 @@ export function tickGame(state: GameState): Partial<GameState> {
   // New peasants come to the campfire while there are free beds (the houses' staff keep the beds), and the
   // hold isn't so wretched that its own people are leaving.
   const beds = buildingStats(buildings, moodStaff, techs).beds;
-  if (happiness > 0 && elapsedSeconds % structure.arrivalSeconds === 0 && population < beds && roomForNewcomer({ population, buildings, techs, homes, hungry, placements: state.placements, roads: state.roads })) population += 1;
+  if (elapsedSeconds % structure.arrivalSeconds === 0 && population < beds) {
+    if (population < LEAVE_FLOOR) {
+      // Below the keep's household, drifters come whatever the mood or the larder.
+      population += 1;
+      notice = `A drifter has come to the keep: ${String(population)} peasants now.${hungry ? ' The store is empty: build an orchard or a fishing hut first.' : ''}`;
+    } else if (happiness > 0 && roomForNewcomer({ population, buildings, techs, homes, hungry, placements: state.placements, roads: state.roads })) population += 1;
+  }
 
   // Staff the buildings from whoever isn't under orders; what each building does follows its staff.
   const workforce = workforceOf({ ...before, population });

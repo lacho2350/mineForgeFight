@@ -33,6 +33,7 @@ import { DepotPanel, ForgePanel, GearStore } from '../components/ForgePanel';
 import { isForge } from '../game/forges';
 import CombatPanel, { hireableNow } from '../components/CombatPanel';
 import RaidBanner from '../components/RaidBanner';
+import MineInfo from '../components/MineInfo';
 import Sheet from '../components/Sheet';
 import Prologue from '../components/Prologue';
 import Victory from '../components/Victory';
@@ -57,6 +58,7 @@ type Popup =
   | { kind: 'mood' }
   | { kind: 'combat' }
   | { kind: 'leave' }
+  | { kind: 'mine' }
   | null;
 /** A building being placed and where its footprint is now. */
 type Placing = { id: BuildingId; x: number; y: number } | null;
@@ -277,6 +279,7 @@ export default function StrongholdScreen() {
         onPaintEnd={finishStroke}
         selected={popup?.kind === 'building' ? popup.id : null}
         onSelect={openBuilding}
+        onTapMine={() => setPopup({ kind: 'mine' })}
         onTapGround={tapGround}
         active={focused}
         insetTop={hudHeight}
@@ -375,6 +378,17 @@ export default function StrongholdScreen() {
           {popup.id === 'armory' && <GearStore game={game} />}
           {isForge(popup.id) && <ForgePanel game={game} forge={popup.id} />}
           {popup.id === 'depot' && <DepotPanel game={game} />}
+        </Sheet>
+      )}
+      {popup?.kind === 'mine' && (
+        <Sheet title="The Mine" subtitle={`${String(game.depth)} GALLER${game.depth === 1 ? 'Y' : 'IES'} OPEN`} onClose={close}>
+          <MineInfo
+            game={game}
+            onGoDown={() => {
+              setPopup(null);
+              openMine();
+            }}
+          />
         </Sheet>
       )}
       {popup?.kind === 'road' && (
