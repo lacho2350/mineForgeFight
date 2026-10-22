@@ -16,6 +16,7 @@ import { findDigRoute, getDepositInfo, standingTargets, tileKey } from '../game/
 import DepositPanel from '../components/DepositPanel';
 import HaulagePanel from '../components/HaulagePanel';
 import BinPanel, { type BinPlace } from '../components/BinPanel';
+import LeavingAlert from '../components/LeavingAlert';
 import MineBuildingPanel from '../components/MineBuildingPanel';
 import { stockTotal, type Resource } from '../game/resources';
 import { MINE_SURFACE_ROWS, type MineSurfaceBuilding } from '../components/MineMapLayout';
@@ -260,6 +261,7 @@ export default function MineScreen() {
         </View>
       </View>
 
+      {!popup && <LeavingAlert game={game} />}
       {popup === 'upgrades' && (
         <Sheet title="Mine upgrades" subtitle="THE NEXT GALLERY · TECHS BOUGHT WITH GOLD, FOR GOOD" onClose={() => setPopup(null)}>
           <NextGallery game={game} />

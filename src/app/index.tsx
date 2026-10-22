@@ -33,6 +33,7 @@ import { DepotPanel, ForgePanel, GearStore } from '../components/ForgePanel';
 import { isForge } from '../game/forges';
 import CombatPanel, { hireableNow } from '../components/CombatPanel';
 import RaidBanner from '../components/RaidBanner';
+import LeavingAlert from '../components/LeavingAlert';
 import MineInfo from '../components/MineInfo';
 import Sheet from '../components/Sheet';
 import Prologue from '../components/Prologue';
@@ -466,6 +467,7 @@ export default function StrongholdScreen() {
           />
         </Sheet>
       )}
+      {!popup && !placing && !painting && <LeavingAlert game={game} onSeeMood={openMood} />}
       {popup?.kind === 'mood' && (
         <Sheet title="Happiness" subtitle={`${moodWord(game.happiness).toUpperCase()} · THE HOLD WORKS AT ${String(Math.round(workPaceAt(game.happiness) * 100))}%`} onClose={close}>
           <MoodPanel game={game} workforce={workforce} />
