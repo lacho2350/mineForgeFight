@@ -1,0 +1,41 @@
+🔍 [expo-iap] Config values: horizonAppId=undefined, pinnedStore=auto, amazonAppstoreKey=none, vega=auto, onside=false
+📦 [expo-iap] Using OpenIAP from CocoaPods
+Starting project at /home/runner/work/mineForgeFight/mineForgeFight
+Using src/app as the root directory for Expo Router.
+Starting Metro Bundler
+
+ ERROR  An unknown error occurred while installing React Native DevTools. Details:
+
+[3035:1023/135234.842860:FATAL:sandbox/linux/suid/client/setuid_sandbox_host.cc:166] The SUID sandbox helper binary was found, but is not configured correctly. Rather than run without sandboxing I'm aborting now. You need to make sure that /home/runner/.cache/dotslash/64/ed7915e5fef86802e862c274e17f780fa75388/React Native DevTools-linux-x64/chrome-sandbox is owned by root and has mode 4755.
+
+Waiting on http://localhost:8081
+
+An update for expo is available: 57.0.26 → ~57.0.31
+6 other packages may need updating. Run npx expo install --check for details.
+Logs for your project will appear below.
+| 🔍 [expo-iap] Config values: horizonAppId=undefined, pinnedStore=auto, amazonAppstoreKey=none, vega=auto, onside=false
+| 📦 [expo-iap] Using OpenIAP from CocoaPods
+Web Bundled 8044ms node_modules/expo-router/entry.js (1551 modules)
+Web  INFO  %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+Web  LOG  Running application "main" with appParams:
+ {"hydrate": undefined, "rootTag": "#root"} 
+Development-level warnings: ON.
+Performance optimizations: OFF.
+Web Bundled 1650ms src/components/GameSceneCanvas.tsx (853 modules)
+Web Bundled 553ms src/components/MineSceneCanvas.tsx (1434 modules)
+Web  WARN  [react-native-skia] SkPath.moveTo() is deprecated and will be removed in a future release. Use Skia.PathBuilder.Make().moveTo() instead. See migration guide: https://shopify.github.io/react-native-skia/docs/shapes/path-migration
+Web  WARN  [react-native-skia] SkPath.lineTo() is deprecated and will be removed in a future release. Use Skia.PathBuilder.Make().lineTo() instead. See migration guide: https://shopify.github.io/react-native-skia/docs/shapes/path-migration
+Web  WARN  [react-native-skia] SkPath.close() is deprecated and will be removed in a future release. Use Skia.PathBuilder.Make().close() instead. See migration guide: https://shopify.github.io/react-native-skia/docs/shapes/path-migration
+Web Bundled 37ms node_modules/expo-router/entry.js (1 module)
+Web  INFO  %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+Web  LOG  Running application "main" with appParams:
+ {"hydrate": undefined, "rootTag": "#root"} 
+Development-level warnings: ON.
+Performance optimizations: OFF.
+Web Bundled 23ms src/components/GameSceneCanvas.tsx (1 module)
+Web Bundled 413ms src/components/buildingMiniatures.tsx (563 modules)
+Web  WARN  svgPath() used outside an offscreen drawing: the path is never freed. Use useSvgPaths() in live canvases.
+Web Bundled 38ms src/components/MineSceneCanvas.tsx (1 module)
+Web  WARN  [react-native-skia] SkPath.moveTo() is deprecated and will be removed in a future release. Use Skia.PathBuilder.Make().moveTo() instead. See migration guide: https://shopify.github.io/react-native-skia/docs/shapes/path-migration
+Web  WARN  [react-native-skia] SkPath.lineTo() is deprecated and will be removed in a future release. Use Skia.PathBuilder.Make().lineTo() instead. See migration guide: https://shopify.github.io/react-native-skia/docs/shapes/path-migration
+Web  WARN  [react-native-skia] SkPath.close() is deprecated and will be removed in a future release. Use Skia.PathBuilder.Make().close() instead. See migration guide: https://shopify.github.io/react-native-skia/docs/shapes/path-migration

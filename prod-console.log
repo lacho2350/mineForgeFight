@@ -1,0 +1,14 @@
+[warning] [.WebGL-0x29c02121800]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels
+[warning] [.WebGL-0x29c026b2000]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels
+[warning] [.WebGL-0x29c026b2000]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels
+[warning] [.WebGL-0x29c026b2000]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels (this message will no longer repeat)
+[prod] fresh: 1 1 1 1 1 1 + + + + 1 1 MINE + − GOLD 1,000 PEASANTS · 2 IDLE 12/12 FOOD 209 MOOD · CONTENT 70 RAID 1 5:52 ⚔️ 7 👷 ⛏️ MINE 🔨 BUILD 🏰 BUILDINGS 📜 TECH 10 ⚓ DOCKS ☰ MENU
+[warning] [react-native-skia] SkPath.moveTo() is deprecated and will be removed in a future release. Use Skia.PathBuilder.Make().moveTo() instead. See migration guide: https://shopify.github.io/react-native-skia/docs/shapes/path-migration
+[warning] [react-native-skia] SkPath.lineTo() is deprecated and will be removed in a future release. Use Skia.PathBuilder.Make().lineTo() instead. See migration guide: https://shopify.github.io/react-native-skia/docs/shapes/path-migration
+[warning] [react-native-skia] SkPath.close() is deprecated and will be removed in a future release. Use Skia.PathBuilder.Make().close() instead. See migration guide: https://shopify.github.io/react-native-skia/docs/shapes/path-migration
+[prod] save.json: 12907 bytes, elapsed 193, version 6
+[prod] reloaded with: {"state":{"elapsedSeconds":193,"depth":1,"gold":1169.4,"population":0,"paused":[],"placements":{"houses":{"x":18,"y":35}
+[prod] saved game +10s: 1 1 1 1 1 1 6 11 6 + + + + 1 1 MINE + − GOLD 1,169 PEASANTS · 2 IDLE 2/12 FOOD · HUNGRY 0 MOOD · JUBILANT 97 RAIDERS · SOUTH-WEST · 0:10 2 goblins · 120 vs 240 ⚔️ ! 👷 2 A drifter has come to the keep: 2 peasants now. The store is empty: build an orchard or a fishing hut first. ⛏️ MINE 🔨 BUILD 🏰 B
+[prod] saved game +20s: 1 1 1 1 1 1 6 11 6 + + + + 1 1 MINE + − GOLD 1,170 PEASANTS · 4 IDLE 4/12 FOOD · HUNGRY 0 MOOD · JUBILANT 96 BATTLE IN THE FIELD 2 goblins · the captains take over in 30 s COMMAND RESOLVE NOW ⚔️ ! 👷 4 Battle in the field! Take command within 30 s, or the captains fight it. ⛏️ MINE 🔨 BUILD 🏰 BUILD
+[prod] saved game +30s: 1 1 1 1 1 1 6 11 6 + + + + 1 1 MINE + − GOLD 1,172 PEASANTS · 4 IDLE 4/12 FOOD · HUNGRY 0 MOOD · JUBILANT 94 BATTLE IN THE FIELD 2 goblins · the captains take over in 20 s COMMAND RESOLVE NOW ⚔️ ! 👷 4 ⛏️ MINE 🔨 BUILD 🏰 BUILDINGS 📜 TECH 10 ⚓ DOCKS 2 ☰ MENU
+[prod] saved game +40s: 1 1 1 1 1 1 6 11 6 + + + + 1 1 MINE + − GOLD 1,173 PEASANTS · 4 IDLE 4/12 FOOD · HUNGRY 0 MOOD · JUBILANT 92 BATTLE IN THE FIELD 2 goblins · the captains take over in 10 s COMMAND RESOLVE NOW ⚔️ ! 👷 4 ⛏️ MINE 🔨 BUILD 🏰 BUILDINGS 📜 TECH 10 ⚓ DOCKS 2 ☰ MENU

@@ -1,0 +1,28 @@
+[info] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+[log] Running application "main" with appParams:
+ {rootTag: #root, hydrate: undefined} 
+Development-level warnings: ON.
+Performance optimizations: OFF.
+[warning] [.WebGL-0x2f3c04a90800]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels
+[warning] [.WebGL-0x2f3c04a95600]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels
+[warning] [.WebGL-0x2f3c04a90800]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels
+[warning] [.WebGL-0x2f3c04a95600]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels (this message will no longer repeat)
+[smoke] warehouseCapacity=300
+[warning] [react-native-skia] SkPath.moveTo() is deprecated and will be removed in a future release. Use Skia.PathBuilder.Make().moveTo() instead. See migration guide: https://shopify.github.io/react-native-skia/docs/shapes/path-migration
+[warning] [react-native-skia] SkPath.lineTo() is deprecated and will be removed in a future release. Use Skia.PathBuilder.Make().lineTo() instead. See migration guide: https://shopify.github.io/react-native-skia/docs/shapes/path-migration
+[warning] [react-native-skia] SkPath.close() is deprecated and will be removed in a future release. Use Skia.PathBuilder.Make().close() instead. See migration guide: https://shopify.github.io/react-native-skia/docs/shapes/path-migration
+[smoke] raid phase 0: clock 74 raid={"raid":true,"battle":null,"happiness":76.66,"population":30}
+[smoke] raid phase 1: clock 99 raid={"raid":true,"battle":null,"happiness":79.16,"population":30}
+[smoke] raid phase 2: clock 124 raid={"raid":true,"battle":"active","happiness":81.66,"population":30}
+[smoke] raid phase 3: clock 149 raid={"raid":true,"battle":"active","happiness":84.16,"population":30}
+[info] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+[log] Running application "main" with appParams:
+ {rootTag: #root, hydrate: undefined} 
+Development-level warnings: ON.
+Performance optimizations: OFF.
+[smoke] after reload: clock 161 -> 166
+[warning] svgPath() used outside an offscreen drawing: the path is never freed. Use useSvgPaths() in live canvases.
+[smoke] build options: Build the Cottage II | Build the Research Facility | Build the Armory | Build the Cart Depot | Build the Woodcutter’s Hut II | Build the Apple Orchard I | Build the Fishing Hut I | Build the Sheep Pasture I | Build the Fairground II | Build the Church II | Build the Gardens II | Build the Forge I | Build the Archery Range | Build the Barracks | Build the Monastery | Build the Balloon Works | Build the Stables | Build the Griffin Eyrie | Build the Paladin Chapel | Build the Celestial Sanctum
+[warning] [react-native-skia] SkPath.moveTo() is deprecated and will be removed in a future release. Use Skia.PathBuilder.Make().moveTo() instead. See migration guide: https://shopify.github.io/react-native-skia/docs/shapes/path-migration
+[warning] [react-native-skia] SkPath.lineTo() is deprecated and will be removed in a future release. Use Skia.PathBuilder.Make().lineTo() instead. See migration guide: https://shopify.github.io/react-native-skia/docs/shapes/path-migration
+[warning] [react-native-skia] SkPath.close() is deprecated and will be removed in a future release. Use Skia.PathBuilder.Make().close() instead. See migration guide: https://shopify.github.io/react-native-skia/docs/shapes/path-migration
