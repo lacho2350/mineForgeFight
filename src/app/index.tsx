@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { router, useIsFocused } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { BackHandler, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { BackHandler, Image, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { GameState } from '../game/state';
 import { flushSave } from '../game/save';
@@ -35,6 +35,7 @@ import CombatPanel, { hireableNow } from '../components/CombatPanel';
 import RaidBanner from '../components/RaidBanner';
 import LeavingAlert from '../components/LeavingAlert';
 import { DIFFICULTY, type Difficulty } from '../game/difficulty';
+import { useBuildingMiniature } from '../components/useBuildingMiniature';
 import GameOver from '../components/GameOver';
 import NewGamePanel from '../components/NewGamePanel';
 import MineInfo from '../components/MineInfo';
@@ -650,7 +651,7 @@ function PlacementBar({ game, id, problem, onConfirm, onCancel }: {
   return (
     <View style={styles.placement}>
       <View style={styles.placementHead}>
-        <Text style={styles.placementIcon}>{BUILDING_ICONS[id]}</Text>
+        <BuildingThumb id={id} />
         <View style={styles.placementCopy}>
           <Text style={styles.placementTitle}>
             {BUILDING_INFO[id].name} · {String(w)}×{String(d)}
@@ -675,6 +676,13 @@ function PlacementBar({ game, id, problem, onConfirm, onCancel }: {
 
 // Everything that can still be built: icon, size, first-level cost, and why not if it can't yet; then
 // the traps for the belt.
+// A building's miniature from the map (its first-level look), or its icon until that's drawn.
+function BuildingThumb({ id }: { id: BuildingId }) {
+  const uri = useBuildingMiniature(id);
+  if (!uri) return <Text style={styles.paletteIcon}>{BUILDING_ICONS[id]}</Text>;
+  return <Image source={{ uri }} style={styles.paletteArt} accessibilityIgnoresInvertColors />;
+}
+
 // A building in the palette: redrawn only when what stops it being built changes.
 const PaletteBuilding = memo(function PaletteBuilding({ id, difficulty, blocker, onPick }: { id: BuildingId; difficulty: Difficulty; blocker: string | null; onPick: (id: BuildingId) => void }) {
   const { w, d } = FOOTPRINTS[id];
@@ -686,7 +694,7 @@ const PaletteBuilding = memo(function PaletteBuilding({ id, difficulty, blocker,
       onPress={() => onPick(id)}
       style={({ pressed }) => [styles.paletteItem, pressed && styles.pressed]}
     >
-      <Text style={styles.paletteIcon}>{BUILDING_ICONS[id]}</Text>
+      <BuildingThumb id={id} />
       <View style={styles.paletteCopy}>
         <Text style={styles.paletteName}>{BUILDING_INFO[id].name}</Text>
         <Text style={styles.paletteDetail}>
@@ -1128,6 +1136,9 @@ function Menu({ game, workforce, onPrologue, onVictory }: { game: GameState; wor
   );
 }
 
+/** Size of a building's miniature in the Build palette (drawn at twice that). */
+const MINIATURE_SIZE = 56;
+
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#111410' },
   pressed: { opacity: 0.7 },
@@ -1185,6 +1196,7 @@ const styles = StyleSheet.create({
   trapKindLabelOn: { color: '#f0ead8' },
   paletteItem: { flexGrow: 1, flexBasis: 200, flexDirection: 'row', gap: 10, padding: 10, borderWidth: 1, borderColor: '#3a4439', backgroundColor: '#1a211b' },
   paletteIcon: { fontSize: 26, lineHeight: 32 },
+  paletteArt: { width: MINIATURE_SIZE, height: MINIATURE_SIZE },
   paletteCopy: { flex: 1, gap: 3 },
   paletteName: { color: '#e8e3d1', fontFamily: 'Georgia', fontSize: 14 },
   paletteDetail: { color: '#a9ad99', fontFamily: 'monospace', fontSize: 9 },
