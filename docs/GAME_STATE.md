@@ -908,6 +908,12 @@ src/
   the chapel and churches whitewashed, the sanctum marble), so they tell apart on the map and in the Build
   palette's miniatures (`buildingMiniatures.tsx`, drawn off screen once per session into PNGs); the walls'
   material still shows the tier.
+  The army's dwellings are built in stone from the first level (`militaryMat`: the fortifications'
+  material in their own roof colours) and stand tall, in a classic fantasy-town way: the guardhouse a
+  watchtower under a spire with a gate-house, the archery range a round tower under a green spire
+  (`Cone` in shapes.tsx), the barracks a stone hall with two spired turrets, the stables a gate-tower and a
+  tilting barrier, the griffin eyrie a round tower with the nest on top, the monastery a bell tower, the
+  sanctum a golden dome with light round its portal (`TALL` in GameSceneLayout.ts grew to match).
 - **Difficulty** (since 2026-10-22, `src/game/difficulty.ts`): chosen on the Menu's new-game panel
   (`NewGamePanel`) and fixed for the game (`difficulty` in the state; older saves are Normal). Easy, Normal
   (the game as before), Hard and Nightmare from the start; **Hardcore** once the campaign has been won on

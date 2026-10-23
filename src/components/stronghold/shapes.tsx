@@ -221,6 +221,32 @@ export function Cylinder({ cx, cy, r, h, z = 0, m, merlons = true }: { cx: numbe
   );
 }
 
+// A conical spire on a round tower (or a turret): its base an ellipse `r` tiles across at height `z`, rising
+// `rise` pixels to a point; lit from the left like the towers, with rows of tiles or slates round it.
+export function Cone({ cx, cy, r, z, rise, m }: { cx: number; cy: number; r: number; z: number; rise: number; m: Mat }) {
+  const base = iso(cx, cy, z);
+  const rx = r * TILE_HW * Math.SQRT2;
+  const ry = r * TILE_HH * Math.SQRT2;
+  const f = (n: number) => n.toFixed(1);
+  const apexY = base.y - rise;
+  const body = `M ${f(base.x - rx)} ${f(base.y)} A ${f(rx)} ${f(ry)} 0 0 0 ${f(base.x + rx)} ${f(base.y)} L ${f(base.x)} ${f(apexY)} Z`;
+  const rows: string[] = [];
+  for (let t = 0.25; t < 0.95; t += 0.25) {
+    const y = base.y - rise * t;
+    const k = 1 - t;
+    rows.push(`M ${f(base.x - rx * k)} ${f(y)} A ${f(rx * k)} ${f(ry * k)} 0 0 0 ${f(base.x + rx * k)} ${f(y)}`);
+  }
+  return (
+    <Group>
+      <Path path={svgPath(body)}>
+        <LinearGradient start={vec(base.x - rx, 0)} end={vec(base.x + rx, 0)} colors={[m.roof, m.roof, m.roofDark, m.roofDark]} />
+      </Path>
+      <Path path={svgPath(rows.join(' '))} style="stroke" strokeWidth={0.7} color={m.roofDark} />
+      <Path path={svgPath(body)} style="stroke" strokeWidth={0.7} color={OUTLINE} />
+    </Group>
+  );
+}
+
 /** A quad on a box's front-left wall (the face along y = yFront), from u0..u1 along x and v0..v1 up. */
 export function LeftFace({ x, yFront, z = 0, u0, u1, v0, v1, color }: { x: number; yFront: number; z?: number; u0: number; u1: number; v0: number; v1: number; color: string }) {
   return <Path path={svgPath(poly([iso(x + u0, yFront, z + v0), iso(x + u1, yFront, z + v0), iso(x + u1, yFront, z + v1), iso(x + u0, yFront, z + v1)]))} color={color} />;
