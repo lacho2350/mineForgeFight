@@ -34,8 +34,45 @@ import {
 // Cut logs, end grain on top.
 const LOGS: Mat = { left: '#8a5a2e', right: '#6b4422', top: '#c9955c', roof: '#8a5a2e', roofDark: '#553519' };
 
+// Each kind of building keeps its own roof colour (and a few their own walls) through every tier, so they
+// tell apart at a glance — on the map and in the Build palette's miniatures — while the walls' material
+// still shows the tier (planks, half-timber, stone, dressed stone). Keyed by kind: `forge3` is a forge.
+const ROOFS: Record<string, [roof: string, roofDark: string]> = {
+  foundry: ['#57524d', '#3d3935'], // soot-blackened
+  research: ['#4f7392', '#3a566f'], // blue slate
+  armory: ['#646a72', '#4a4f56'], // iron sheets
+  depot: ['#b8863f', '#8f6528'], // ochre shingles
+  granary: ['#d8b356', '#ad8a35'], // golden straw
+  docks: ['#4b4237', '#342d25'], // tarred boards
+  guardhouse: ['#8a4a3a', '#6a3427'],
+  archery: ['#55803f', '#3e612d'], // forest green
+  barracks: ['#a83c2e', '#7f2a20'], // the army's red
+  monastery: ['#c06a3c', '#93502b'], // terracotta
+  balloonWorks: ['#7a5a92', '#5b4270'], // dyed silk purple
+  griffinEyrie: ['#3f7f8a', '#2e5f68'], // sky teal
+  chapel: ['#3d5f9a', '#2c4775'], // royal blue
+  sanctum: ['#e2b84f', '#b8902f'], // gold
+  forge: ['#4a4f57', '#353940'], // dark slate
+  church: ['#5a6a8a', '#435069'], // slate blue
+};
+const WALLS: Record<string, Pick<Mat, 'left' | 'right' | 'top'>> = {
+  stables: { left: '#a24a36', right: '#7d3727', top: '#b85c45' }, // a red barn
+  chapel: { left: '#ebe5d6', right: '#c9c2b0', top: '#f3efe4' }, // whitewash
+  church: { left: '#ebe5d6', right: '#c9c2b0', top: '#f3efe4' },
+  sanctum: { left: '#ece7da', right: '#cfc9b9', top: '#f6f2e8' }, // marble
+};
+const kindOf = (id: BuildingId) => id.replace(/\d+$/, '');
+
+/** A tier's material, in this kind of building's own colours. */
+function signatureMat(id: BuildingId, tier: number): Mat {
+  const base = matOf(tier);
+  const kind = kindOf(id);
+  const roof = ROOFS[kind];
+  return { ...base, ...WALLS[kind], ...(roof ? { roof: roof[0], roofDark: roof[1] } : {}) };
+}
+
 export function BuildingArt({ id, plot, tier, level }: { id: BuildingId; plot: Plot; tier: number; level: number }) {
-  const m = matOf(tier);
+  const m = signatureMat(id, tier);
   const { x, y, w, d } = plot;
   if (isHouse(id)) {
     // A one-tile cottage, unmistakably a home: a hearth chimney smoking-tall at every level, a door and

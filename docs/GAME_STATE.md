@@ -902,6 +902,12 @@ src/
   react-native-google-mobile-ads 17.2 every Android build (CI or `npx expo run:android`) fails in Gradle
   with "Cannot get property 'googleMobileAdsJson'" unless built with `-PRNGMA_ANDROID_BACKEND=classic` (the
   CI passes it); 17.3.0 fixes it — `npx expo install react-native-google-mobile-ads` on the computer.
+- **Building looks**: each kind keeps its own roof colour through every tier (`ROOFS` in
+  stronghold/buildingArt.tsx: the barracks red, the archery range green, the research facility blue slate,
+  the armory iron, the granary golden straw, …) and a few their own walls (`WALLS`: the stables a red barn,
+  the chapel and churches whitewashed, the sanctum marble), so they tell apart on the map and in the Build
+  palette's miniatures (`buildingMiniatures.tsx`, drawn off screen once per session into PNGs); the walls'
+  material still shows the tier.
 - **Difficulty** (since 2026-10-22, `src/game/difficulty.ts`): chosen on the Menu's new-game panel
   (`NewGamePanel`) and fixed for the game (`difficulty` in the state; older saves are Normal). Easy, Normal
   (the game as before), Hard and Nightmare from the start; **Hardcore** once the campaign has been won on
