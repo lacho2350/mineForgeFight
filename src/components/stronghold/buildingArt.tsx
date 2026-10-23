@@ -36,7 +36,7 @@ import {
 const LOGS: Mat = { left: '#8a5a2e', right: '#6b4422', top: '#c9955c', roof: '#8a5a2e', roofDark: '#553519' };
 
 /** The army's buildings are built of stone from the start, in their own roof colours. */
-const militaryMat = (tier: number, m: Mat): Mat => ({ ...fortMat(tier), roof: m.roof, roofDark: m.roofDark });
+const militaryMat = (tier: number, m: Mat): Mat => ({ ...(tier >= 4 ? MATS[3] : STONE), roof: m.roof, roofDark: m.roofDark });
 
 // Each kind of building keeps its own roof colour (and a few their own walls) through every tier, so they
 // tell apart at a glance — on the map and in the Build palette's miniatures — while the walls' material
