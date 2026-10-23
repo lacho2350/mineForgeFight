@@ -168,7 +168,8 @@ try {
 
   // Start placing a building: buildings in front of the ghost should fade.
   await page.locator('[aria-label="BUILD"]').first().click();
-  await wait(800);
+  await wait(2500);
+  await shot(page, '05b-build-palette');
   const options = page.locator('[aria-label^="Build the "]');
   const names = await options.evaluateAll((els) => els.map((e) => e.getAttribute('aria-label')));
   consoleLog.push(`[smoke] build options: ${names.join(' | ')}`);
