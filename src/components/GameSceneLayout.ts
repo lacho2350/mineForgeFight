@@ -65,15 +65,15 @@ const TALL: Record<BuildingId, number> = {
   gate: 70,
   moat: 4,
   docks: 40,
-  guardhouse: 44,
-  archery: 40,
-  barracks: 50,
-  monastery: 56,
+  guardhouse: 80,
+  archery: 96,
+  barracks: 76,
+  monastery: 86,
   balloonWorks: 96,
-  stables: 48,
-  griffinEyrie: 92,
+  stables: 80,
+  griffinEyrie: 110,
   chapel: 78,
-  sanctum: 64,
+  sanctum: 96,
 };
 
 /** A building's plot where it stands (or would stand at `at`), or null if it hasn't been placed. */

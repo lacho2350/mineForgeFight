@@ -1,7 +1,7 @@
 // Each building's look: it fills its footprint (w × d tiles) and changes look every five levels. And the
 // odd bits of the still image: the campfire, the mine headframe, scaffolding, the army on parade.
 import { memo } from 'react';
-import { Circle, Group, Line, Path, Rect, vec } from '@shopify/react-native-skia';
+import { Circle, Group, Line, LinearGradient, Path, Rect, vec } from '@shopify/react-native-skia';
 import type { BuildingId } from '../../game/buildings';
 import { isHouse } from '../../game/houses';
 import { ARMY_UNITS } from '../../game/units';
@@ -25,6 +25,7 @@ import {
   MATS,
   RightFace,
   STONE,
+  Cone,
   fortMat,
   matOf,
   poly,
@@ -33,6 +34,9 @@ import {
 
 // Cut logs, end grain on top.
 const LOGS: Mat = { left: '#8a5a2e', right: '#6b4422', top: '#c9955c', roof: '#8a5a2e', roofDark: '#553519' };
+
+/** The army's buildings are built of stone from the start, in their own roof colours. */
+const militaryMat = (tier: number, m: Mat): Mat => ({ ...fortMat(tier), roof: m.roof, roofDark: m.roofDark });
 
 // Each kind of building keeps its own roof colour (and a few their own walls) through every tier, so they
 // tell apart at a glance — on the map and in the Build palette's miniatures — while the walls' material
@@ -345,11 +349,19 @@ export function BuildingArt({ id, plot, tier, level }: { id: BuildingId; plot: P
       const yardY = y + 0.2 + hd;
       return (
         <Group>
-          <Box x={x + 0.2} y={y + 0.2} w={w - 0.4} d={hd} h={h} m={m} />
-          <Gable x={x + 0.15} y={y + 0.15} w={w - 0.3} d={hd + 0.1} z={h} rise={10} m={m} />
+          <Box x={x + 0.2} y={y + 0.2} w={w - 0.4} d={hd} h={h} m={militaryMat(tier, m)} />
+          <Gable x={x + 0.15} y={y + 0.15} w={w - 0.3} d={hd + 0.1} z={h} rise={12} m={militaryMat(tier, m)} />
           <LeftFace x={x + 0.2} yFront={yardY} u0={1.0} u1={1.6} v0={0} v1={9} color={DARK} />
           {[0.25, 2.05].map((u) => <LeftFace key={u} x={x + 0.2} yFront={yardY} u0={u} u1={u + 0.3} v0={h - 12} v1={h - 2} color={tier === 4 ? GOLD : BANNER} />)}
           {[0.25, 2.05].map((u) => <LeftFace key={u} x={x + 0.2} yFront={yardY} u0={u + 0.08} u1={u + 0.22} v0={h - 11} v1={h - 8} color={tier === 4 ? BANNER : GOLD} />)}
+          {/* Two round turrets at the hall's front corners, under the army's red spires. */}
+          {[x + 0.35, x + w - 0.35].map((tx) => (
+            <Group key={tx}>
+              <Cylinder cx={tx} cy={yardY - 0.12} r={0.3} h={h + 10} m={militaryMat(tier, m)} merlons={false} />
+              <Cone cx={tx} cy={yardY - 0.12} r={0.4} z={h + 10} rise={18} m={militaryMat(tier, m)} />
+              <Flag x={tx} y={yardY - 0.12} z={h + 28} />
+            </Group>
+          ))}
           <Box x={x + 0.2} y={yardY} w={w - 0.4} d={d - 0.4 - hd} h={0.8} m={STONE} outline={false} />
           {dummies.map((dx) => {
             const post = iso(dx, yardY + 0.6, 0.8);
@@ -372,16 +384,25 @@ export function BuildingArt({ id, plot, tier, level }: { id: BuildingId; plot: P
       );
     }
     case 'guardhouse': {
-      // The guardhouse: a squat watch-post with a brazier burning on a post by its door, a rack of
-      // steel-tipped pikes against its side, and a red pennant.
-      const h = 13 + 3 * tier;
-      const brazier = iso(x + 0.45, y + 1.75, 12);
+      // The guardhouse: a stone watchtower under a tall spire, the pikemen's pennant on its point, a
+      // crenellated gate-house before it, a brazier burning by the gate and a rack of pikes at its side.
+      const tower = militaryMat(tier, m);
+      const th = 30 + 5 * tier;
+      const spire = 22 + 2 * tier;
+      const brazier = iso(x + 0.15, y + 1.85, 12);
       return (
         <Group>
-          <Box x={x + 0.15} y={y + 0.5} w={1.3} d={1.3} h={h} m={m} />
-          {tier >= 2 ? <Crenels x={x + 0.15} y={y + 0.5} w={1.3} d={1.3} z={h} m={m} /> : <Gable x={x + 0.1} y={y + 0.45} w={1.4} d={1.4} z={h} rise={7} m={m} />}
-          <LeftFace x={x + 0.15} yFront={y + 1.8} u0={0.65} u1={1.05} v0={0} v1={8} color={DARK} />
-          <LeftFace x={x + 0.15} yFront={y + 1.8} u0={0.8} u1={0.9} v0={8} v1={8.8} color="#8c6a3c" />
+          <Box x={x + 0.35} y={y + 0.3} w={1.0} d={1.0} h={th} m={tower} />
+          <Crenels x={x + 0.35} y={y + 0.3} w={1.0} d={1.0} z={th} m={tower} />
+          <Hip x={x + 0.45} y={y + 0.4} w={0.8} d={0.8} z={th} rise={spire} m={tower} />
+          <Flag x={x + 0.85} y={y + 0.8} z={th + spire} />
+          <LeftFace x={x + 0.35} yFront={y + 1.3} u0={0.45} u1={0.56} v0={th - 14} v1={th - 5} color={DARK} />
+          <RightFace xFront={x + 1.35} y={y + 0.3} u0={0.45} u1={0.56} v0={th - 14} v1={th - 5} color={DARK} />
+          {/* The gate-house: a low crenellated front with an arched gate. */}
+          <Box x={x + 0.25} y={y + 1.3} w={1.2} d={0.45} h={13} m={tower} />
+          <Crenels x={x + 0.25} y={y + 1.3} w={1.2} d={0.45} z={13} m={tower} />
+          <LeftFace x={x + 0.25} yFront={y + 1.75} u0={0.4} u1={0.8} v0={0} v1={8} color={DARK} />
+          <LeftFace x={x + 0.25} yFront={y + 1.75} u0={0.48} u1={0.72} v0={8} v1={9.6} color={DARK} />
           {/* The brazier: an iron basket on a post, coals glowing. */}
           <Rect x={brazier.x - 0.8} y={brazier.y} width={1.6} height={12} color={DARK} />
           <Rect x={brazier.x - 4} y={brazier.y - 3} width={8} height={3} color="#3d4148" />
@@ -398,7 +419,6 @@ export function BuildingArt({ id, plot, tier, level }: { id: BuildingId; plot: P
               </Group>
             );
           })}
-          <Flag x={x + 0.8} y={y + 1.15} z={h + (tier >= 2 ? 3.5 : 7)} />
         </Group>
       );
     }
@@ -420,7 +440,27 @@ export function BuildingArt({ id, plot, tier, level }: { id: BuildingId; plot: P
             <Box key={`r${String(index)}`} x={x + w - 0.45} y={y + 0.2 + (index * span) / (columns - 1)} w={0.22} d={0.22} h={h} z={3} m={stone} />
           ))}
           <Box x={x + 0.1} y={y + 0.1} w={w - 0.2} d={d - 0.2} h={3} z={h + 3} m={stone} />
-          <Hip x={x + 0.1} y={y + 0.1} w={w - 0.2} d={d - 0.2} z={h + 6} rise={tier >= 3 ? 16 : 9} m={tier === 4 ? MARBLE : { ...stone, roof: stone.top, roofDark: stone.right }} />
+          {/* A golden dome on a drum, a lantern and a spike of gold on top, and light pouring from the portal. */}
+          <Cylinder cx={x + w / 2} cy={y + d / 2} r={0.95} h={7} z={h + 6} m={stone} merlons={false} />
+          {(() => {
+            const c = iso(x + w / 2, y + d / 2, h + 13);
+            const rx = 0.95 * TILE_HW * Math.SQRT2;
+            const dome = `M ${(c.x - rx).toFixed(1)} ${c.y.toFixed(1)} A ${rx.toFixed(1)} ${(rx * 0.95).toFixed(1)} 0 0 1 ${(c.x + rx).toFixed(1)} ${c.y.toFixed(1)} Z`;
+            const rays = [-60, -30, 0, 30, 60, 90, 120, 150, 180, 210, 240].map((deg) => (deg * Math.PI) / 180);
+            return (
+              <Group>
+                <Path path={svgPath(dome)}>
+                  <LinearGradient start={vec(c.x - rx, 0)} end={vec(c.x + rx, 0)} colors={['#f6dc8a', GOLD, '#b8902f']} />
+                </Path>
+                <Path path={svgPath(dome)} style="stroke" strokeWidth={0.7} color="rgba(28, 20, 12, 0.5)" />
+                <Rect x={c.x - 2.5} y={c.y - rx * 0.95 - 6} width={5} height={6} color={stone.left} />
+                <Rect x={c.x - 0.7} y={c.y - rx * 0.95 - 16} width={1.4} height={10} color={GOLD} />
+                {rays.map((a, index) => (
+                  <Line key={index} p1={vec(portal.x + Math.cos(a) * (h / 3 + 1), portal.y + Math.sin(a) * (h / 3 + 1))} p2={vec(portal.x + Math.cos(a) * (h / 3 + 7), portal.y + Math.sin(a) * (h / 3 + 7))} strokeWidth={1.2} color="#fff3c4" opacity={0.8} />
+                ))}
+              </Group>
+            );
+          })()}
         </Group>
       );
     }
@@ -455,18 +495,18 @@ export function BuildingArt({ id, plot, tier, level }: { id: BuildingId; plot: P
       );
     }
     case 'griffinEyrie': {
+      // The griffin eyrie: a tall round stone tower, crenellated, with the griffins' great nest of timber
+      // and straw on its top and a griffin rearing in it, and the eyrie's pennant at the tower's foot.
       const h = 40 + 9 * tier;
       const nest = iso(x + w / 2, y + d / 2, h + 2);
+      const tower = militaryMat(tier, m);
       return (
         <Group>
-          {tier >= 3 ? (
-            <Group>
-              <Box x={x + 0.5} y={y + 0.5} w={1} d={1} h={h} m={m} />
-              <Crenels x={x + 0.5} y={y + 0.5} w={1} d={1} z={h} m={m} />
-            </Group>
-          ) : (
-            <Hip x={x + 0.2} y={y + 0.2} w={w - 0.4} d={d - 0.4} z={0} rise={h} m={{ ...STONE, roof: '#9c9a8c', roofDark: '#7f7d71' }} />
-          )}
+          <Cylinder cx={x + w / 2} cy={y + d / 2} r={0.55} h={h} m={tower} />
+          {[0.35, 0.6].map((t) => {
+            const slit = iso(x + w / 2, y + d / 2 + 0.55, h * t);
+            return <Rect key={t} x={slit.x - 0.9} y={slit.y - 6} width={1.8} height={6} color={DARK} />;
+          })}
           <Rect x={nest.x - 8} y={nest.y - 3} width={16} height={4} color="#7a5232" />
           <Rect x={nest.x - 3} y={nest.y - 9} width={8} height={6} color="#c9a34a" />
           <Path path={svgPath(poly([{ x: nest.x - 2, y: nest.y - 8 }, { x: nest.x - 13, y: nest.y - 17 }, { x: nest.x - 5, y: nest.y - 6 }]))} color="#ece6d4" />
@@ -486,9 +526,6 @@ export function BuildingArt({ id, plot, tier, level }: { id: BuildingId; plot: P
       const hd = 1.0;
       const hall = { x: x + 0.15, y: y + 0.15, w: w - 0.3, d: hd };
       const walk = 0.4;
-      const cote = iso(x + w / 2, y + 0.15 + hd / 2, h + 9);
-      const bell = iso(x + w / 2, y + 0.15 + hd / 2, h + 9 + 4);
-      const cross = iso(x + w / 2, y + 0.15 + hd / 2, h + 9 + 9);
       const garth = { x: x + 0.15 + walk, y: y + 0.15 + hd, w: w - 0.3 - 2 * walk, d: d - 0.3 - hd - walk };
       const lawn: Mat = { left: '#4f7a36', right: '#3c5e29', top: '#5e8a3f', roof: '#4f7a36', roofDark: '#3c5e29' };
       const columns: [number, number][] = [];
@@ -500,13 +537,23 @@ export function BuildingArt({ id, plot, tier, level }: { id: BuildingId; plot: P
           <Gable x={hall.x - 0.05} y={hall.y - 0.05} w={hall.w + 0.1} d={hall.d + 0.1} z={h} rise={9} m={m} />
           {[0.4, 0.95, 1.5, 2.05].map((u) => <LeftFace key={u} x={hall.x} yFront={hall.y + hall.d} u0={u} u1={u + 0.22} v0={h - 9} v1={h - 3} color={GLOW} />)}
           <LeftFace x={hall.x} yFront={hall.y + hall.d} u0={hall.w / 2 - 0.2} u1={hall.w / 2 + 0.2} v0={0} v1={7} color={DARK} />
-          {/* The bell cote: two posts, a little roof, the bell hung between, a gold cross on top. */}
-          <Rect x={cote.x - 5} y={cote.y - 8} width={1.5} height={8} color={m.right} />
-          <Rect x={cote.x + 3.5} y={cote.y - 8} width={1.5} height={8} color={m.right} />
-          <Rect x={cote.x - 6} y={cote.y - 10} width={12} height={2} color={m.roofDark} />
-          <Circle cx={bell.x} cy={bell.y + 1} r={2.4} color={GOLD} />
-          <Rect x={cross.x - 0.8} y={cross.y - 1} width={1.6} height={9} color={GOLD} />
-          <Rect x={cross.x - 3.2} y={cross.y + 1.5} width={6.4} height={1.6} color={GOLD} />
+          {/* The bell tower at the hall's end: tall and square, the bell in its open top, a spire and gold on its point. */}
+          <Box x={x + w - 0.85} y={y + 0.1} w={0.7} d={0.7} h={h + 24} m={m} />
+          <LeftFace x={x + w - 0.85} yFront={y + 0.8} u0={0.2} u1={0.5} v0={h + 14} v1={h + 21} color={DARK} />
+          {(() => {
+            const bellAt = iso(x + w - 0.5, y + 0.8, h + 16);
+            return <Circle cx={bellAt.x} cy={bellAt.y} r={2.2} color={GOLD} />;
+          })()}
+          <Hip x={x + w - 0.9} y={y + 0.05} w={0.8} d={0.8} z={h + 24} rise={20} m={m} />
+          {(() => {
+            const point = iso(x + w - 0.5, y + 0.45, h + 44);
+            return (
+              <Group>
+                <Rect x={point.x - 0.8} y={point.y - 9} width={1.6} height={9} color={GOLD} />
+                <Rect x={point.x - 3} y={point.y - 6.5} width={6} height={1.6} color={GOLD} />
+              </Group>
+            );
+          })()}
           {/* The cloister walk: a low wall and columns round the garth. */}
           <Box x={x + 0.15} y={y + d - 0.15 - walk} w={w - 0.3} d={walk} h={2.5} m={m} outline={false} />
           <Box x={x + 0.15} y={y + 0.15 + hd} w={walk} d={d - 0.3 - hd} h={2.5} m={m} outline={false} />
@@ -527,13 +574,22 @@ export function BuildingArt({ id, plot, tier, level }: { id: BuildingId; plot: P
       // The archery range: a shooting line of posts with a red pennant and a lodge at one end, and a row of
       // big straw butts with painted targets (more with the tiers) along the far side, arrows in them.
       const targets = Math.min(4, 1 + tier);
-      const lh = 10 + 2 * tier;
+      const th = 34 + 6 * tier;
+      const spire = 24 + 2 * tier;
       const butts = Array.from({ length: targets }, (_, index) => y + 0.5 + index * ((d - 0.9) / Math.max(1, targets - 1)));
       return (
         <Group>
-          <Box x={x + 0.15} y={y + 0.15} w={1.1} d={1.1} h={lh} m={m} />
-          <Gable x={x + 0.1} y={y + 0.1} w={1.2} d={1.2} z={lh} rise={6} m={m} />
-          <LeftFace x={x + 0.15} yFront={y + 1.25} u0={0.4} u1={0.7} v0={0} v1={7} color={DARK} />
+          {/* The archers' tower: tall and round, arrow slits up its face, under a green spire. */}
+          <Cylinder cx={x + 0.75} cy={y + 0.75} r={0.5} h={th} m={militaryMat(tier, m)} merlons={false} />
+          <Cone cx={x + 0.75} cy={y + 0.75} r={0.64} z={th} rise={spire} m={militaryMat(tier, m)} />
+          {[0.3, 0.55, 0.8].map((t) => {
+            const slit = iso(x + 0.75, y + 1.25, th * t);
+            return <Rect key={t} x={slit.x - 0.8} y={slit.y - 5} width={1.6} height={5} color={DARK} />;
+          })}
+          {(() => {
+            const door = iso(x + 0.75, y + 1.25);
+            return <Rect x={door.x - 2.5} y={door.y - 8} width={5} height={8} color={DARK} />;
+          })()}
           {/* The shooting line: posts and a rail down the near side of the range. */}
           {[1.6, 2.3, 3.0].map((ty) => {
             const p = iso(x + 0.4, y + Math.min(d - 0.2, ty));
@@ -554,7 +610,7 @@ export function BuildingArt({ id, plot, tier, level }: { id: BuildingId; plot: P
               </Group>
             );
           })}
-          <Flag x={x + 0.7} y={y + 0.7} z={lh + 6} />
+          <Flag x={x + 0.75} y={y + 0.75} z={th + spire} color="#4f7a36" />
         </Group>
       );
     }
@@ -570,7 +626,25 @@ export function BuildingArt({ id, plot, tier, level }: { id: BuildingId; plot: P
           {/* A haystack in the paddock corner and a water trough by the stable doors. */}
           <Hip x={x + w - 1.0} y={y + d - 0.95} w={0.75} d={0.75} z={0} rise={11} m={{ ...MATS[0], roof: '#d8b85a', roofDark: '#b8923a', kind: 'timber' }} />
           <Box x={x + 0.3} y={y + 1.45} w={0.9} d={0.22} h={3} m={LOGS} top="#5f8fa8" outline={false} />
-          <Flag x={x + 0.4} y={y + 0.4} z={h + 8} />
+          {/* The knights' gate-tower at the stable's end, and a tilting barrier down the paddock. */}
+          <Box x={x + 0.05} y={y + 0.05} w={0.8} d={1.3} h={h + 16} m={militaryMat(tier, m)} />
+          <Hip x={x + 0.0} y={y + 0.0} w={0.9} d={1.4} z={h + 16} rise={18} m={militaryMat(tier, m)} />
+          <Flag x={x + 0.45} y={y + 0.7} z={h + 34} />
+          <LeftFace x={x + 0.05} yFront={y + 1.35} u0={0.25} u1={0.55} v0={0} v1={9} color={DARK} />
+          {(() => {
+            const a0 = iso(x + 0.9, y + 2.25, 4);
+            const a1 = iso(x + w - 1.3, y + 2.25, 4);
+            return (
+              <Group>
+                <Line p1={vec(a0.x, a0.y)} p2={vec(a1.x, a1.y)} strokeWidth={1.6} color="#ece6d4" />
+                {[0, 0.25, 0.5, 0.75, 1].map((t, index) => {
+                  const px = a0.x + (a1.x - a0.x) * t;
+                  const py = a0.y + (a1.y - a0.y) * t;
+                  return <Rect key={t} x={px - 0.8} y={py} width={1.6} height={4} color={index % 2 ? '#ece6d4' : BANNER} />;
+                })}
+              </Group>
+            );
+          })()}
           {Array.from({ length: Math.min(4, tier + 1) }, (_, index) => {
             const p = iso(x + 0.8 + (index % 2) * 1.6, y + 2.0 + Math.floor(index / 2) * 0.6);
             const coat = index % 2 ? '#5a3a24' : '#7a5232';
