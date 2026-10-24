@@ -21,6 +21,18 @@ Expo ships breaking changes every SDK release. APIs you remember are likely rena
 2. Fetch the matching versioned docs: `https://docs.expo.dev/versions/v<major>.0.0/`
 3. For anything else, fetch https://docs.expo.dev/llms.txt — an index of all Expo docs with corrections to common LLM misconceptions. Follow its links to the specific page you need; never answer from memory.
 
+## After every push: test, then the APK into the chat
+
+Pushes to `main` and `release-prep` run the typecheck, lint and tests on GitHub, and build the Android APK only
+if they all pass (`.github/workflows/checks.yml`). After pushing, watch the result with
+`scripts/ci-watch.sh <commit> <branch>` (line by line, e.g. with a monitor; `OUT_DIR=` sets where the APK lands):
+
+- `APK READY <path>` → **send that file to the chat as a downloadable attachment** (the file tool, not just the
+  link), with a one-line caption of what's in the build.
+- `CHECKS FAILED` / `APK FAILED` → tell the user in the chat what broke (the `ERROR` lines), fix it, push again
+  and watch the new push.
+- `CANCELLED` → a newer push took over; watch that one instead.
+
 ## Commands
 
 Use `bunx` instead of `npx` if the project uses bun (`bun.lock` present).

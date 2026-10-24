@@ -4,13 +4,14 @@
 #
 #   CHECKS PASSED — building the APK
 #   CHECKS FAILED                      followed by one `ERROR <file> <line> <title> :: <message>` per problem
-#   APK READY <path> (<size>)          the APK is downloaded to <path>, ready to hand on
+#   APK READY <path> (<size>)          the APK is downloaded to <path>: send it to the chat as a file
 #   APK FAILED                         followed by the Gradle error
 #   CANCELLED                          a newer push to the branch took over
 #
 # Exit code: 0 APK ready (or checks passed on a branch that gets no APK), 1 something failed, 2 cancelled.
-# Meant to be watched line by line (an agent's monitor, or a terminal): each line is an event to act on —
-# send the APK on, or fix the errors and push again.
+# Meant to be watched line by line (an agent's monitor, or a terminal): each line is an event to act on.
+# An agent watching it posts the APK into the chat as a downloadable file on APK READY (AGENTS.md), and on
+# CHECKS FAILED / APK FAILED says what broke there, fixes it and pushes again.
 #
 # Usage: scripts/ci-watch.sh [commit] [branch]   (defaults: HEAD, the current branch)
 #   OUT_DIR=…  where the APK goes (default: $TMPDIR/mineforgefight-apk)
@@ -85,7 +86,7 @@ while true; do
         mkdir -p "$out_dir"
         path="$out_dir/${name%.apk}-$short.apk"
         if gh api -H "Accept: application/octet-stream" "repos/$repo/releases/assets/$asset" > "$path" && [ -s "$path" ]; then
-          echo "APK READY $path ($(du -h "$path" | cut -f1)) — https://github.com/$repo/releases/download/apk-$branch/$name"
+          echo "APK READY $path ($(du -h "$path" | cut -f1)) — send this file to the chat; also at https://github.com/$repo/releases/download/apk-$branch/$name"
           exit 0
         fi
         echo "APK FAILED ($branch at $short): built, but the download failed — https://github.com/$repo/releases/download/apk-$branch/$name"
