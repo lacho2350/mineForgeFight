@@ -386,6 +386,9 @@ game, and starts the 1-second simulation (`startSimulation()`).
   counts (warnings in red), raids "on the ⚔️ button", the campaign's score and next site, the haul factor and
   walk — and an **EXPLAIN ME** toggle (`ExplainMe` in `GameUI.tsx`) opens the full explanation underneath; the
   new-game panel shows the blurb of the picked difficulty only. Use `ExplainMe` for any long help text.
+  The same goes for the **building pop-ups** (a one-line purpose from `buildingBlurbs.ts`, the full role behind
+  EXPLAIN ME; shorter staff and builders'-walk lines) and the **Build palette** (the land, roads and traps notes and
+  the traps' effects behind EXPLAIN ME). The prologue and epilogue buttons keep their full descriptions.
 - **Tech tree** (`src/game/techs.ts`): 78 upgrades bought once with **gold only**, separate from building
   levels — a branch per building (3 tiers: I, II, III) and a 9-tech branch for the mine (3 per tier).
   A tech needs the one before it (`requires`, sometimes a tech from another branch too, e.g. Steam drills

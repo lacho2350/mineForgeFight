@@ -722,8 +722,8 @@ function BuildPalette({ game, onPick, onPaint }: { game: GameState; onPick: (id:
           <PaletteBuilding key={id} id={id} difficulty={game.difficulty} blocker={upgradeBlocker(game, id, workforce)} onPick={onPick} />
         ))}
       </View>
-      <SectionLabel>LAND · THE TOWN STARTS UNDER ROCKS</SectionLabel>
-      <Text style={styles.note}>BUILDINGS AND ROADS NEED CLEAR GROUND, AND PEASANTS ARE SLOW OVER ROCKS. CLEARED STONE BECOMES GRANITE.</Text>
+      <SectionLabel>LAND</SectionLabel>
+      <ExplainMe>The town starts under rocks. Buildings and roads need clear ground, and peasants are slow over rocks. A crew of {String(CLEAR_CREW)} clears them for free, and cleared stone becomes granite.</ExplainMe>
       <View style={styles.palette}>
         <Pressable
           accessibilityRole="button"
@@ -735,16 +735,16 @@ function BuildPalette({ game, onPick, onPaint }: { game: GameState; onPick: (id:
           <View style={styles.paletteCopy}>
             <Text style={styles.paletteName}>Clear rocks</Text>
             <Text style={styles.paletteDetail}>
-              {String(rocks)} rocks left · a crew of {String(CLEAR_CREW)} peasants · free
+              {String(rocks)} rocks left · free
             </Text>
             <Text style={[styles.paletteStatus, styles.paletteReady]}>
-              {game.clearOrders.length > 0 ? `Clearing: ${String(clearingLeft(game))} s of work ordered` : 'Drag across rocks to order them cleared'}
+              {game.clearOrders.length > 0 ? `Clearing · ${String(clearingLeft(game))} s left` : 'Drag across rocks'}
             </Text>
           </View>
         </Pressable>
       </View>
-      <SectionLabel>ROADS · PEASANTS WALK FASTER ON THEM</SectionLabel>
-      <Text style={styles.note}>QUICKER WALKS MEAN MORE HAULED FROM THE MINE AND FASTER BUILDING. DRAG ACROSS THE MAP TO LAY THEM.</Text>
+      <SectionLabel>ROADS</SectionLabel>
+      <ExplainMe>Peasants walk faster on roads: quicker walks mean more hauled from the mine and faster building. Drag across the map to lay them; the multiplier is how much faster a walk on that road is.</ExplainMe>
       <View style={styles.palette}>
         {[...ROAD_KINDS, 'erase' as const].map((kind) => (
           <Pressable
@@ -762,8 +762,11 @@ function BuildPalette({ game, onPick, onPaint }: { game: GameState; onPick: (id:
           </Pressable>
         ))}
       </View>
-      <SectionLabel>TRAPS · FOR THE BELT OUTSIDE THE MOAT</SectionLabel>
-      <Text style={styles.note}>RAIDERS ON FOOT SPRING EVERY TRAP ON THE SIDE THEY COME FROM. FLIERS PASS OVER.</Text>
+      <SectionLabel>TRAPS</SectionLabel>
+      <ExplainMe>
+        {`Traps go in the belt outside the moat. Raiders on foot spring every trap on the side they come from; fliers pass over. `}
+        {TRAP_KINDS.map((kind) => `${TRAP_INFO[kind].name}: ${TRAP_INFO[kind].effect}`).join(' ')}
+      </ExplainMe>
       <View style={styles.palette}>
         {TRAP_KINDS.map((kind) => {
           const blocker = trapBlocker(game, kind);
@@ -779,7 +782,6 @@ function BuildPalette({ game, onPick, onPaint }: { game: GameState; onPick: (id:
               <View style={styles.paletteCopy}>
                 <Text style={styles.paletteName}>{TRAP_INFO[kind].name}</Text>
                 <Text style={styles.paletteDetail}>1×1 · {trapCostText(kind)} · {String(laid[kind])} laid</Text>
-                <Text style={styles.paletteDetail}>{TRAP_INFO[kind].effect}</Text>
                 <Text style={[styles.paletteStatus, blocker ? styles.placementProblem : styles.paletteReady]}>{blocker ?? 'Ready to lay'}</Text>
               </View>
             </Pressable>
@@ -1143,8 +1145,8 @@ function Menu({ game, workforce, onPrologue, onVictory }: { game: GameState; wor
       </View>
       <Stockpiles game={game} />
       <ShopPanel adsRemoved={game.adsRemoved} />
-      <GameButton label="THE STORY SO FAR" detail="the prologue" onPress={onPrologue} secondary />
-      {game.campaign.victory && <GameButton label="THE VICTORY" detail="the epilogue" onPress={onVictory} secondary />}
+      <GameButton label="THE STORY SO FAR" detail="the prologue: how Greyhollow came to be" onPress={onPrologue} secondary />
+      {game.campaign.victory && <GameButton label="THE VICTORY" detail="the epilogue: how the war was won" onPress={onVictory} secondary />}
       <NewGamePanel current={game.difficulty} onStart={game.resetGame} />
       <Text style={styles.footer}>DIG BELOW. BUILD ABOVE. · PROGRESS SAVES AUTOMATICALLY</Text>
     </>

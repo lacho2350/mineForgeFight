@@ -37,7 +37,8 @@ import { ITEM_INFO, UNIT_GEAR } from '../game/items';
 import type { Workforce } from '../game/workforce';
 import { RESOURCES, RESOURCE_INFO } from '../game/resources';
 import { ARMY_RECRUITING, MUSTER_SECONDS, UNIT_STATS, unitGrowth, type ArmyUnit } from '../game/units';
-import { GameButton, SectionLabel } from './GameUI';
+import { ExplainMe, GameButton, SectionLabel } from './GameUI';
+import { blurbOf } from './buildingBlurbs';
 import { TechBranchView } from './TechTree';
 
 // The construction office, in pieces for the stronghold's pop-ups: a defence summary, the grid of
@@ -170,13 +171,14 @@ export function BuildingDetail({ game, workforce, id, bare = false, onChooseSpot
           <Text style={styles.detailLevel}>LEVEL {String(level)} / {String(MAX_BUILDING_LEVEL)}</Text>
         </View>
       )}
-      <Text style={styles.role}>{info.role}</Text>
+      <Text style={styles.role}>{blurbOf(id)}</Text>
+      {blurbOf(id) !== info.role && <ExplainMe>{info.role}</ExplainMe>}
       {need > 0 && (
         <View style={styles.staffRow}>
           <Text style={[styles.staffText, (paused || staffed < need) && styles.staffShort]}>
             {paused
-              ? `STOPPED · its ${String(need)} worker${need === 1 ? '' : 's'} wait at the campfire`
-              : `STAFF ${String(staffed)}/${String(need)}${staffed < need ? ` · works as level ${String(worked)} · ${String(workforce.idle)} at the campfire` : ' · fully staffed'}`}
+              ? `STOPPED · ${String(need)} AT THE CAMPFIRE`
+              : `STAFF ${String(staffed)}/${String(need)}${staffed < need ? ` · WORKS AS LV ${String(worked)} · ${String(workforce.idle)} IDLE` : ''}`}
           </Text>
           {!paused && (
             <>
@@ -266,8 +268,8 @@ export function BuildingDetail({ game, workforce, id, bare = false, onChooseSpot
       {placed && id !== 'warehouse' && (
         <Text style={styles.walkText}>
           {walk
-            ? `BUILDERS WALK ${String(walk.time)} S FROM THE WAREHOUSE · BUILDING ×${String(siteFactor(game, id))}`
-            : 'NO WAY THROUGH FROM THE WAREHOUSE · BUILDING ×0.7'}
+            ? `BUILDERS' WALK ${String(walk.time)} S · BUILDING ×${String(siteFactor(game, id))}`
+            : 'NO WAY FROM THE WAREHOUSE · BUILDING ×0.7'}
         </Text>
       )}
       {id !== 'keep' && (level > 0 || job) && <DestroyButton game={game} id={id} onDestroyed={onDestroyed} />}
