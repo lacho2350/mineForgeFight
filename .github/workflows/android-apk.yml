@@ -1,4 +1,7 @@
-# An installable Android APK on every push, for testing on a real phone.
+# An installable Android APK for testing on a real phone — built only once the checks pass: `checks.yml`
+# calls this workflow after its typecheck, lint and tests succeed on a push to main or release-prep (a push
+# whose checks fail gets no APK). It can also be started by hand (Actions → android-apk → Run workflow),
+# which builds without waiting for the checks.
 #
 # The native project is generated in CI (`expo prebuild` — /android is never committed) and built with
 # Gradle as a release build: the JavaScript is bundled into the app, so it runs on its own, no dev server.
@@ -12,21 +15,20 @@
 name: android-apk
 
 on:
-  push:
-    branches: [main, release-prep]
+  workflow_call:
   workflow_dispatch:
 
 permissions:
   contents: write
 
-concurrency:
-  group: android-apk-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
   apk:
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    # A newer push to the same branch cancels a build still running for an older one.
+    concurrency:
+      group: android-apk-${{ github.ref }}
+      cancel-in-progress: true
     steps:
       - uses: actions/checkout@v4
 

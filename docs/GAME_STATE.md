@@ -890,15 +890,22 @@ src/
 - Checks (run before calling anything done): `npx tsc --noEmit` · `npx expo lint` · `npx expo-doctor`.
   **GitHub Actions** runs the first two and `npm test` on every push (`.github/workflows/checks.yml`,
   since 2026-10-16) — a way to typecheck work written where nothing can be installed.
-- **An Android APK on every push** to `main` and `release-prep` (`.github/workflows/android-apk.yml`, since
-  2026-10-17), for testing on a real phone: `expo prebuild --platform android` in CI (nothing native is
+- **An Android APK on every push whose checks pass** to `main` and `release-prep` (`.github/workflows/android-apk.yml`,
+  since 2026-10-17; since 2026-10-24 it is the `apk` job of `checks.yml`, called with `needs: checks`, so a
+  push that fails typecheck, lint or tests gets no APK — the failures are annotations instead), for testing on a real phone: `expo prebuild --platform android` in CI (nothing native is
   committed), then `./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a` on JDK 21 — a standalone
   release build (JS bundled, no dev server), signed with the template's debug keystore so every build
   installs over the last and keeps the save; `versionCode` = the run number. Published to the GitHub release
   `apk-<branch>` (replaced each build, so the link is fixed):
   `https://github.com/lacho2350/mineForgeFight/releases/download/apk-<branch>/mineforgefight-<branch>.apk`,
   and kept 14 days as a workflow artifact. Not for Google Play (that build goes through EAS, NEXT_STEPS.md).
-  Run it by hand from the Actions tab (`workflow_dispatch`) for any other branch. **Gotcha**: with
+  Run it by hand from the Actions tab (`workflow_dispatch`, skips the checks) for any other branch.
+  **After a push, `scripts/ci-watch.sh [commit] [branch]`** waits for that push's `checks` run and prints one
+  line per outcome — `CHECKS FAILED` with an `ERROR <file> <line> <title> :: <message>` per failing test, lint
+  error or type error; `CHECKS PASSED — building the APK`; `APK READY <path>` once the APK is published and
+  downloaded (to `$OUT_DIR`); `APK FAILED` with Gradle's error; `CANCELLED` when a newer push took over — and
+  exits 0/1/2. An agent watches it line by line: errors → fix and push again; APK READY → hand the file to the
+  user. Needs `gh` signed in (the REST API; GraphQL isn't available from Claude's cloud sessions). **Gotcha**: with
   react-native-google-mobile-ads 17.2 every Android build (CI or `npx expo run:android`) fails in Gradle
   with "Cannot get property 'googleMobileAdsJson'" unless built with `-PRNGMA_ANDROID_BACKEND=classic` (the
   CI passes it); 17.3.0 fixes it — `npx expo install react-native-google-mobile-ads` on the computer.

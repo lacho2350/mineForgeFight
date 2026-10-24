@@ -1,4 +1,6 @@
 # Typecheck, lint and test on every push — the same three checks AGENTS.md asks for before any task is done.
+# On a push to main or release-prep whose checks all pass, the APK is built next (`android-apk.yml`, called
+# as the `apk` job); if any check fails, no APK is built and the failures are left as annotations.
 name: checks
 
 on:
@@ -67,3 +69,11 @@ jobs:
         run: |
           echo "tsc: ${{ steps.tsc.outcome }}, lint: ${{ steps.lint.outcome }}, test: ${{ steps.test.outcome }}"
           exit 1
+
+  # The APK, only when every check above passed, and only for pushes to the two test branches.
+  apk:
+    needs: checks
+    if: github.event_name == 'push' && (github.ref_name == 'main' || github.ref_name == 'release-prep')
+    permissions:
+      contents: write
+    uses: ./.github/workflows/android-apk.yml
