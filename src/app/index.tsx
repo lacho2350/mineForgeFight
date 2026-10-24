@@ -27,7 +27,7 @@ import { plotOf } from '../components/GameSceneLayout';
 import { vacancies, type Workforce } from '../game/workforce';
 import { BuildingDetail, BuildingGrid, DefenceSummary } from '../components/BuildingsPanel';
 import CityView from '../components/CityView';
-import { GameButton, SectionLabel } from '../components/GameUI';
+import { ExplainMe, GameButton, SectionLabel } from '../components/GameUI';
 import BargesPanel from '../components/BargesPanel';
 import { DepotPanel, ForgePanel, GearStore } from '../components/ForgePanel';
 import { isForge } from '../game/forges';
@@ -1085,14 +1085,13 @@ function Stockpiles({ game }: { game: GameState }) {
           { label: 'WAREHOUSE', stock: game.warehouse, capacity: game.warehouseCapacity },
         ]}
       />
-      <Text style={styles.note}>
-        MINE CART · {String(game.mineCartCapacity)} PER LOAD · HAULERS · {String(game.surfaceHaul)} PER TRIP
-      </Text>
-      <Text style={styles.note}>
+      <Text style={styles.note}>{walk ? `HAULING ×${String(haulFactor(walk))} · ${String(walk.time)} S WALK` : 'NO WAY FROM THE MINE · HAULING ×0.5'}</Text>
+      <ExplainMe>
+        {`Goods go from the miners' bins to the mine exit, up to the mine's stockpile and on to the warehouse. A mine cart takes ${String(game.mineCartCapacity)} a load; the haulers carry ${String(game.surfaceHaul)} a trip. `}
         {walk
-          ? `WALK FROM THE MINE · ${String(walk.time)} S · HAULING ×${String(haulFactor(walk))} (LAY ROADS OR MOVE THE WAREHOUSE CLOSER FOR MORE)`
-          : 'NO WAY THROUGH FROM THE MINE TO THE WAREHOUSE · HAULING ×0.5'}
-      </Text>
+          ? `The walk from the mine to the warehouse takes ${String(walk.time)} s, so hauling runs at ×${String(haulFactor(walk))}: lay roads or move the warehouse closer for more.`
+          : 'There is no way through from the mine to the warehouse, so hauling runs at ×0.5: clear the rocks or lay a road between them.'}
+      </ExplainMe>
     </View>
   );
 }
@@ -1107,29 +1106,45 @@ function Menu({ game, workforce, onPrologue, onVictory }: { game: GameState; wor
       <View style={styles.block}>
         <SectionLabel>PEASANTS {String(game.population)}/{String(beds)}</SectionLabel>
         <Text style={styles.body}>
-          {String(workforce.miners)} mining · {String(workforce.pushers)} pushing carts · {String(workforce.builders)} building · {String(workforce.staffTotal)} staffing buildings · {String(workforce.idle)} at the campfire (nobody goes anywhere by themselves: 👷 on the side staffs the buildings, ASSIGN in the mine sends them mining)
-          {dry > 0 ? ` · ${String(dry)} cottage${dry === 1 ? '' : 's'} out of water or food` : game.population < beds ? ' · a newcomer every few seconds' : ' · cottages full'}
-          {cutOff > 0 ? ` · ${String(cutOff)} cottage${cutOff === 1 ? '' : 's'} with no road to the keep and the gate (unhappy: slower, nobody new moves in)` : ''}
+          ⛏ {String(workforce.miners)} · 🛒 {String(workforce.pushers)} · 🔨 {String(workforce.builders)} · 🏠 {String(workforce.staffTotal)} · 🔥 {String(workforce.idle)} idle
         </Text>
+        {dry > 0 || cutOff > 0 ? (
+          <Text style={[styles.body, styles.warn]}>
+            {[dry > 0 ? `${String(dry)} cottage${dry === 1 ? '' : 's'} need water or food` : '', cutOff > 0 ? `${String(cutOff)} cottage${cutOff === 1 ? '' : 's'} cut off` : ''].filter(Boolean).join(' · ')}
+          </Text>
+        ) : null}
+        <ExplainMe>
+          {`⛏ mining · 🛒 pushing mine carts · 🔨 building · 🏠 staffing buildings · 🔥 waiting at the campfire. Nobody goes anywhere by themselves: 👷 on the side of the map staffs the buildings, ASSIGN in the mine sends them mining. `}
+          {game.population < beds ? 'With beds free, a newcomer arrives every few seconds' : 'The cottages are full: build or raise cottages for more peasants'}
+          {` while every cottage has water and food. A cottage with no road to the keep and the gate is unhappy: its peasants work slower and nobody new moves in.`}
+        </ExplainMe>
       </View>
       <View style={styles.block}>
         <SectionLabel>RAIDS</SectionLabel>
-        <Text style={styles.body}>Raids, the army, recruiting, instant or fought-out battles and the defences: the ⚔️ button on the side of the map.</Text>
+        <Text style={styles.body}>On the ⚔️ button.</Text>
+        <ExplainMe>Raids, the army, recruiting, instant or fought-out battles and the defences are all on the ⚔️ button on the side of the map.</ExplainMe>
       </View>
       <View style={styles.block}>
         <SectionLabel>THE CAMPAIGN</SectionLabel>
         <Text style={styles.body}>
           {!game.campaign.unlocked
+            ? 'Opens with your first angel.'
+            : game.campaign.victory
+              ? 'Won. 🗺️ to revisit.'
+              : `${String(game.campaign.won)}/${String(CAMPAIGN_BATTLES)} won · next: ${stage ? CAMPAIGN_STAGES[stage - 1].title : ''} (🗺️)`}
+        </Text>
+        <ExplainMe>
+          {!game.campaign.unlocked
             ? 'The end game: when the hold raises its first angel, the lands the Horde took open on a map — twelve battles down the road to Aldmere, the last against the Red Hand’s warlord.'
             : game.campaign.victory
-              ? 'The war is won: the Red Hand is broken and Aldmere is free. The hold plays on; the road is on the 🗺️ button.'
-              : `${String(game.campaign.won)} of ${String(CAMPAIGN_BATTLES)} sites won; next: ${stage ? CAMPAIGN_STAGES[stage - 1].title : ''}. The map is on the 🗺️ button on the side of the map.`}
-        </Text>
+              ? 'The war is won: the Red Hand is broken and Aldmere is free. The hold plays on; the road is on the 🗺️ button on the side of the map.'
+              : 'Twelve battles down the road to Aldmere, each harder than the last; the twelfth is against the Red Hand’s warlord. Pick the next site on the map (🗺️ on the side of the map) and march the army there.'}
+        </ExplainMe>
       </View>
       <Stockpiles game={game} />
       <ShopPanel adsRemoved={game.adsRemoved} />
-      <GameButton label="THE STORY SO FAR" detail="the prologue: how Greyhollow came to be" onPress={onPrologue} secondary />
-      {game.campaign.victory && <GameButton label="THE VICTORY" detail="the epilogue: how the war was won" onPress={onVictory} secondary />}
+      <GameButton label="THE STORY SO FAR" detail="the prologue" onPress={onPrologue} secondary />
+      {game.campaign.victory && <GameButton label="THE VICTORY" detail="the epilogue" onPress={onVictory} secondary />}
       <NewGamePanel current={game.difficulty} onStart={game.resetGame} />
       <Text style={styles.footer}>DIG BELOW. BUILD ABOVE. · PROGRESS SAVES AUTOMATICALLY</Text>
     </>
@@ -1177,6 +1192,7 @@ const styles = StyleSheet.create({
   blockHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 },
   note: { color: '#858d7c', fontFamily: 'monospace', fontSize: 8 },
   body: { color: '#c9c4b2', fontFamily: 'monospace', fontSize: 10, lineHeight: 15 },
+  warn: { color: '#e08a72' },
   footer: { color: '#626b5d', fontFamily: 'monospace', fontSize: 8, textAlign: 'center' },
   placement: { width: '100%', maxWidth: 720, gap: 10, padding: 12, borderWidth: 1, borderColor: '#4a5240', backgroundColor: 'rgba(17, 20, 16, 0.94)' },
   placementHead: { flexDirection: 'row', alignItems: 'center', gap: 10 },

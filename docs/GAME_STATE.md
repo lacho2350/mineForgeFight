@@ -382,6 +382,10 @@ game, and starts the 1-second simulation (`startSimulation()`).
   needs none). Both SDKs are
   loaded with a guarded `require`, so **Expo Go** (no native modules) runs the game without ads or
   purchases. The shop is in the Menu (`ShopPanel`).
+- **The Menu is bare-bones** (since 2026-10-24): each section shows one short line — peasants as ⛏ 🛒 🔨 🏠 🔥
+  counts (warnings in red), raids "on the ⚔️ button", the campaign's score and next site, the haul factor and
+  walk — and an **EXPLAIN ME** toggle (`ExplainMe` in `GameUI.tsx`) opens the full explanation underneath; the
+  new-game panel shows the blurb of the picked difficulty only. Use `ExplainMe` for any long help text.
 - **Tech tree** (`src/game/techs.ts`): 78 upgrades bought once with **gold only**, separate from building
   levels — a branch per building (3 tiers: I, II, III) and a 9-tech branch for the mine (3 per tier).
   A tech needs the one before it (`requires`, sometimes a tech from another branch too, e.g. Steam drills

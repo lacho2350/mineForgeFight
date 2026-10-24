@@ -43,7 +43,7 @@ export default function NewGamePanel({ current, onStart, confirm = true }: { cur
               {info.name}
               {current === difficulty ? '  (this game)' : ''}
             </Text>
-            <Text style={styles.blurb}>{locked ? 'Win the campaign on Nightmare to unlock it.' : info.blurb}</Text>
+            {selected || locked ? <Text style={styles.blurb}>{locked ? 'Win the campaign on Nightmare.' : info.blurb}</Text> : null}
           </Pressable>
         );
       })}

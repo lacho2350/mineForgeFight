@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { memo } from 'react';
+import { memo, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, { css } from 'react-native-reanimated';
 
@@ -61,6 +61,29 @@ export function ResourceValue({ label, value, tone }: { label: string; value: st
 
 export function SectionLabel({ children }: { children: ReactNode }) {
   return <Text style={styles.sectionLabel}>{children}</Text>;
+}
+
+/**
+ * A small EXPLAIN ME toggle under a bare-bones line: tapped, it opens the full explanation (`children`,
+ * plain text) below it; tapped again, it closes. Keeps menus short while the details stay one tap away.
+ */
+export function ExplainMe({ children }: { children: ReactNode }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <View style={styles.explain}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityState={{ expanded: open }}
+        accessibilityLabel={open ? 'Hide the explanation' : 'Explain this'}
+        hitSlop={8}
+        onPress={() => setOpen(!open)}
+        style={({ pressed }) => [styles.explainButton, pressed && styles.gameButtonPressed]}
+      >
+        <Text style={styles.explainButtonText}>{open ? '▾ HIDE' : '▸ EXPLAIN ME'}</Text>
+      </Pressable>
+      {open ? <Text style={styles.explainText}>{children}</Text> : null}
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({
@@ -134,4 +157,8 @@ const styles = StyleSheet.create({
     fontSize: 9,
     letterSpacing: 0.5,
   },
+  explain: { gap: 6, alignItems: 'flex-start' },
+  explainButton: { paddingVertical: 3, paddingHorizontal: 6, borderWidth: 1, borderColor: '#3a4439', backgroundColor: '#1a211b' },
+  explainButtonText: { color: '#a9ad99', fontFamily: 'monospace', fontSize: 8, fontWeight: '700', letterSpacing: 0.5 },
+  explainText: { color: '#a9a493', fontFamily: 'monospace', fontSize: 9, lineHeight: 14 },
 });
